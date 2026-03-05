@@ -10,8 +10,9 @@ import asyncio
 import logging
 from datetime import datetime
 from contextlib import asynccontextmanager
+from typing import Dict, Any, List, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 
@@ -19,7 +20,8 @@ from .config import settings
 from .logging_config import setup_logging, setup_middleware
 from .models import (
     OrderSubmitRequest, OrderSubmitResponse, OrderStatusResponse,
-    OrderStatus, Job, QueueSummary
+    OrderStatus, Job, QueueSummary, OutputFile,
+    ReportGenerateRequest, ReportGenerateResponse,
 )
 from .queue_manager import get_queue_manager
 from .runner import get_runner
@@ -68,7 +70,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Service Daemon",
     description="Multi-service genomics pipeline daemon",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -101,7 +103,7 @@ async def health():
 async def submit_order(service_code: str, request: OrderSubmitRequest):
     """
     주문 접수 (서비스별).
-    
+
     Platform에서 분석 주문을 접수합니다.
     service_code에 해당하는 플러그인이 등록되어 있어야 합니다.
     """
@@ -126,6 +128,11 @@ async def submit_order(service_code: str, request: OrderSubmitRequest):
     # 작업 디렉토리 결정
     work_dir = request.work_dir or datetime.now().strftime("%y%m%d")
 
+    # 디렉토리 경로 설정 (서비스별 구조)
+    base = os.path.join(settings.base_dir, "carrier-screening") \
+        if service_code == "carrier_screening" \
+        else settings.base_dir
+
     # Job 생성
     job = Job(
         order_id=request.order_id,
@@ -140,16 +147,10 @@ async def submit_order(service_code: str, request: OrderSubmitRequest):
         priority=request.priority,
         callback_url=request.callback_url,
         # 경로 설정
-        fastq_dir=os.path.join(settings.fastq_base_dir, work_dir, request.sample_name),
-        analysis_dir=os.path.join(
-            settings.analysis_base_dir, service_code, work_dir, request.sample_name
-        ),
-        output_dir=os.path.join(
-            settings.output_base_dir, service_code, work_dir, request.sample_name
-        ),
-        log_dir=os.path.join(
-            settings.log_base_dir, service_code, work_dir, request.sample_name
-        )
+        fastq_dir=os.path.join(base, "fastq", work_dir, request.sample_name),
+        analysis_dir=os.path.join(base, "analysis", work_dir, request.sample_name),
+        output_dir=os.path.join(base, "output", work_dir, request.sample_name),
+        log_dir=os.path.join(base, "log", work_dir, request.sample_name),
     )
 
     # 큐에 추가
@@ -206,6 +207,95 @@ async def cancel_order(order_id: str):
             status_code=404,
             detail=f"Cannot cancel order {order_id}: not found or not running"
         )
+
+
+# ─── Report Generation Endpoint ───────────────────────────
+
+@app.post("/order/{order_id}/report", response_model=ReportGenerateResponse)
+async def generate_report(order_id: str, request: ReportGenerateRequest):
+    """
+    리뷰어 확정 후 최종 리포트를 생성합니다.
+
+    Portal에서 리뷰어가 변이를 확정하고 코멘트를 작성한 후,
+    이 엔드포인트를 호출하여 report.json + PDF를 생성합니다.
+    생성된 리포트는 자동으로 Platform에 업로드됩니다.
+    """
+    queue_manager = get_queue_manager()
+    job = queue_manager.get_job(order_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
+
+    plugin = get_plugin(job.service_code)
+    if not plugin:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No plugin for service: {job.service_code}"
+        )
+
+    # generate_report 메서드가 있는지 확인
+    if not hasattr(plugin, 'generate_report'):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Service {job.service_code} does not support report generation"
+        )
+
+    # 리포트 생성
+    success = await plugin.generate_report(
+        job=job,
+        confirmed_variants=request.confirmed_variants,
+        reviewer_info=request.reviewer_info,
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=500,
+            detail="Report generation failed"
+        )
+
+    # 생성된 리포트 파일을 Platform에 업로드
+    output_dir = job.output_dir
+    report_files = []
+
+    report_json = os.path.join(output_dir, "report.json")
+    if os.path.exists(report_json):
+        report_files.append(OutputFile(
+            file_path=report_json,
+            file_type="report_json",
+            file_name="report.json",
+            content_type="application/json",
+        ))
+
+    report_pdf = os.path.join(output_dir, "report.pdf")
+    if os.path.exists(report_pdf):
+        report_files.append(OutputFile(
+            file_path=report_pdf,
+            file_type="report_pdf",
+            file_name="report.pdf",
+            content_type="application/pdf",
+        ))
+
+    # Platform에 업로드
+    platform_client = get_platform_client()
+    if report_files:
+        upload_results = await platform_client.upload_all_outputs(
+            order_id, job.service_code, report_files
+        )
+        uploaded_count = sum(
+            1 for r in upload_results.values()
+            if r.status.value == "SUCCESS"
+        )
+    else:
+        uploaded_count = 0
+
+    return ReportGenerateResponse(
+        status="success",
+        order_id=order_id,
+        service_code=job.service_code,
+        report_files=[os.path.basename(f.file_path) for f in report_files],
+        uploaded_count=uploaded_count,
+        message=f"Report generated and {uploaded_count} file(s) uploaded",
+    )
 
 
 # ─── Queue Endpoints ──────────────────────────────────────
@@ -275,7 +365,7 @@ async def dashboard():
 
     return {
         "service": "service-daemon",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "environment": settings.app_env,
         "registered_services": [
             {"code": code, "name": plugin.display_name}

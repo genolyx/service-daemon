@@ -153,6 +153,26 @@ class OutputFile(BaseModel):
     content_type: str = Field(default="application/octet-stream", description="MIME type")
 
 
+class ReportGenerateRequest(BaseModel):
+    """리포트 생성 요청 (리뷰어 확정 후 Portal에서 호출)"""
+    confirmed_variants: List[Dict[str, Any]] = Field(
+        ..., description="리뷰어가 확정한 변이 목록 (reviewer_confirmed, reviewer_classification, reviewer_comment 포함)"
+    )
+    reviewer_info: Dict[str, Any] = Field(
+        ..., description="리뷰어 정보 (name, id, institution 등)"
+    )
+
+
+class ReportGenerateResponse(BaseModel):
+    """리포트 생성 응답"""
+    status: str
+    order_id: str
+    service_code: str
+    report_files: List[str] = Field(default_factory=list, description="생성된 리포트 파일 목록")
+    uploaded_count: int = 0
+    message: str = ""
+
+
 class QueueSummary(BaseModel):
     """큐 상태 요약"""
     total_queued: int = 0

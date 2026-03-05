@@ -10,25 +10,34 @@ services:
     env_file:
       - .env
     volumes:
-      # Data directories
-      - ${BASE_DIR:-/data}/fastq:/data/fastq
-      - ${BASE_DIR:-/data}/analysis:/data/analysis
-      - ${BASE_DIR:-/data}/output:/data/output
-      - ${BASE_DIR:-/data}/log:/data/log
+      # 데이터 디렉토리 (carrier-screening 구조 포함)
+      # carrier-screening/fastq/<work_dir>/<sample_name>/
+      # carrier-screening/analysis/<work_dir>/<sample_name>/
+      # carrier-screening/output/<work_dir>/<sample_name>/
+      # carrier-screening/log/<work_dir>/<sample_name>/
+      - ${BASE_DIR:-/data}:/data
       # Reference data (read-only)
       - ${BASE_DIR:-/data}/reference:/data/reference:ro
       # Pipeline directories (read-only)
       - ${CARRIER_SCREENING_PIPELINE_DIR:-/opt/pipelines/carrier-screening}:/opt/pipelines/carrier-screening:ro
       - ${NIPT_PIPELINE_DIR:-/opt/pipelines/nipt}:/opt/pipelines/nipt:ro
       - ${SGNIPT_PIPELINE_DIR:-/opt/pipelines/sgnipt}:/opt/pipelines/sgnipt:ro
+      # Nextflow executable
+      - /usr/local/bin/nextflow:/usr/local/bin/nextflow:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 15s
     logging:
       driver: "json-file"
       options:
         max-size: "50m"
         max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G

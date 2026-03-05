@@ -141,6 +141,24 @@ class ServicePlugin(ABC):
         """작업 실패 시 호출되는 훅 (선택적 오버라이드)"""
         logger.error(f"[{self.service_code}] Job failed: {job.order_id} - {error}")
 
+    async def generate_report(self, job: Job, confirmed_variants: list, reviewer_info: dict) -> bool:
+        """
+        리뷰어 확정 후 최종 리포트를 생성합니다 (선택적 오버라이드).
+        
+        Portal에서 리뷰어가 변이를 확정한 후 호출됩니다.
+        report.json과 PDF를 생성하여 output 디렉토리에 저장합니다.
+        
+        Args:
+            job: 작업 정보
+            confirmed_variants: 리뷰어가 확정한 변이 목록
+            reviewer_info: 리뷰어 정보
+            
+        Returns:
+            True: 성공, False: 실패
+        """
+        logger.warning(f"[{self.service_code}] generate_report not implemented")
+        return False
+
     async def cleanup(self, job: Job):
         """
         작업 완료/실패 후 임시 파일 정리 (선택적 오버라이드).

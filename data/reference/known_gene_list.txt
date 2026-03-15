@@ -1,0 +1,54 @@
+# Carrier Screening Panel - Known Gene List
+# Version: 1.0.0
+# Total genes: 49
+# Source: ACMG SF v3.2, ClinGen, Major carrier screening panels
+# Format: gene_symbol (one per line)
+CFTR
+SMN1
+HBB
+HBA1
+HBA2
+HEXA
+GBA1
+SMPD1
+PAH
+G6PC1
+GAA
+GLA
+FMR1
+DMD
+F8
+F9
+GJB2
+GJB6
+BCKDHA
+BCKDHB
+DBT
+CBS
+ACADM
+CYP21A2
+ASPA
+MCOLN1
+FANCC
+ELP1
+ATP7B
+HFE
+BTD
+FAH
+GALC
+GNPTAB
+DHCR7
+NEB
+PCDH15
+USH2A
+MKS1
+PPT1
+TPP1
+IDUA
+SGSH
+BLM
+ATM
+GALT
+ASS1
+IVD
+MMUT

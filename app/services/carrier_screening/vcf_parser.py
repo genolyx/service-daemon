@@ -2,7 +2,7 @@
 VCF Parser Module
 
 VCF 파일에서 변이를 파싱하고 기본 정보를 추출합니다.
-phenotype_portal/main.py의 VCF 파싱 로직을 모듈화한 것입니다.
+phenotype_portal/main.py의 VCF 파싱 및 필터링 로직을 모듈화한 것입니다.
 
 주요 기능:
     - VCF FORMAT 문제 필드 정리 (GQ, SB 등)
@@ -10,6 +10,11 @@ phenotype_portal/main.py의 VCF 파싱 로직을 모듈화한 것입니다.
     - 유전자, 전사체, HGVS, 기능적 영향 추출
     - 샘플 메트릭스 추출 (DP, AD, VAF, GT, Zygosity)
     - BED 기반 변이 필터링
+    - HPO 기반 유전자 필터링
+    - gnomAD max AF 필터링
+    - ClinVar significance 필터링
+    - ACMG classification 필터링
+    - 통합 VCF 파싱 파이프라인 (parse_vcf_variants)
 """
 
 import os
@@ -18,6 +23,7 @@ import gzip
 import logging
 import subprocess
 from typing import Dict, Any, List, Optional, Set, Tuple
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
@@ -434,3 +440,296 @@ def variant_in_bed(chrom: str, pos: int, bed_regions: Dict) -> bool:
         if start <= pos <= end:
             return True
     return False
+
+
+def get_bed_gene_at_position(chrom: str, pos: int, bed_regions: Dict) -> str:
+    """BED 영역에서 변이 위치의 유전자명을 반환합니다."""
+    if not bed_regions:
+        return ""
+    regions = bed_regions.get(chrom, [])
+    for start, end, name in regions:
+        if start <= pos <= end:
+            return name
+    return ""
+
+
+# ══════════════════════════════════════════════════════════════
+# Filter Configuration (phenotype_portal 필터링 파라미터 통합)
+# ══════════════════════════════════════════════════════════════
+
+@dataclass
+class VariantFilterConfig:
+    """
+    VCF 변이 필터링 설정.
+    phenotype_portal/main.py의 /analyze 라우트 파라미터를 구조화한 것입니다.
+
+    Attributes:
+        hpo_genes: HPO 기반 유전자 집합 (비어있으면 필터 비활성)
+        gene_filter_set: 수동 유전자 필터 집합 (비어있으면 필터 비활성)
+        max_af: gnomAD AF 상한 (None이면 필터 비활성)
+        clinvar_filter: ClinVar significance 필터 집합
+            - "any": 모든 ClinVar 변이
+            - "has": ClinVar에 등록된 변이
+            - "plp": Pathogenic/Likely pathogenic
+            - "vus": VUS
+            - "blb": Benign/Likely benign
+            - "conflicting": Conflicting
+            - "not_conflicting": ClinVar에 있지만 conflict 아닌 것
+        exclude_clinvar_conflicts: ClinVar conflict 변이 제외 여부
+        acmg_filter: ACMG 분류 필터 집합 (비어있으면 필터 비활성)
+        require_protein_altering: 단백질 변경 변이만 포함 여부
+        backbone_bed_regions: backbone BED 영역 (비어있으면 필터 비활성)
+        disease_bed_regions: disease BED 영역 (정보 추가용)
+    """
+    hpo_genes: Set[str] = field(default_factory=set)
+    gene_filter_set: Set[str] = field(default_factory=set)
+    max_af: Optional[float] = None
+    clinvar_filter: Set[str] = field(default_factory=set)
+    exclude_clinvar_conflicts: bool = False
+    acmg_filter: Set[str] = field(default_factory=set)
+    require_protein_altering: bool = True
+    backbone_bed_regions: Dict = field(default_factory=dict)
+    disease_bed_regions: Dict = field(default_factory=dict)
+
+
+def apply_clinvar_filter(
+    cv_primary: str,
+    has_clinvar: bool,
+    cv_conflict: bool,
+    clinvar_filter: Set[str],
+    exclude_conflicts: bool,
+) -> bool:
+    """
+    ClinVar 필터를 적용합니다.
+    phenotype_portal/main.py의 ClinVar 필터링 로직을 그대로 포팅한 것입니다.
+
+    Returns:
+        True: 변이를 포함, False: 변이를 제외
+    """
+    # conflict 제외 옵션
+    if exclude_conflicts and cv_conflict:
+        return False
+
+    # ClinVar 필터가 없거나 "any"이면 모든 변이 통과
+    if not clinvar_filter or "any" in clinvar_filter:
+        return True
+
+    matches = False
+    if "has" in clinvar_filter and has_clinvar:
+        matches = True
+    if "plp" in clinvar_filter and cv_primary in ("Pathogenic", "Likely pathogenic"):
+        matches = True
+    if "vus" in clinvar_filter and cv_primary == "VUS":
+        matches = True
+    if "blb" in clinvar_filter and cv_primary in ("Benign", "Likely benign"):
+        matches = True
+    if "conflicting" in clinvar_filter and cv_conflict:
+        matches = True
+    if "not_conflicting" in clinvar_filter and has_clinvar and not cv_conflict:
+        matches = True
+
+    return matches
+
+
+# ══════════════════════════════════════════════════════════════
+# Integrated VCF Parsing Pipeline
+# ══════════════════════════════════════════════════════════════
+
+def parse_vcf_variants(
+    vcf_path: str,
+    annotator,
+    filter_config: Optional[VariantFilterConfig] = None,
+    acmg_classifier=None,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    VCF 파일을 파싱하고 필터링/annotation을 수행하는 통합 파이프라인.
+    phenotype_portal/main.py의 /analyze 라우트 로직을 모듈화한 것입니다.
+
+    Args:
+        vcf_path: 파싱할 VCF 파일 경로
+        annotator: VariantAnnotator 인스턴스
+        filter_config: 필터링 설정 (None이면 기본 설정 사용)
+        acmg_classifier: ACMG 분류기 (None이면 rule-based만 사용)
+
+    Returns:
+        (annotated_variants, acmg_results, parse_stats)
+        - annotated_variants: annotation된 변이 딕셔너리 리스트
+        - acmg_results: ACMG 분류 결과 리스트
+        - parse_stats: 파싱 통계 (total_records, parsed_genes, filtered_count, warnings)
+    """
+    import pysam
+
+    if filter_config is None:
+        filter_config = VariantFilterConfig()
+
+    stats = {
+        "total_records": 0,
+        "parsed_gene_count": 0,
+        "nonref_count": 0,
+        "protein_altering_count": 0,
+        "bed_filtered_count": 0,
+        "gene_filtered_count": 0,
+        "af_filtered_count": 0,
+        "clinvar_filtered_count": 0,
+        "acmg_filtered_count": 0,
+        "final_count": 0,
+        "warnings": [],
+    }
+
+    annotated_variants: List[Dict[str, Any]] = []
+    acmg_results: List[Dict[str, Any]] = []
+
+    try:
+        vcf = pysam.VariantFile(vcf_path)
+    except Exception as e:
+        stats["warnings"].append(f"Failed to open VCF: {e}")
+        return annotated_variants, acmg_results, stats
+
+    tag, gi, ti, ci, pi, ei = get_annotation_layout(vcf)
+    if tag is None:
+        stats["warnings"].append("No ANN/CSQ detected; c./p. may be missing.")
+
+    gene_interval_lookup = None
+    if annotator and hasattr(annotator, 'gene_intervals') and annotator.gene_intervals:
+        gene_interval_lookup = annotator.gene_intervals.lookup
+
+    try:
+        for rec in vcf:
+            stats["total_records"] += 1
+
+            # 1. non-reference 필터
+            if not is_nonref(rec):
+                continue
+            stats["nonref_count"] += 1
+
+            # 2. 유전자/전사체/HGVS 추출
+            gene, transcript, hgvsc, hgvsp, effect = extract_variant_info(
+                rec, tag, gi, ti, ci, pi, ei,
+                gene_interval_lookup=gene_interval_lookup,
+            )
+            if gene:
+                stats["parsed_gene_count"] += 1
+
+            # 3. 단백질 변경 필터
+            if filter_config.require_protein_altering and not is_protein_altering(effect):
+                continue
+            stats["protein_altering_count"] += 1
+
+            # 4. BED 영역 필터 (backbone)
+            if filter_config.backbone_bed_regions:
+                if not variant_in_bed(rec.chrom, rec.pos, filter_config.backbone_bed_regions):
+                    stats["bed_filtered_count"] += 1
+                    continue
+
+            # 5. HPO 유전자 필터
+            if filter_config.hpo_genes and gene not in filter_config.hpo_genes:
+                stats["gene_filtered_count"] += 1
+                continue
+
+            # 6. 수동 유전자 필터
+            if filter_config.gene_filter_set and gene.upper() not in filter_config.gene_filter_set:
+                stats["gene_filtered_count"] += 1
+                continue
+
+            # 각 ALT allele에 대해 처리
+            alts = list(rec.alts or [])
+            if not alts:
+                continue
+
+            for alt in alts:
+                alt_str = str(alt)
+
+                # 샘플 메트릭스
+                sample_metrics = get_sample_metrics(rec, alt_str)
+
+                # 통합 annotation
+                ann = annotator.annotate(
+                    chrom=rec.chrom, pos=rec.pos, ref=rec.ref, alt=alt_str,
+                    gene=gene, transcript=transcript,
+                    hgvsc=hgvsc, hgvsp=hgvsp, effect=effect,
+                    sample_metrics=sample_metrics,
+                )
+
+                # 7. gnomAD max AF 필터
+                gnomad_af = ann.get("gnomad_af")
+                if filter_config.max_af is not None and gnomad_af is not None:
+                    if gnomad_af > filter_config.max_af:
+                        stats["af_filtered_count"] += 1
+                        continue
+
+                # 8. ClinVar 필터
+                cv_primary = ann.get("clinvar_sig_primary", "")
+                has_clinvar = bool(
+                    ann.get("clinvar_sig") or
+                    ann.get("clinvar_variation_id") or
+                    ann.get("dbsnp_rsid")
+                )
+                cv_conflict = bool(ann.get("clinvar_conflicting", False))
+
+                if filter_config.clinvar_filter:
+                    if not apply_clinvar_filter(
+                        cv_primary, has_clinvar, cv_conflict,
+                        filter_config.clinvar_filter,
+                        filter_config.exclude_clinvar_conflicts,
+                    ):
+                        stats["clinvar_filtered_count"] += 1
+                        continue
+                elif filter_config.exclude_clinvar_conflicts and cv_conflict:
+                    stats["clinvar_filtered_count"] += 1
+                    continue
+
+                # 9. ACMG 분류
+                acmg = {"final_classification": "VUS", "final_criteria": [], "final_reasoning": ""}
+                if acmg_classifier:
+                    try:
+                        ctx = {
+                            "af": gnomad_af,
+                            "clinvar": cv_primary or ann.get("clinvar_sig", ""),
+                            "effect": effect,
+                            "chrom": rec.chrom,
+                            "pos": rec.pos,
+                            "ref": rec.ref,
+                            "alt": alt_str,
+                        }
+                        result = acmg_classifier.classify(
+                            gene, hgvsc, context=ctx,
+                            lite_mode=True, do_local_lookup=False,
+                        )
+                        acmg = {
+                            "final_classification": getattr(result, "acmg_classification", "VUS"),
+                            "final_criteria": getattr(result, "acmg_evidence", []),
+                            "final_reasoning": "",
+                        }
+                    except Exception as e:
+                        logger.warning(f"ACMG classifier error for {gene}: {e}")
+
+                # 10. ACMG 필터
+                if filter_config.acmg_filter:
+                    acmg_class = acmg.get("final_classification", "VUS")
+                    if acmg_class not in filter_config.acmg_filter:
+                        stats["acmg_filtered_count"] += 1
+                        continue
+
+                # Disease BED 정보 추가
+                if filter_config.disease_bed_regions:
+                    bed_gene = get_bed_gene_at_position(
+                        rec.chrom, rec.pos, filter_config.disease_bed_regions
+                    )
+                    if bed_gene:
+                        ann["disease_bed_gene"] = bed_gene
+
+                annotated_variants.append(ann)
+                acmg_results.append(acmg)
+
+    except OSError as e:
+        stats["warnings"].append(f"Error parsing VCF: {e}")
+
+    vcf.close()
+
+    stats["final_count"] = len(annotated_variants)
+    logger.info(
+        f"VCF parsing complete: {stats['total_records']} records → "
+        f"{stats['final_count']} variants after filtering"
+    )
+
+    return annotated_variants, acmg_results, stats

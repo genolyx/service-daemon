@@ -9,13 +9,14 @@ ServicePlugin 인터페이스 구현체.
     3. check_completion   : 파이프라인 완료 확인 (VCF 존재 여부)
     4. process_results    : VCF → BED 필터 → Annotation → ACMG → result.json 생성
     5. get_output_files   : Portal에 업로드할 파일 목록 반환
-    6. generate_report    : 리뷰어 확정 후 report.json + PDF 생성
+    6. generate_report    : 리뷰어 확정 후 report.json + 다국어 PDF 생성
 """
 
 import os
 import re
 import glob
 import asyncio
+import json
 import logging
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -295,25 +296,24 @@ class CarrierScreeningPlugin(ServicePlugin):
         """
         VCF → BED 필터 → Annotation → ACMG 분류 → result.json 생성
 
+        통합 parse_vcf_variants 파이프라인을 사용하여 처리합니다.
+
         전체 annotation 파이프라인:
             1. VCF FORMAT 문제 필드 정리
             2. snpEff annotation (선택적)
-            3. BED 기반 변이 필터링
-            4. pysam으로 변이 파싱
-            5. ClinVar, gnomAD, ClinGen, MANE annotation
-            6. ACMG 분류
-            7. QC 메트릭스 추출
-            8. result.json 생성
+            3. VariantAnnotator 초기화 (모든 DB 소스 포함)
+            4. VariantFilterConfig 구성 (BED, HPO, AF, ClinVar 등)
+            5. 통합 parse_vcf_variants 실행
+            6. QC 메트릭스 추출
+            7. result.json + variants.tsv 생성
         """
         try:
             from .vcf_parser import (
                 clean_vcf_remove_formats, run_snpeff,
-                get_annotation_layout, extract_variant_info,
-                get_sample_metrics, is_protein_altering, is_nonref,
-                load_bed_regions, variant_in_bed,
+                load_bed_regions, parse_vcf_variants,
+                VariantFilterConfig,
             )
             from .annotator import VariantAnnotator
-            from .acmg import classify_variant
             from .review import extract_qc_summary, generate_result_json, generate_variants_tsv
 
             dirs = self._get_dirs(job)
@@ -327,9 +327,12 @@ class CarrierScreeningPlugin(ServicePlugin):
                 logger.error(f"Main VCF not found: {main_vcf}")
                 return False
 
+            logger.info(f"[process_results] Starting annotation for {job.sample_name}")
+            logger.info(f"  Main VCF: {main_vcf}")
+
             # ── 2. FORMAT 문제 필드 정리 ──
             cleaned_vcf = os.path.join(analysis_dir, f"{job.sample_name}.cleaned.vcf")
-            logger.info(f"Cleaning VCF FORMAT fields: {main_vcf} → {cleaned_vcf}")
+            logger.info(f"  Cleaning VCF FORMAT fields: {main_vcf} → {cleaned_vcf}")
             clean_vcf_remove_formats(main_vcf, cleaned_vcf)
 
             # ── 3. snpEff annotation (선택적) ──
@@ -337,87 +340,124 @@ class CarrierScreeningPlugin(ServicePlugin):
             if settings.snpeff_jar and os.path.exists(settings.snpeff_jar):
                 snpeff_vcf = os.path.join(analysis_dir, f"{job.sample_name}.snpeff.vcf")
                 try:
+                    logger.info(f"  Running snpEff annotation...")
                     run_snpeff(cleaned_vcf, snpeff_vcf, settings.snpeff_jar, settings.snpeff_db)
                     annotated_vcf = snpeff_vcf
+                    logger.info(f"  snpEff annotation complete: {snpeff_vcf}")
                 except Exception as e:
-                    logger.warning(f"snpEff failed, continuing without: {e}")
+                    logger.warning(f"  snpEff failed, continuing without: {e}")
+            else:
+                logger.info("  snpEff not configured, skipping")
 
-            # ── 4. BED 기반 필터링 ──
+            # ── 4. BED 기반 필터링 준비 ──
             pipeline_dir = settings.carrier_screening_pipeline_dir
             bed_dir = os.path.join(pipeline_dir, "data", "bed")
 
             # backbone BED (전체 타겟 영역)
             backbone_bed_path = job.params.get("backbone_bed") or self._find_default_bed(bed_dir, "backbone")
             backbone_regions = load_bed_regions(backbone_bed_path) if backbone_bed_path else {}
+            logger.info(f"  Backbone BED: {backbone_bed_path or 'not configured'}")
 
             # disease BED (질환 관련 유전자)
             disease_bed_path = job.params.get("disease_bed") or self._find_default_bed(bed_dir, "disease")
             disease_regions = load_bed_regions(disease_bed_path) if disease_bed_path else {}
+            logger.info(f"  Disease BED: {disease_bed_path or 'not configured'}")
 
-            # ── 5. Annotator 초기화 ──
-            gnomad_dir = job.params.get("gnomad_dir") or os.path.dirname(settings.gnomad_vcf or "")
-            clingen_tsv = job.params.get("clingen_tsv", "")
-            mane_gff = job.params.get("mane_gff", "")
-            gene_bed = job.params.get("gene_bed", "")
+            # ── 5. Annotator 초기화 (config 설정 활용) ──
+            gnomad_dir = job.params.get("gnomad_dir") or (
+                os.path.dirname(settings.gnomad_vcf) if settings.gnomad_vcf else
+                (settings.gnomad_dir or "")
+            )
 
             annotator = VariantAnnotator(
                 clinvar_vcf=settings.clinvar_vcf or "",
                 gnomad_dir=gnomad_dir,
-                clingen_tsv=clingen_tsv,
-                mane_gff=mane_gff,
-                gene_bed=gene_bed,
+                gnomad_genomes_glob=settings.gnomad_genomes_glob,
+                gnomad_exomes_glob=settings.gnomad_exomes_glob,
+                clingen_tsv=job.params.get("clingen_tsv") or settings.clingen_tsv or "",
+                mane_gff=job.params.get("mane_gff") or settings.mane_gff or "",
+                gene_bed=job.params.get("gene_bed") or settings.gene_bed or "",
+                hpo_gene_file=settings.hpo_gene_file or "",
+                curated_db=settings.curated_variants_db or "",
+                hgmd_vcf=settings.hgmd_vcf or "",
+                disease_gene_json=settings.disease_gene_json or "",
             )
 
-            # ── 6. VCF 파싱 및 Annotation ──
-            import pysam
-            vcf = pysam.VariantFile(annotated_vcf)
-            tag, gi, ti, ci, pi, ei = get_annotation_layout(vcf)
+            # ── 6. 필터 설정 구성 ──
+            # HPO 유전자 필터 (job.params에서 HPO 텍스트가 제공된 경우)
+            hpo_genes = set()
+            hpo_text = job.params.get("hpo_terms", "")
+            if hpo_text and annotator.hpo:
+                from .annotator import HPOAnnotator
+                hpo_ids = HPOAnnotator.normalize_hpo_terms(hpo_text)
+                if hpo_ids:
+                    hpo_genes = annotator.hpo.get_genes_for_hpo_list(hpo_ids)
+                    logger.info(f"  HPO filter: {len(hpo_ids)} terms → {len(hpo_genes)} genes")
 
-            annotated_variants = []
-            acmg_results = []
+            # 유전자 필터 (job.params에서 유전자 목록이 제공된 경우)
+            gene_filter_set = set()
+            gene_filter_text = job.params.get("gene_filter", "")
+            if gene_filter_text:
+                gene_filter_set = {g.strip().upper() for g in gene_filter_text.split(",") if g.strip()}
+                logger.info(f"  Gene filter: {len(gene_filter_set)} genes")
 
-            for rec in vcf:
-                # non-reference 필터
-                if not is_nonref(rec):
-                    continue
+            # max AF 필터
+            max_af = job.params.get("max_af")
+            if max_af is not None:
+                max_af = float(max_af)
+                logger.info(f"  Max AF filter: {max_af}")
 
-                # BED 영역 필터 (backbone)
-                if backbone_regions and not variant_in_bed(rec.chrom, rec.pos, backbone_regions):
-                    continue
+            # ClinVar 필터
+            clinvar_filter_text = job.params.get("clinvar_filter", "")
+            clinvar_filter = set()
+            if clinvar_filter_text:
+                clinvar_filter = {f.strip() for f in clinvar_filter_text.split(",") if f.strip()}
+                logger.info(f"  ClinVar filter: {clinvar_filter}")
 
-                for alt in (rec.alts or []):
-                    alt = str(alt)
+            filter_config = VariantFilterConfig(
+                hpo_genes=hpo_genes,
+                gene_filter_set=gene_filter_set,
+                max_af=max_af,
+                clinvar_filter=clinvar_filter,
+                exclude_clinvar_conflicts=bool(job.params.get("exclude_clinvar_conflicts", False)),
+                require_protein_altering=bool(job.params.get("require_protein_altering", True)),
+                backbone_bed_regions=backbone_regions,
+                disease_bed_regions=disease_regions,
+            )
 
-                    # 유전자/전사체/HGVS 추출
-                    gene, transcript, hgvsc, hgvsp, effect = extract_variant_info(
-                        rec, tag, gi, ti, ci, pi, ei,
-                        gene_interval_lookup=annotator.gene_intervals.lookup if annotator.gene_intervals else None,
-                    )
+            # ── 7. 통합 VCF 파싱 파이프라인 실행 ──
+            logger.info(f"  Starting integrated VCF parsing pipeline...")
+            annotated_variants, acmg_results, parse_stats = parse_vcf_variants(
+                vcf_path=annotated_vcf,
+                annotator=annotator,
+                filter_config=filter_config,
+                acmg_classifier=None,  # rule-based ACMG는 parse_vcf_variants 내부에서 처리
+            )
 
-                    # 샘플 메트릭스
-                    metrics = get_sample_metrics(rec, alt)
+            logger.info(
+                f"  VCF parsing complete: "
+                f"{parse_stats.get('total_records', 0)} records → "
+                f"{parse_stats.get('final_count', 0)} variants after filtering"
+            )
 
-                    # 통합 annotation
-                    ann = annotator.annotate(
-                        chrom=rec.chrom, pos=rec.pos, ref=rec.ref, alt=alt,
-                        gene=gene, transcript=transcript,
-                        hgvsc=hgvsc, hgvsp=hgvsp, effect=effect,
-                        sample_metrics=metrics,
-                    )
+            if parse_stats.get("warnings"):
+                for w in parse_stats["warnings"]:
+                    logger.warning(f"  VCF parse warning: {w}")
 
-                    # ACMG 분류
+            # ── 8. ACMG 분류 (parse_vcf_variants에서 처리되지 않은 경우) ──
+            if not acmg_results or all(r.get("final_classification") == "VUS" for r in acmg_results):
+                from .acmg import classify_variant
+                logger.info(f"  Running ACMG classification for {len(annotated_variants)} variants...")
+                acmg_results = []
+                for ann in annotated_variants:
                     acmg = await classify_variant(ann, use_ai=False)
-
-                    annotated_variants.append(ann)
                     acmg_results.append(acmg)
 
-            vcf.close()
-            logger.info(f"Annotated {len(annotated_variants)} variants")
-
-            # ── 7. QC 메트릭스 추출 ──
+            # ── 9. QC 메트릭스 추출 ──
+            logger.info(f"  Extracting QC metrics...")
             qc_summary = extract_qc_summary(analysis_dir, job.sample_name)
 
-            # ── 8. Disease BED 정보 ──
+            # ── 10. Disease BED 정보 ──
             disease_bed_info = {}
             if disease_bed_path:
                 total_genes = set()
@@ -432,7 +472,19 @@ class CarrierScreeningPlugin(ServicePlugin):
                     "genes": sorted(total_genes),
                 }
 
-            # ── 9. result.json 생성 ──
+            # ── 11. 필터 요약 ──
+            filter_summary = {
+                "backbone_bed": os.path.basename(backbone_bed_path) if backbone_bed_path else None,
+                "disease_bed": os.path.basename(disease_bed_path) if disease_bed_path else None,
+                "hpo_terms_count": len(hpo_genes) if hpo_genes else 0,
+                "gene_filter_count": len(gene_filter_set) if gene_filter_set else 0,
+                "max_af": max_af,
+                "clinvar_filter": list(clinvar_filter) if clinvar_filter else None,
+                "require_protein_altering": filter_config.require_protein_altering,
+            }
+
+            # ── 12. result.json 생성 ──
+            logger.info(f"  Generating result.json...")
             result_json_path = generate_result_json(
                 annotated_variants=annotated_variants,
                 acmg_results=acmg_results,
@@ -440,22 +492,27 @@ class CarrierScreeningPlugin(ServicePlugin):
                 sample_name=job.sample_name,
                 order_id=job.order_id,
                 disease_bed_info=disease_bed_info,
+                filter_summary=filter_summary,
+                parse_stats=parse_stats,
                 output_dir=output_dir,
             )
 
-            # ── 10. variants.tsv 생성 ──
-            # result.json의 variants를 TSV로도 내보내기
-            import json
+            # ── 13. variants.tsv 생성 ──
+            logger.info(f"  Generating variants.tsv...")
             with open(result_json_path, "r") as f:
                 result_data = json.load(f)
             generate_variants_tsv(result_data.get("variants", []), output_dir)
 
-            # ── 11. QC summary JSON 저장 ──
+            # ── 14. QC summary JSON 저장 ──
             qc_path = os.path.join(output_dir, "qc_summary.json")
             with open(qc_path, "w", encoding="utf-8") as f:
                 json.dump(qc_summary, f, ensure_ascii=False, indent=2, default=str)
 
-            logger.info(f"Result processing complete: {output_dir}")
+            logger.info(
+                f"[process_results] Complete: {output_dir} "
+                f"({len(annotated_variants)} variants, "
+                f"{len(acmg_results)} ACMG classifications)"
+            )
             return True
 
         except ImportError as e:
@@ -524,10 +581,26 @@ class CarrierScreeningPlugin(ServicePlugin):
 
     # ─── Step 6: 리포트 생성 (리뷰어 확정 후) ──────────────
 
-    async def generate_report(self, job: Job, confirmed_variants: List[Dict], reviewer_info: Dict) -> bool:
+    async def generate_report(
+        self,
+        job: Job,
+        confirmed_variants: List[Dict],
+        reviewer_info: Dict,
+        patient_info: Optional[Dict] = None,
+        partner_info: Optional[Dict] = None,
+        languages: Optional[List[str]] = None,
+    ) -> bool:
         """
         리뷰어 확정 후 최종 리포트를 생성합니다.
         service-daemon의 /order/{order_id}/report 엔드포인트에서 호출됩니다.
+
+        Args:
+            job: 작업 정보
+            confirmed_variants: 리뷰어가 확정한 변이 목록
+            reviewer_info: 리뷰어 정보
+            patient_info: 환자 정보 (선택)
+            partner_info: 파트너 정보 (couple 검사 시, 선택)
+            languages: 리포트 생성 언어 목록 (기본: config의 report_language_list)
         """
         try:
             from .report import generate_report_json, generate_report_pdf
@@ -540,6 +613,25 @@ class CarrierScreeningPlugin(ServicePlugin):
             # QC 요약
             qc_summary = extract_qc_summary(analysis_dir, job.sample_name)
 
+            # 리포트 언어 결정
+            if languages is None:
+                languages = settings.report_language_list
+
+            # 템플릿 디렉토리 결정
+            template_dir = settings.report_template_dir
+            if not template_dir:
+                # 파이프라인 내 templates 디렉토리 확인
+                pipeline_template_dir = os.path.join(
+                    settings.carrier_screening_pipeline_dir, "data", "templates"
+                )
+                if os.path.isdir(pipeline_template_dir):
+                    template_dir = pipeline_template_dir
+
+            logger.info(
+                f"[generate_report] Generating report for {job.order_id} "
+                f"(languages={languages}, template_dir={template_dir})"
+            )
+
             # report.json 생성
             report_json_path = generate_report_json(
                 order_id=job.order_id,
@@ -548,12 +640,26 @@ class CarrierScreeningPlugin(ServicePlugin):
                 reviewer_info=reviewer_info,
                 qc_summary=qc_summary,
                 output_dir=output_dir,
+                patient_info=patient_info,
+                partner_info=partner_info,
+            )
+            logger.info(f"  Generated report.json: {report_json_path}")
+
+            # 다국어 PDF 리포트 생성
+            pdf_paths = generate_report_pdf(
+                report_json_path=report_json_path,
+                output_dir=output_dir,
+                template_dir=template_dir,
+                languages=languages,
             )
 
-            # PDF 리포트 생성
-            pdf_path = generate_report_pdf(report_json_path, output_dir)
+            for pdf_path in pdf_paths:
+                logger.info(f"  Generated PDF: {pdf_path}")
 
-            logger.info(f"Report generation complete: {output_dir}")
+            logger.info(
+                f"[generate_report] Complete: {output_dir} "
+                f"({len(pdf_paths)} PDF files generated)"
+            )
             return True
 
         except Exception as e:

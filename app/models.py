@@ -161,6 +161,18 @@ class ReportGenerateRequest(BaseModel):
     reviewer_info: Dict[str, Any] = Field(
         ..., description="리뷰어 정보 (name, id, institution 등)"
     )
+    patient_info: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="환자 정보 (name, dob, gender 등)"
+    )
+    partner_info: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="파트너 정보 (couple 검사 시, name, dob, gender 등)"
+    )
+    languages: Optional[List[str]] = Field(
+        default=None,
+        description="리포트 생성 언어 목록 (예: ['EN', 'CN', 'KO']). None이면 config 기본값 사용"
+    )
 
 
 class ReportGenerateResponse(BaseModel):

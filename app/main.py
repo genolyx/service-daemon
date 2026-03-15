@@ -7,6 +7,7 @@ Service Daemon - FastAPI Application
 
 import os
 import asyncio
+import glob
 import logging
 from datetime import datetime
 from contextlib import asynccontextmanager
@@ -217,7 +218,7 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
     리뷰어 확정 후 최종 리포트를 생성합니다.
 
     Portal에서 리뷰어가 변이를 확정하고 코멘트를 작성한 후,
-    이 엔드포인트를 호출하여 report.json + PDF를 생성합니다.
+    이 엔드포인트를 호출하여 report.json + 다국어 PDF를 생성합니다.
     생성된 리포트는 자동으로 Platform에 업로드됩니다.
     """
     queue_manager = get_queue_manager()
@@ -240,11 +241,14 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
             detail=f"Service {job.service_code} does not support report generation"
         )
 
-    # 리포트 생성
+    # 리포트 생성 (patient_info, partner_info, languages 전달)
     success = await plugin.generate_report(
         job=job,
         confirmed_variants=request.confirmed_variants,
         reviewer_info=request.reviewer_info,
+        patient_info=request.patient_info,
+        partner_info=request.partner_info,
+        languages=request.languages,
     )
 
     if not success:
@@ -257,6 +261,7 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
     output_dir = job.output_dir
     report_files = []
 
+    # report.json
     report_json = os.path.join(output_dir, "report.json")
     if os.path.exists(report_json):
         report_files.append(OutputFile(
@@ -266,17 +271,39 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
             content_type="application/json",
         ))
 
-    report_pdf = os.path.join(output_dir, "report.pdf")
-    if os.path.exists(report_pdf):
+    # 다국어 PDF 파일 (Report_*.pdf 패턴)
+    pdf_files = glob.glob(os.path.join(output_dir, "Report_*.pdf"))
+    for pdf_path in pdf_files:
         report_files.append(OutputFile(
-            file_path=report_pdf,
+            file_path=pdf_path,
+            file_type="report_pdf",
+            file_name=os.path.basename(pdf_path),
+            content_type="application/pdf",
+        ))
+
+    # 단일 report.pdf (내장 템플릿 사용 시)
+    single_pdf = os.path.join(output_dir, "report.pdf")
+    if os.path.exists(single_pdf) and single_pdf not in [f.file_path for f in report_files]:
+        report_files.append(OutputFile(
+            file_path=single_pdf,
             file_type="report_pdf",
             file_name="report.pdf",
             content_type="application/pdf",
         ))
 
+    # HTML 리포트 파일
+    html_files = glob.glob(os.path.join(output_dir, "Report_*.html"))
+    for html_path in html_files:
+        report_files.append(OutputFile(
+            file_path=html_path,
+            file_type="report_html",
+            file_name=os.path.basename(html_path),
+            content_type="text/html",
+        ))
+
     # Platform에 업로드
     platform_client = get_platform_client()
+    uploaded_count = 0
     if report_files:
         upload_results = await platform_client.upload_all_outputs(
             order_id, job.service_code, report_files
@@ -285,8 +312,11 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
             1 for r in upload_results.values()
             if r.status.value == "SUCCESS"
         )
-    else:
-        uploaded_count = 0
+
+    logger.info(
+        f"Report generation complete for {order_id}: "
+        f"{len(report_files)} files generated, {uploaded_count} uploaded"
+    )
 
     return ReportGenerateResponse(
         status="success",
@@ -294,7 +324,7 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
         service_code=job.service_code,
         report_files=[os.path.basename(f.file_path) for f in report_files],
         uploaded_count=uploaded_count,
-        message=f"Report generated and {uploaded_count} file(s) uploaded",
+        message=f"Report generated: {len(report_files)} file(s), {uploaded_count} uploaded",
     )
 
 

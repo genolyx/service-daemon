@@ -13,7 +13,8 @@ print(f"  [OK] config (enabled_services: {settings.enabled_service_list})")
 
 from app.models import (
     Job, OrderStatus, ServiceCode, OrderSubmitRequest, OrderSubmitResponse,
-    OrderStatusResponse, NotificationResult, OutputFile, QueueSummary
+    OrderStatusResponse, NotificationResult, OutputFile, QueueSummary,
+    ReportGenerateRequest, ReportGenerateResponse,
 )
 print(f"  [OK] models (OrderStatus values: {[s.value for s in OrderStatus]})")
 
@@ -50,11 +51,38 @@ for code in codes:
     print(f"       Progress stages: {plugin.get_progress_stages()}")
 
 # Test carrier_screening specific components
-from app.services.carrier_screening import (
-    VCFAnnotator, ReviewPageGenerator, parse_vcf_variants,
-    CarrierScreeningPlugin
+from app.services.carrier_screening import CarrierScreeningPlugin
+print(f"  [OK] carrier_screening.CarrierScreeningPlugin")
+
+from app.services.carrier_screening.annotator import (
+    ClinVarAnnotator, GnomADAnnotator, ClinGenAnnotator,
+    MANEAnnotator, GeneIntervalAnnotator,
+    HPOAnnotator, CuratedVariantDB, HGMDAnnotator, DiseaseGeneMapper,
+    VariantAnnotator,
 )
-print(f"  [OK] carrier_screening components")
+print(f"  [OK] carrier_screening.annotator (all classes)")
+
+from app.services.carrier_screening.vcf_parser import (
+    clean_vcf_remove_formats, get_annotation_layout,
+    extract_variant_info, get_sample_metrics,
+    load_bed_regions, variant_in_bed,
+    VariantFilterConfig, apply_clinvar_filter,
+    parse_vcf_variants,
+)
+print(f"  [OK] carrier_screening.vcf_parser (all functions)")
+
+from app.services.carrier_screening.review import (
+    extract_qc_summary, generate_result_json, generate_variants_tsv,
+)
+print(f"  [OK] carrier_screening.review (all functions)")
+
+from app.services.carrier_screening.report import (
+    generate_report_json, generate_report_pdf,
+)
+print(f"  [OK] carrier_screening.report (all functions)")
+
+from app.services.carrier_screening.acmg import classify_variant
+print(f"  [OK] carrier_screening.acmg")
 
 # Test Job creation
 job = Job(
@@ -68,6 +96,16 @@ job = Job(
     log_dir="/data/log/carrier_screening/260101/SAMPLE_001"
 )
 print(f"  [OK] Job created: {job.order_id} ({job.service_code})")
+
+# Test ReportGenerateRequest
+report_req = ReportGenerateRequest(
+    confirmed_variants=[{"variant_id": "VAR_0001", "gene": "CFTR"}],
+    reviewer_info={"name": "Dr. Test", "id": "reviewer_001"},
+    patient_info={"name": "John Doe", "dob": "1990-01-01"},
+    partner_info={"name": "Jane Doe", "dob": "1991-02-02"},
+    languages=["EN", "CN"],
+)
+print(f"  [OK] ReportGenerateRequest created: {len(report_req.confirmed_variants)} variants, languages={report_req.languages}")
 
 # Test QueueManager
 import asyncio

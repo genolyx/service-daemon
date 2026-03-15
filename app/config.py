@@ -98,9 +98,98 @@ class Settings(BaseSettings):
     # ─── Annotation Resources ──────────────────────────────
     clinvar_vcf: Optional[str] = Field(default=None, description="ClinVar VCF path")
     gnomad_vcf: Optional[str] = Field(default=None, description="gnomAD VCF path")
+    gnomad_dir: Optional[str] = Field(default=None, description="gnomAD VCF directory (per-chromosome)")
+    gnomad_genomes_glob: str = Field(
+        default="gnomad.genomes.v*.sites*.bgz",
+        description="Glob pattern for gnomAD genomes VCF files"
+    )
+    gnomad_exomes_glob: str = Field(
+        default="gnomad.exomes.v*.sites*.bgz",
+        description="Glob pattern for gnomAD exomes VCF files"
+    )
     dbsnp_vcf: Optional[str] = Field(default=None, description="dbSNP VCF path")
     snpeff_jar: Optional[str] = Field(default=None, description="snpEff JAR path")
     snpeff_db: str = Field(default="GRCh38.86", description="snpEff database name")
+
+    # ─── ClinGen ───────────────────────────────────────────
+    clingen_tsv: Optional[str] = Field(
+        default=None,
+        description="ClinGen gene curation TSV path"
+    )
+
+    # ─── MANE RefSeq ───────────────────────────────────────
+    mane_gff: Optional[str] = Field(
+        default=None,
+        description="MANE RefSeq GFF file path"
+    )
+
+    # ─── Gene Coordinates ──────────────────────────────────
+    gene_bed: Optional[str] = Field(
+        default=None,
+        description="Gene coordinates BED file (genes_hg38.bed)"
+    )
+
+    # ─── HPO (Human Phenotype Ontology) ────────────────────
+    hpo_gene_file: Optional[str] = Field(
+        default=None,
+        description="HPO genes_to_phenotype.txt file path"
+    )
+
+    # ─── Curated Variant Database ──────────────────────────
+    curated_variants_db: Optional[str] = Field(
+        default=None,
+        description="SQLite database path for curated variant classifications"
+    )
+
+    # ─── Disease Database ──────────────────────────────────
+    disease_db_dir: Optional[str] = Field(
+        default=None,
+        description="Directory containing disease-gene mapping databases"
+    )
+    disease_gene_json: Optional[str] = Field(
+        default=None,
+        description="JSON file mapping diseases to genes and inheritance patterns"
+    )
+
+    # ─── HGMD (Human Gene Mutation Database) ───────────────
+    hgmd_vcf: Optional[str] = Field(
+        default=None,
+        description="HGMD Professional VCF path (licensed)"
+    )
+
+    # ─── Known Gene Lists ──────────────────────────────────
+    known_carrier_genes: Optional[str] = Field(
+        default=None,
+        description="File containing known carrier screening gene list"
+    )
+    acmg_sf_genes: Optional[str] = Field(
+        default=None,
+        description="ACMG Secondary Findings gene list (v3.2+)"
+    )
+
+    # ─── Report Templates ──────────────────────────────────
+    report_template_dir: Optional[str] = Field(
+        default=None,
+        description="Directory containing Jinja2 HTML report templates"
+    )
+    report_languages: str = Field(
+        default="EN,CN",
+        description="Comma-separated list of report languages"
+    )
+    report_logo_path: Optional[str] = Field(
+        default=None,
+        description="Path to company logo for reports"
+    )
+
+    # ─── AI Classification ─────────────────────────────────
+    acmg_ai_enabled: bool = Field(
+        default=False,
+        description="Enable AI-assisted ACMG classification"
+    )
+    acmg_ai_model: str = Field(
+        default="gpt-4.1-mini",
+        description="AI model for ACMG classification"
+    )
 
     # ─── Enabled Services ──────────────────────────────────
     enabled_services: str = Field(
@@ -112,6 +201,19 @@ class Settings(BaseSettings):
     def enabled_service_list(self) -> List[str]:
         """활성화된 서비스 코드 목록"""
         return [s.strip() for s in self.enabled_services.split(",") if s.strip()]
+
+    @property
+    def report_language_list(self) -> List[str]:
+        """리포트 언어 목록"""
+        return [s.strip() for s in self.report_languages.split(",") if s.strip()]
+
+    def get_carrier_screening_data_dir(self) -> str:
+        """Carrier Screening 파이프라인의 data 디렉토리 경로"""
+        return os.path.join(self.carrier_screening_pipeline_dir, "data")
+
+    def get_carrier_screening_bed_dir(self) -> str:
+        """Carrier Screening BED 파일 디렉토리 경로"""
+        return os.path.join(self.carrier_screening_pipeline_dir, "data", "bed")
 
     class Config:
         env_file = ".env"

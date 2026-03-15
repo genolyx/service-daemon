@@ -1,7 +1,8 @@
 """
 Variant Annotator Module
 
-VCF 변이에 대해 ClinVar, gnomAD, ClinGen, MANE, dbSNP 등의 annotation을 수행합니다.
+VCF 변이에 대해 ClinVar, gnomAD, ClinGen, MANE, dbSNP, HPO, HGMD,
+Curated Variant DB 등의 annotation을 수행합니다.
 phenotype_portal/main.py의 annotation 로직을 모듈화한 것입니다.
 
 주요 기능:
@@ -9,6 +10,10 @@ phenotype_portal/main.py의 annotation 로직을 모듈화한 것입니다.
     - gnomAD 로컬 VCF 조회 (exomes + genomes AF)
     - ClinGen 유전자 용량 민감도 조회
     - MANE RefSeq 표준 전사체 매핑
+    - Gene Interval BED 기반 위치 → 유전자 매핑
+    - HPO (Human Phenotype Ontology) 유전자 매핑
+    - Curated Variant DB (SQLite) 조회
+    - HGMD Professional VCF 조회 (라이선스 필요)
     - dbSNP URL 생성
 """
 
@@ -16,9 +21,10 @@ import os
 import re
 import csv
 import gzip
+import sqlite3
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Dict, Any, Optional, Tuple, List, Set
 from collections import Counter, defaultdict
 
 logger = logging.getLogger(__name__)
@@ -566,7 +572,7 @@ class GeneIntervalAnnotator:
             logger.warning("intervaltree not installed, positional gene lookup disabled")
             return
 
-        trees: Dict[str, IntervalTree] = defaultdict(IntervalTree)
+        trees: Dict[str, Any] = defaultdict(IntervalTree)
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
                 if not line.strip() or line.startswith("#"):
@@ -589,6 +595,306 @@ class GeneIntervalAnnotator:
         if hits:
             return next(iter(hits)).data
         return None
+
+
+# ══════════════════════════════════════════════════════════════
+# HPO (Human Phenotype Ontology) Gene Map
+# ══════════════════════════════════════════════════════════════
+
+class HPOAnnotator:
+    """
+    HPO genes_to_phenotype.txt 파일을 로드하여
+    HPO ID → 유전자 집합 매핑 및 유전자 → HPO 표현형 매핑을 제공합니다.
+    """
+
+    def __init__(self, hpo_gene_file: str):
+        # HPO ID → set of gene symbols
+        self._hpo_to_genes: Dict[str, Set[str]] = {}
+        # HPO ID → HPO name
+        self._hpo_names: Dict[str, str] = {}
+        # Gene → list of (hpo_id, hpo_name)
+        self._gene_to_hpo: Dict[str, List[Tuple[str, str]]] = {}
+        # All gene symbols
+        self.all_genes: Set[str] = set()
+
+        if hpo_gene_file and os.path.exists(hpo_gene_file):
+            self._load(hpo_gene_file)
+        else:
+            logger.warning(f"HPO gene file not found: {hpo_gene_file}")
+
+    def _load(self, path: str):
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if not line.strip() or line.startswith("#"):
+                    continue
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) < 4:
+                    continue
+
+                gene = parts[1].strip()
+                hpo_id = parts[2].strip()
+                hpo_name = parts[3].strip()
+
+                self._hpo_to_genes.setdefault(hpo_id, set()).add(gene)
+                self._hpo_names.setdefault(hpo_id, hpo_name)
+                self._gene_to_hpo.setdefault(gene, []).append((hpo_id, hpo_name))
+                self.all_genes.add(gene)
+
+        logger.info(
+            f"HPO loaded: {len(self._hpo_to_genes)} HPO terms, "
+            f"{len(self.all_genes)} genes"
+        )
+
+    def get_genes_for_hpo(self, hpo_id: str) -> Set[str]:
+        """HPO ID에 해당하는 유전자 집합을 반환합니다."""
+        return self._hpo_to_genes.get(hpo_id, set())
+
+    def get_genes_for_hpo_list(self, hpo_ids: List[str]) -> Set[str]:
+        """여러 HPO ID에 해당하는 유전자 집합의 합집합을 반환합니다."""
+        genes: Set[str] = set()
+        for hpo_id in hpo_ids:
+            genes |= self._hpo_to_genes.get(hpo_id, set())
+        return genes
+
+    def get_hpo_name(self, hpo_id: str) -> str:
+        """HPO ID의 이름을 반환합니다."""
+        return self._hpo_names.get(hpo_id, "")
+
+    def get_phenotypes_for_gene(self, gene: str) -> List[Dict[str, str]]:
+        """유전자에 연관된 HPO 표현형 목록을 반환합니다."""
+        entries = self._gene_to_hpo.get(gene, [])
+        return [{"hpo_id": hpo_id, "hpo_name": name} for hpo_id, name in entries]
+
+    @staticmethod
+    def normalize_hpo_terms(raw: str) -> List[str]:
+        """쉼표/줄바꿈으로 구분된 HPO 텍스트에서 HP:XXXXXXX ID를 추출합니다."""
+        if not raw:
+            return []
+        tokens = [t.strip() for t in raw.replace("\n", ",").split(",") if t.strip()]
+        ids: List[str] = []
+        pat = re.compile(r"(HP:\d{7})")
+        for t in tokens:
+            m = pat.search(t)
+            if m:
+                ids.append(m.group(1))
+            elif t.startswith("HP:"):
+                ids.append(t.split()[0])
+        return ids
+
+
+# ══════════════════════════════════════════════════════════════
+# Curated Variant Database (SQLite)
+# ══════════════════════════════════════════════════════════════
+
+class CuratedVariantDB:
+    """
+    내부 큐레이션된 변이 분류 데이터베이스 (SQLite).
+    phenotype_portal의 curated_variants 테이블과 동일한 스키마를 사용합니다.
+    """
+
+    def __init__(self, db_path: str):
+        self._db_path = db_path
+        self._available = False
+
+        if db_path and os.path.exists(db_path):
+            self._available = True
+            self._init_db()
+            logger.info(f"Curated variant DB: {db_path}")
+        else:
+            logger.warning(f"Curated variant DB not found: {db_path}")
+
+    def _init_db(self):
+        """테이블이 없으면 생성합니다."""
+        try:
+            conn = sqlite3.connect(self._db_path)
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS curated_variants (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    gene TEXT NOT NULL,
+                    hgvsc TEXT,
+                    hgvsp TEXT,
+                    classification TEXT NOT NULL,
+                    source TEXT,
+                    notes TEXT
+                )
+            """)
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to initialize curated variant DB: {e}")
+            self._available = False
+
+    def lookup(self, gene: str, hgvsc: str = "", hgvsp: str = "") -> Optional[Dict[str, str]]:
+        """큐레이션된 변이 분류를 조회합니다."""
+        if not self._available or not gene:
+            return None
+
+        try:
+            conn = sqlite3.connect(self._db_path)
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT classification, source, notes
+                FROM curated_variants
+                WHERE gene = ?
+                  AND (
+                      (hgvsc IS NOT NULL AND hgvsc <> '' AND hgvsc = ?)
+                      OR
+                      (hgvsp IS NOT NULL AND hgvsp <> '' AND hgvsp = ?)
+                  )
+                LIMIT 1
+            """, (gene, hgvsc or "", hgvsp or ""))
+            row = cur.fetchone()
+            conn.close()
+
+            if row:
+                return {
+                    "classification": row["classification"],
+                    "source": row["source"],
+                    "notes": row["notes"],
+                }
+            return None
+
+        except Exception as e:
+            logger.error(f"Curated variant lookup error: {e}")
+            return None
+
+
+# ══════════════════════════════════════════════════════════════
+# HGMD Professional VCF Lookup
+# ══════════════════════════════════════════════════════════════
+
+class HGMDAnnotator:
+    """
+    HGMD Professional VCF를 사용한 변이 annotation.
+    라이선스가 필요하며, VCF 파일이 없으면 무시됩니다.
+    """
+
+    def __init__(self, hgmd_vcf_path: str):
+        self._vcf_path = hgmd_vcf_path
+        self._has_chr: Optional[bool] = None
+
+        if hgmd_vcf_path and os.path.exists(hgmd_vcf_path):
+            logger.info(f"HGMD VCF: {hgmd_vcf_path}")
+        else:
+            logger.info(f"HGMD VCF not available (licensed): {hgmd_vcf_path}")
+
+    def _normalize_chrom(self, chrom: str) -> str:
+        if self._has_chr is None:
+            try:
+                import pysam
+                vf = pysam.VariantFile(self._vcf_path)
+                contigs = list(vf.header.contigs)
+                vf.close()
+                self._has_chr = any(str(c).startswith("chr") for c in contigs) if contigs else True
+            except Exception:
+                self._has_chr = True
+
+        chrom = str(chrom)
+        if self._has_chr:
+            return chrom if chrom.startswith("chr") else "chr" + chrom
+        return chrom[3:] if chrom.startswith("chr") else chrom
+
+    def lookup(self, chrom: str, pos: int, ref: str, alt: str) -> Optional[Dict[str, Any]]:
+        """HGMD에서 변이를 조회합니다."""
+        if not self._vcf_path or not os.path.exists(self._vcf_path):
+            return None
+
+        try:
+            import pysam
+            qchrom = self._normalize_chrom(chrom)
+            vf = pysam.VariantFile(self._vcf_path)
+
+            for rec in vf.fetch(qchrom, pos - 1, pos):
+                if rec.pos != pos:
+                    continue
+                if rec.ref != ref:
+                    continue
+                if not rec.alts or alt not in rec.alts:
+                    continue
+
+                info = rec.info
+                result = {
+                    "hgmd_class": self._first_val(info, "CLASS") or self._first_val(info, "HGMDCLASS"),
+                    "hgmd_gene": self._first_val(info, "GENE"),
+                    "hgmd_disease": self._first_val(info, "DISEASE") or self._first_val(info, "PHEN"),
+                    "hgmd_pmid": self._first_val(info, "PMID"),
+                    "hgmd_id": rec.id or "",
+                }
+                vf.close()
+                return result
+
+            vf.close()
+            return None
+
+        except Exception as e:
+            logger.debug(f"HGMD lookup error {chrom}:{pos}: {e}")
+            return None
+
+    @staticmethod
+    def _first_val(info, key: str) -> str:
+        if key not in info:
+            return ""
+        v = info[key]
+        if v is None:
+            return ""
+        if isinstance(v, (list, tuple)):
+            return str(v[0]) if v else ""
+        return str(v)
+
+
+# ══════════════════════════════════════════════════════════════
+# Disease-Gene Mapping
+# ══════════════════════════════════════════════════════════════
+
+class DiseaseGeneMapper:
+    """
+    질환-유전자 매핑 데이터를 로드하여 유전자별 관련 질환 및 유전 패턴을 제공합니다.
+    JSON 파일 형식:
+    {
+        "GENE_SYMBOL": {
+            "diseases": [
+                {"name": "...", "omim_id": "...", "inheritance": "AR|AD|XL"}
+            ]
+        }
+    }
+    """
+
+    def __init__(self, disease_gene_json: str):
+        self._data: Dict[str, Dict[str, Any]] = {}
+
+        if disease_gene_json and os.path.exists(disease_gene_json):
+            self._load(disease_gene_json)
+        else:
+            logger.warning(f"Disease-gene JSON not found: {disease_gene_json}")
+
+    def _load(self, path: str):
+        import json
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                self._data = json.load(f)
+            logger.info(f"Disease-gene mapping loaded: {len(self._data)} genes")
+        except Exception as e:
+            logger.error(f"Failed to load disease-gene mapping: {e}")
+
+    def lookup(self, gene: str) -> Dict[str, Any]:
+        """유전자에 연관된 질환 정보를 반환합니다."""
+        return self._data.get((gene or "").strip().upper(), self._data.get(gene, {}))
+
+    def get_diseases(self, gene: str) -> List[Dict[str, str]]:
+        """유전자에 연관된 질환 목록을 반환합니다."""
+        entry = self.lookup(gene)
+        return entry.get("diseases", [])
+
+    def get_inheritance(self, gene: str) -> str:
+        """유전자의 주요 유전 패턴을 반환합니다."""
+        diseases = self.get_diseases(gene)
+        if not diseases:
+            return ""
+        # 첫 번째 질환의 유전 패턴 반환
+        return diseases[0].get("inheritance", "")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -633,14 +939,22 @@ class VariantAnnotator:
         clingen_tsv: str = "",
         mane_gff: str = "",
         gene_bed: str = "",
+        hpo_gene_file: str = "",
+        curated_db: str = "",
+        hgmd_vcf: str = "",
+        disease_gene_json: str = "",
     ):
         self.clinvar = ClinVarAnnotator(clinvar_vcf)
         self.gnomad = GnomADAnnotator(gnomad_dir, gnomad_genomes_glob, gnomad_exomes_glob)
         self.clingen = ClinGenAnnotator(clingen_tsv)
         self.mane = MANEAnnotator(mane_gff)
         self.gene_intervals = GeneIntervalAnnotator(gene_bed)
+        self.hpo = HPOAnnotator(hpo_gene_file)
+        self.curated_db = CuratedVariantDB(curated_db)
+        self.hgmd = HGMDAnnotator(hgmd_vcf)
+        self.disease_gene = DiseaseGeneMapper(disease_gene_json)
 
-        logger.info("VariantAnnotator initialized")
+        logger.info("VariantAnnotator initialized with all annotation sources")
 
     def annotate(
         self,
@@ -653,7 +967,7 @@ class VariantAnnotator:
         단일 변이에 대해 모든 annotation을 수행합니다.
 
         Returns:
-            phenotype_portal과 동일한 필드 구조의 딕셔너리
+            phenotype_portal과 동일한 필드 구조의 딕셔너리 + 확장 필드
         """
         # MANE
         mane = self.mane.lookup(gene) if gene else {}
@@ -679,10 +993,24 @@ class VariantAnnotator:
         dbsnp_rsid = (clinvar or {}).get("rsid", "")
         dbsnp_url = make_dbsnp_url(dbsnp_rsid)
 
+        # HGMD
+        hgmd = self.hgmd.lookup(chrom, pos, ref, alt)
+
+        # Curated Variant DB
+        curated = self.curated_db.lookup(gene, hgvsc, hgvsp)
+
+        # Disease-Gene Mapping
+        disease_info = self.disease_gene.lookup(gene) if gene else {}
+        diseases = disease_info.get("diseases", [])
+        inheritance = diseases[0].get("inheritance", "") if diseases else ""
+
+        # HPO Phenotypes for gene
+        hpo_phenotypes = self.hpo.get_phenotypes_for_gene(gene) if gene else []
+
         # 샘플 메트릭스 기본값
         sm = sample_metrics or {}
 
-        return {
+        result = {
             # 위치
             "chrom": chrom,
             "pos": pos,
@@ -736,4 +1064,24 @@ class VariantAnnotator:
             "clingen_ts_disease_id": clingen.get("ts_disease_id", ""),
             "clingen_hgnc_id": hgnc_id,
             "clingen_url": clingen_url,
+
+            # HGMD (라이선스 필요)
+            "hgmd_class": (hgmd or {}).get("hgmd_class", ""),
+            "hgmd_disease": (hgmd or {}).get("hgmd_disease", ""),
+            "hgmd_pmid": (hgmd or {}).get("hgmd_pmid", ""),
+            "hgmd_id": (hgmd or {}).get("hgmd_id", ""),
+
+            # Curated Variant DB
+            "curated_classification": (curated or {}).get("classification", ""),
+            "curated_source": (curated or {}).get("source", ""),
+            "curated_notes": (curated or {}).get("notes", ""),
+
+            # Disease-Gene Mapping
+            "diseases": diseases,
+            "inheritance": inheritance,
+
+            # HPO Phenotypes
+            "hpo_phenotypes": hpo_phenotypes[:10],  # 상위 10개만
         }
+
+        return result

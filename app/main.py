@@ -6,6 +6,7 @@ Service Daemon - FastAPI Application
 """
 
 import os
+import json
 import asyncio
 import glob
 import logging
@@ -15,7 +16,8 @@ from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .logging_config import setup_logging, setup_middleware
@@ -73,6 +75,15 @@ app = FastAPI(
     description="Multi-service genomics pipeline daemon",
     version="2.0.0",
     lifespan=lifespan
+)
+
+# CORS 미들웨어 (테스트 Portal에서 로컬 API 호출 허용)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # 미들웨어 설정
@@ -328,6 +339,177 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
     )
 
 
+# ─── Order List & Result Endpoints ────────────────────────
+
+@app.get("/orders")
+async def list_orders(
+    service_code: str = Query(default=None, description="특정 서비스만 조회"),
+    status: str = Query(default=None, description="특정 상태만 조회"),
+):
+    """
+    전체 주문 목록을 조회합니다.
+
+    Portal의 Track Orders 뷰에서 사용합니다.
+    """
+    queue_manager = get_queue_manager()
+    all_jobs = []
+
+    # 모든 Job 소스에서 수집
+    for order_id, job in queue_manager._jobs.items():
+        all_jobs.append(job)
+    for order_id, job in queue_manager._running_jobs.items():
+        if order_id not in {j.order_id for j in all_jobs}:
+            all_jobs.append(job)
+    for order_id, job in queue_manager._completed_jobs.items():
+        if order_id not in {j.order_id for j in all_jobs}:
+            all_jobs.append(job)
+
+    # 필터링
+    if service_code:
+        all_jobs = [j for j in all_jobs if j.service_code == service_code]
+    if status:
+        all_jobs = [j for j in all_jobs if j.status.value == status]
+
+    # 최신순 정렬
+    all_jobs.sort(key=lambda j: j.created_at or "", reverse=True)
+
+    return {
+        "orders": [
+            {
+                "order_id": j.order_id,
+                "service_code": j.service_code,
+                "sample_name": j.sample_name,
+                "status": j.status.value,
+                "progress": j.progress,
+                "message": j.message,
+                "created_at": j.created_at,
+                "started_at": j.started_at,
+                "completed_at": j.completed_at,
+                "priority": j.priority,
+            }
+            for j in all_jobs
+        ],
+        "total": len(all_jobs),
+    }
+
+
+@app.get("/order/{order_id}/result")
+async def get_order_result(order_id: str):
+    """
+    주문의 result.json을 조회합니다.
+
+    파이프라인 완료 후 process_results에서 생성된 result.json을 반환합니다.
+    Portal의 Variant Review 페이지에서 사용합니다.
+    """
+    queue_manager = get_queue_manager()
+    job = queue_manager.get_job(order_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
+
+    output_dir = job.output_dir
+    if not output_dir:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Output directory not set for order: {order_id}"
+        )
+
+    result_json_path = os.path.join(output_dir, "result.json")
+    if not os.path.exists(result_json_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"result.json not found for order: {order_id}. "
+                   f"Analysis may not be complete yet."
+        )
+
+    with open(result_json_path, "r", encoding="utf-8") as f:
+        result_data = json.load(f)
+
+    return result_data
+
+
+@app.get("/order/{order_id}/files")
+async def list_order_files(order_id: str):
+    """
+    주문의 출력 파일 목록을 조회합니다.
+    """
+    queue_manager = get_queue_manager()
+    job = queue_manager.get_job(order_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
+
+    output_dir = job.output_dir
+    if not output_dir or not os.path.isdir(output_dir):
+        return {"files": [], "total": 0}
+
+    files = []
+    for fname in os.listdir(output_dir):
+        fpath = os.path.join(output_dir, fname)
+        if os.path.isfile(fpath):
+            files.append({
+                "name": fname,
+                "size": os.path.getsize(fpath),
+                "type": _guess_file_type(fname),
+            })
+
+    return {"files": files, "total": len(files)}
+
+
+@app.get("/order/{order_id}/file/{filename}")
+async def download_order_file(order_id: str, filename: str):
+    """
+    주문의 특정 출력 파일을 다운로드합니다.
+    """
+    queue_manager = get_queue_manager()
+    job = queue_manager.get_job(order_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
+
+    output_dir = job.output_dir
+    if not output_dir:
+        raise HTTPException(status_code=404, detail="Output directory not set")
+
+    file_path = os.path.join(output_dir, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"File not found: {filename}")
+
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type=_guess_content_type(filename),
+    )
+
+
+def _guess_file_type(filename: str) -> str:
+    """파일명으로 파일 유형을 추정합니다."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    type_map = {
+        "json": "json", "tsv": "tsv", "csv": "csv",
+        "pdf": "pdf", "html": "html",
+        "png": "image", "jpg": "image", "jpeg": "image",
+        "vcf": "vcf", "bed": "bed",
+    }
+    return type_map.get(ext, "other")
+
+
+def _guess_content_type(filename: str) -> str:
+    """파일명으로 Content-Type을 추정합니다."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    ct_map = {
+        "json": "application/json",
+        "tsv": "text/tab-separated-values",
+        "csv": "text/csv",
+        "pdf": "application/pdf",
+        "html": "text/html",
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+    }
+    return ct_map.get(ext, "application/octet-stream")
+
+
 # ─── Queue Endpoints ──────────────────────────────────────
 
 @app.get("/queue/summary", response_model=QueueSummary)
@@ -403,4 +585,72 @@ async def dashboard():
         ],
         "queue": summary.model_dump(),
         "timestamp": datetime.now().isoformat()
+    }
+
+
+# ─── Test/Mock Endpoints (Development Only) ──────────────
+
+@app.post("/test/inject-mock-job")
+async def inject_mock_job(
+    order_id: str = Body(default="CS-TEST-001"),
+    sample_name: str = Body(default="SAMPLE_001"),
+    output_dir: str = Body(default="/tmp/carrier-screening/output/test/SAMPLE_001"),
+    status: str = Body(default="COMPLETED"),
+):
+    """
+    [DEV ONLY] 테스트용 mock Job을 QueueManager에 주입합니다.
+    실제 파이프라인 없이 Portal의 Review/Report 기능을 테스트할 수 있습니다.
+    """
+    if settings.app_env not in ("DEV", "TEST", "PROD"):
+        raise HTTPException(status_code=403, detail="Mock injection only available in DEV/TEST")
+
+    queue_manager = get_queue_manager()
+
+    # 이미 존재하면 삭제
+    existing = queue_manager.get_job(order_id)
+    if existing:
+        return {"status": "exists", "order_id": order_id, "message": "Job already exists"}
+
+    job = Job(
+        order_id=order_id,
+        service_code="carrier_screening",
+        sample_name=sample_name,
+        work_dir="test",
+        fastq_r1_path="/tmp/test_R1.fastq.gz",
+        fastq_r2_path="/tmp/test_R2.fastq.gz",
+        params={},
+        priority="normal",
+        fastq_dir="/tmp/carrier-screening/fastq/test/" + sample_name,
+        analysis_dir="/tmp/carrier-screening/analysis/test/" + sample_name,
+        output_dir=output_dir,
+        log_dir="/tmp/carrier-screening/log/test/" + sample_name,
+    )
+
+    # 상태 설정
+    status_enum = OrderStatus(status) if status in [s.value for s in OrderStatus] else OrderStatus.COMPLETED
+    job.status = status_enum
+    job.created_at = datetime.now().isoformat()
+    job.progress = 100 if status_enum == OrderStatus.COMPLETED else 0
+
+    if status_enum == OrderStatus.COMPLETED:
+        job.completed_at = datetime.now().isoformat()
+        job.started_at = datetime.now().isoformat()
+        job.message = "Mock job - analysis complete"
+        queue_manager._completed_jobs[order_id] = job
+    elif status_enum == OrderStatus.RUNNING:
+        job.started_at = datetime.now().isoformat()
+        job.message = "Mock job - running"
+        queue_manager._running_jobs[order_id] = job
+    else:
+        job.message = "Mock job - queued"
+        queue_manager._jobs[order_id] = job
+
+    logger.info(f"[TEST] Injected mock job: {order_id} ({status})")
+
+    return {
+        "status": "injected",
+        "order_id": order_id,
+        "sample_name": sample_name,
+        "job_status": job.status.value,
+        "output_dir": output_dir,
     }

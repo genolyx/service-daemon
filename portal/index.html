@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Carrier Screening Test Portal</title>
+  <style>
+    /* ===== THEME TOKENS (from index_v4.html) ===== */
+    :root {
+      --bg:#0b1020;--card:#11162a;--card-2:#0f1426;
+      --text:#e8ebff;--muted:#9aa3c7;--brand:#6aa3ff;--brand-2:#4e82ff;
+      --ok:#22c55e;--err:#ef4444;--line:#1d2442;--chip:#202a4d;--chip-line:#2a3661;
+      --radius:14px;--shadow:0 8px 24px rgba(0,0,0,.35);
+      --table-bg:#0b1128;--thead-bg:#0f1636;--thead-text:#cbd5ff;--row-alt:#0c1433;--row-text:#d8ddff;
+      --pill-new-bg:rgba(99,102,241,.15);--pill-new-bd:#6d76ff;--pill-new-tx:#cdd0ff;
+      --pill-inp-bg:rgba(59,130,246,.15);--pill-inp-bd:#3b82f6;--pill-inp-tx:#cfe3ff;
+      --pill-done-bg:rgba(34,197,94,.18);--pill-done-bd:#22c55e;--pill-done-tx:#d3fadd;
+      --pill-warn-bg:rgba(245,158,11,.15);--pill-warn-bd:#f59e0b;--pill-warn-tx:#fef3c7;
+      --pill-err-bg:rgba(239,68,68,.15);--pill-err-bd:#ef4444;--pill-err-tx:#fecaca;
+      --btn-bg:#070a14;--btn-hover:#161c3a;--btn-text:#fff;
+      --input-bg:#0c1230;--input-bd:var(--chip-line);
+    }
+    body.light {
+      --bg:#f3f6ff;--card:#ffffff;--card-2:#f7f8ff;
+      --text:#0b1430;--muted:#4b5a7a;--brand:#245cff;--brand-2:#1144d6;
+      --ok:#15803d;--err:#dc2626;--line:#d8def5;--chip:#f0f3ff;--chip-line:#d7def7;
+      --table-bg:#ffffff;--thead-bg:#e9eeff;--thead-text:#112053;--row-alt:#f5f7ff;--row-text:#102046;
+      --pill-new-bg:#eef0ff;--pill-new-bd:#9aa7ff;--pill-new-tx:#1b2a66;
+      --pill-inp-bg:#eaf3ff;--pill-inp-bd:#8bb8ff;--pill-inp-tx:#0c235c;
+      --pill-done-bg:#eaf8ef;--pill-done-bd:#6ed19a;--pill-done-tx:#0b3a1b;
+      --pill-warn-bg:#fef9e7;--pill-warn-bd:#f59e0b;--pill-warn-tx:#78350f;
+      --pill-err-bg:#fef2f2;--pill-err-bd:#ef4444;--pill-err-tx:#7f1d1d;
+      --btn-bg:#eef1f9;--btn-hover:#e0e6f5;--btn-text:#fff;
+      --input-bg:#ffffff;--input-bd:#cbd5ff;
+    }
+
+    /* ===== BASE ===== */
+    *{box-sizing:border-box}
+    body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;color:var(--text);background:var(--bg)}
+    .wrap{max-width:1000px;margin:32px auto;padding:0 20px;transition:max-width .3s}
+    .wrap.wide{max-width:98%}
+    header{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+    .logo{font-size:18px;font-weight:700;padding:10px 14px;border-radius:12px;background:linear-gradient(145deg,#1a2250,#0f1430);border:1px solid var(--line);box-shadow:var(--shadow);color:#e8ebff;white-space:nowrap}
+    body.light .logo{background:linear-gradient(145deg,#f5f7ff,#ffffff);color:#102046}
+    .right{margin-left:auto}
+
+    /* Buttons */
+    .btn{appearance:none;background:var(--btn-bg);border:1px solid var(--line);color:var(--muted);padding:8px 16px;border-radius:999px;cursor:pointer;font-weight:600;font-size:13px;transition:.2s all;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+    .btn:hover:not(.active):not(.primary):not(.danger-btn){border-color:var(--brand);background:var(--btn-hover);color:var(--text)}
+    .btn.active{background:var(--pill-inp-bg)!important;color:var(--pill-inp-tx)!important;border-color:var(--pill-inp-bd)!important}
+    .btn.primary{background:linear-gradient(180deg,var(--brand),var(--brand-2));border-color:var(--brand-2);color:#fff}
+    .btn.primary:hover{filter:brightness(1.1);box-shadow:0 4px 15px rgba(106,163,255,.4)}
+    .btn.success{background:var(--pill-done-bg);border-color:var(--pill-done-bd);color:var(--pill-done-tx)}
+    .btn.danger-btn{background:var(--pill-err-bg);border-color:var(--pill-err-bd);color:var(--pill-err-tx)}
+    .btn.danger-btn:hover{filter:brightness(1.1)}
+    .btn.disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
+    .btn.loading{pointer-events:none;opacity:.7;position:relative}
+    .btn.loading::after{content:'';position:absolute;right:10px;top:50%;width:14px;height:14px;border:2px solid rgba(255,255,255,.7);border-top-color:transparent;border-radius:50%;transform:translateY(-50%);animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:translateY(-50%) rotate(360deg)}}
+
+    /* Theme Switch */
+    .theme-switch{width:44px;height:22px;background:var(--btn-bg);border:1px solid var(--line);border-radius:999px;position:relative;cursor:pointer;transition:.3s;flex-shrink:0;margin:0 6px}
+    .switch-ball{position:absolute;top:2px;left:2px;width:16px;height:16px;background:var(--muted);border-radius:50%;transition:transform .3s cubic-bezier(.4,0,.2,1),background .3s}
+    .theme-switch:hover{border-color:var(--brand)}
+    body.light .switch-ball{transform:translateX(22px);background:var(--brand)}
+    body.light .theme-switch{background:#e2e8f0}
+
+    /* Cards & Forms */
+    .badge{font-size:12px;padding:6px 10px;border-radius:999px;border:1px solid var(--chip-line);background:var(--chip);color:var(--muted)}
+    .card{background:linear-gradient(180deg,var(--card),var(--card-2));border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin:14px 0}
+    h3{margin:0 0 10px;font-size:18px}
+    .row{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
+    .col-2{grid-column:span 2}.col-3{grid-column:span 3}.col-4{grid-column:span 4}.col-6{grid-column:span 6}.col-8{grid-column:span 8}.col-12{grid-column:span 12}
+    label{display:block;color:var(--muted);font-size:12px;margin:2px 0 6px 2px}
+    label.required::after{content:" *";color:var(--err);font-weight:bold}
+    input,select,textarea{width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);outline:none;font-size:13px}
+    input:focus,select:focus,textarea:focus{border-color:var(--brand)}
+    textarea{min-height:80px;resize:vertical}
+    .muted{color:var(--muted);font-size:12px}
+    .hidden{display:none!important}
+
+    /* Table */
+    .table-wrap{overflow:auto;border-radius:12px;border:1px solid var(--line);max-height:70vh}
+    table{width:100%;border-collapse:separate;border-spacing:0;background:var(--table-bg)}
+    thead th{position:sticky;top:0;background:var(--thead-bg);color:var(--thead-text);text-align:left;font-weight:600;border-bottom:1px solid var(--line);padding:10px 12px;font-size:12px;white-space:nowrap;cursor:pointer;user-select:none;z-index:2}
+    tbody td{padding:8px 12px;border-bottom:1px solid var(--line);color:var(--row-text);font-size:13px;white-space:nowrap}
+    tbody tr:nth-child(odd){background:var(--row-alt)}
+    tbody tr:last-child td{border-bottom:none}
+    th.sortable{position:relative;padding-right:22px}
+    th.sortable::after{content:'';position:absolute;right:6px;opacity:.45;font-size:11px}
+    th.sort-asc::after{content:'';opacity:.9}
+    th.sort-desc::after{content:'';opacity:.9}
+
+    /* Pills */
+    .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid}
+    .pill.new{background:var(--pill-new-bg);border-color:var(--pill-new-bd);color:var(--pill-new-tx)}
+    .pill.inp{background:var(--pill-inp-bg);border-color:var(--pill-inp-bd);color:var(--pill-inp-tx)}
+    .pill.done{background:var(--pill-done-bg);border-color:var(--pill-done-bd);color:var(--pill-done-tx)}
+    .pill.warn{background:var(--pill-warn-bg);border-color:var(--pill-warn-bd);color:var(--pill-warn-tx)}
+    .pill.err{background:var(--pill-err-bg);border-color:var(--pill-err-bd);color:var(--pill-err-tx)}
+
+    /* Toast */
+    .toast{position:fixed;right:20px;bottom:24px;min-width:260px;max-width:420px;background:var(--thead-bg);border:1px solid var(--line);color:var(--text);padding:12px 14px;border-radius:12px;box-shadow:var(--shadow);opacity:0;transform:translateY(10px);pointer-events:none;transition:.25s;z-index:999}
+    .toast.show{opacity:1;transform:translateY(0);pointer-events:auto}
+    .toast.ok{border-color:#1f8a4b}.toast.err{border-color:#a23b3b}
+
+    /* Progress Bar */
+    .progress-bar{width:100%;height:8px;background:var(--chip);border-radius:999px;overflow:hidden;margin:4px 0}
+    .progress-fill{height:100%;background:linear-gradient(90deg,var(--brand),var(--brand-2));border-radius:999px;transition:width .5s}
+
+    /* Stat Cards */
+    .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:12px 0}
+    .stat-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;text-align:center}
+    .stat-card .stat-value{font-size:28px;font-weight:700;color:var(--brand)}
+    .stat-card .stat-label{font-size:12px;color:var(--muted);margin-top:4px}
+    .stat-card.ok .stat-value{color:var(--ok)}
+    .stat-card.err .stat-value{color:var(--err)}
+
+    /* Review-specific */
+    .variant-row{cursor:pointer;transition:background .15s}
+    .variant-row:hover{background:rgba(106,163,255,.08)!important}
+    .variant-row.selected{background:rgba(106,163,255,.15)!important;border-left:3px solid var(--brand)}
+    .variant-detail{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:12px}
+    .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .detail-item{padding:4px 0}
+    .detail-item .detail-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+    .detail-item .detail-value{font-size:13px;color:var(--text);margin-top:2px;word-break:break-all}
+    .checkbox-label{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px}
+    .checkbox-label input[type="checkbox"]{width:auto;cursor:pointer}
+
+    /* Pagination */
+    .pagination{display:flex;align-items:center;justify-content:space-between;margin-top:10px}
+    .pagination select{background:var(--input-bg);color:var(--text);border:1px solid var(--input-bd);border-radius:8px;padding:6px 8px;width:auto}
+
+    /* Responsive */
+    @media(max-width:768px){
+      .row{grid-template-columns:1fr}
+      .col-2,.col-3,.col-4,.col-6,.col-8,.col-12{grid-column:span 1}
+      .stat-grid{grid-template-columns:repeat(2,1fr)}
+      .detail-grid{grid-template-columns:1fr}
+    }
+
+    /* Connection indicator */
+    .conn-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+    .conn-dot.ok{background:var(--ok)}.conn-dot.err{background:var(--err)}.conn-dot.warn{background:#f59e0b}
+
+    /* Tabs sub-nav for review */
+    .sub-tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+    .sub-tab{padding:6px 14px;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--line);background:var(--btn-bg);color:var(--muted);transition:.2s}
+    .sub-tab:hover{border-color:var(--brand);color:var(--text)}
+    .sub-tab.active{background:var(--pill-inp-bg);color:var(--pill-inp-tx);border-color:var(--pill-inp-bd)}
+
+    /* Variant classification colors */
+    .cls-pathogenic{color:#ef4444;font-weight:600}
+    .cls-likely-pathogenic{color:#f97316;font-weight:600}
+    .cls-vus{color:#f59e0b}
+    .cls-likely-benign{color:#22c55e}
+    .cls-benign{color:#10b981}
+
+    /* Modal */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;display:flex;align-items:center;justify-content:center}
+    .modal{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto}
+    .modal h3{margin-bottom:16px}
+  </style>
+</head>
+<body>
+  <div class="wrap" id="mainWrap">
+    <!-- Header -->
+    <header>
+      <div class="logo">Carrier Screening Portal</div>
+      <span id="connStatus" class="badge"><span class="conn-dot warn"></span>Connecting...</span>
+
+      <button id="tabDash" class="btn active" onclick="showView('dash')">Dashboard</button>
+      <button id="tabSubmit" class="btn" onclick="showView('submit')">Submit</button>
+      <button id="tabTrack" class="btn" onclick="showView('track')">Track</button>
+      <button id="tabReview" class="btn" onclick="showView('review')">Review</button>
+
+      <div class="theme-switch" id="btnTheme">
+        <div class="switch-ball"></div>
+      </div>
+    </header>
+
+    <!-- ═══ Dashboard View ═══ -->
+    <section id="viewDash" class="card">
+      <h3>Service Dashboard</h3>
+      <div class="stat-grid" id="dashStats">
+        <div class="stat-card"><div class="stat-value" id="statServices">-</div><div class="stat-label">Services</div></div>
+        <div class="stat-card"><div class="stat-value" id="statQueued">-</div><div class="stat-label">Queued</div></div>
+        <div class="stat-card"><div class="stat-value" id="statRunning">-</div><div class="stat-label">Running</div></div>
+        <div class="stat-card ok"><div class="stat-value" id="statCompleted">-</div><div class="stat-label">Completed</div></div>
+        <div class="stat-card err"><div class="stat-value" id="statFailed">-</div><div class="stat-label">Failed</div></div>
+      </div>
+      <div id="dashRunning" style="margin-top:12px"></div>
+    </section>
+
+    <!-- ═══ Submit Order View ═══ -->
+    <section id="viewSubmit" class="card hidden">
+      <h3>Submit Carrier Screening Order</h3>
+      <div class="row">
+        <div class="col-6">
+          <label class="required">Order ID</label>
+          <input id="fOrderId" placeholder="e.g. CS-2026-001" />
+        </div>
+        <div class="col-6">
+          <label class="required">Sample Name</label>
+          <input id="fSampleName" placeholder="e.g. SAMPLE_001" />
+        </div>
+        <div class="col-4">
+          <label>Work Directory</label>
+          <input id="fWorkDir" placeholder="e.g. 2603 (auto if empty)" />
+        </div>
+        <div class="col-4">
+          <label>Priority</label>
+          <select id="fPriority"><option value="normal">Normal</option><option value="urgent">Urgent</option><option value="low">Low</option></select>
+        </div>
+        <div class="col-4">
+          <label>Callback URL</label>
+          <input id="fCallback" placeholder="Optional" />
+        </div>
+
+        <div class="col-12" style="margin-top:4px"><div class="muted" style="font-weight:600;margin-bottom:6px">FASTQ Input (URL or Local Path)</div></div>
+        <div class="col-6"><label>R1 FASTQ URL</label><input id="fR1Url" placeholder="https://..." /></div>
+        <div class="col-6"><label>R2 FASTQ URL</label><input id="fR2Url" placeholder="https://..." /></div>
+        <div class="col-6"><label>R1 FASTQ Local Path</label><input id="fR1Path" placeholder="/data/fastq/..." /></div>
+        <div class="col-6"><label>R2 FASTQ Local Path</label><input id="fR2Path" placeholder="/data/fastq/..." /></div>
+
+        <div class="col-12" style="margin-top:4px"><div class="muted" style="font-weight:600;margin-bottom:6px">Optional Parameters</div></div>
+        <div class="col-4"><label>Backbone BED</label><input id="fBackboneBed" placeholder="Path to backbone.bed" /></div>
+        <div class="col-4"><label>Disease BED</label><input id="fDiseaseBed" placeholder="Path to disease.bed" /></div>
+        <div class="col-4"><label>Max AF Filter</label><input id="fMaxAf" type="number" step="0.001" placeholder="e.g. 0.05" /></div>
+        <div class="col-6"><label>HPO Terms</label><input id="fHpoTerms" placeholder="e.g. HP:0001250,HP:0001263" /></div>
+        <div class="col-6"><label>Gene Filter</label><input id="fGeneFilter" placeholder="e.g. CFTR,SMN1,GJB2" /></div>
+
+        <div class="col-12" style="display:flex;gap:10px;align-items:center;margin-top:8px">
+          <button class="btn primary" id="btnSubmitOrder">Submit Order</button>
+          <span id="submitMsg" class="muted"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ Track Orders View ═══ -->
+    <section id="viewTrack" class="card hidden">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <h3 style="margin:0">Orders</h3>
+        <input id="trackSearch" placeholder="Search..." style="max-width:250px;margin-left:auto" />
+        <select id="trackFilter" style="width:auto;padding:8px 12px;border-radius:12px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">
+          <option value="">All Status</option>
+          <option value="QUEUED">Queued</option>
+          <option value="RUNNING">Running</option>
+          <option value="COMPLETED">Completed</option>
+          <option value="FAILED">Failed</option>
+        </select>
+        <button class="btn" id="btnRefreshTrack" onclick="loadOrders()">Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table id="tblOrders">
+          <thead>
+            <tr>
+              <th class="sortable" data-key="order_id">Order ID</th>
+              <th class="sortable" data-key="sample_name">Sample</th>
+              <th class="sortable" data-key="status">Status</th>
+              <th>Progress</th>
+              <th class="sortable" data-key="created_at">Created</th>
+              <th class="sortable" data-key="priority">Priority</th>
+              <th>Message</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tblOrdersBody"></tbody>
+        </table>
+      </div>
+      <div id="trackMsg" class="muted" style="margin-top:8px"></div>
+    </section>
+
+    <!-- ═══ Variant Review View ═══ -->
+    <section id="viewReview" class="card hidden">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+        <h3 style="margin:0">Variant Review</h3>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <label style="margin:0;font-size:13px">Order:</label>
+          <select id="reviewOrderSelect" style="width:auto;min-width:200px;padding:8px 12px;border-radius:12px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">
+            <option value="">-- Select Order --</option>
+          </select>
+          <button class="btn" onclick="loadReviewData()">Load</button>
+        </div>
+      </div>
+
+      <!-- Review sub-tabs -->
+      <div class="sub-tabs" id="reviewSubTabs">
+        <div class="sub-tab active" onclick="showReviewTab('variants')">Variants</div>
+        <div class="sub-tab" onclick="showReviewTab('qc')">QC Summary</div>
+        <div class="sub-tab" onclick="showReviewTab('stats')">Statistics</div>
+        <div class="sub-tab" onclick="showReviewTab('report')">Generate Report</div>
+      </div>
+
+      <!-- QC Summary Tab -->
+      <div id="reviewQc" class="hidden">
+        <div class="stat-grid" id="qcStats"></div>
+      </div>
+
+      <!-- Statistics Tab -->
+      <div id="reviewStats" class="hidden">
+        <div class="row">
+          <div class="col-6"><div id="statsByClass" class="card" style="margin:0"><h3 style="font-size:14px">By Classification</h3><div id="statsClassBody"></div></div></div>
+          <div class="col-6"><div id="statsByGene" class="card" style="margin:0"><h3 style="font-size:14px">By Gene (Top 20)</h3><div id="statsGeneBody"></div></div></div>
+        </div>
+      </div>
+
+      <!-- Variants Tab -->
+      <div id="reviewVariants">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+          <input id="variantSearch" placeholder="Search gene, position, classification..." style="max-width:300px" />
+          <select id="variantClassFilter" style="width:auto;padding:8px;border-radius:12px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">
+            <option value="">All Classifications</option>
+            <option value="Pathogenic">Pathogenic</option>
+            <option value="Likely pathogenic">Likely Pathogenic</option>
+            <option value="VUS">VUS</option>
+            <option value="Likely benign">Likely Benign</option>
+            <option value="Benign">Benign</option>
+          </select>
+          <span class="muted" id="variantCount"></span>
+          <div style="margin-left:auto;display:flex;gap:6px">
+            <button class="btn" onclick="selectAllVisible()">Select All Visible</button>
+            <button class="btn" onclick="deselectAll()">Deselect All</button>
+          </div>
+        </div>
+        <div class="table-wrap" style="max-height:55vh">
+          <table id="tblVariants">
+            <thead>
+              <tr>
+                <th style="width:36px"><input type="checkbox" id="chkAll" onchange="toggleAllCheckboxes(this)" /></th>
+                <th class="sortable" data-key="variant_id">ID</th>
+                <th class="sortable" data-key="gene">Gene</th>
+                <th class="sortable" data-key="hgvsc">HGVSc</th>
+                <th class="sortable" data-key="hgvsp">HGVSp</th>
+                <th class="sortable" data-key="effect">Effect</th>
+                <th class="sortable" data-key="zygosity">Zygosity</th>
+                <th class="sortable" data-key="gnomad_af">gnomAD AF</th>
+                <th class="sortable" data-key="clinvar_sig_primary">ClinVar</th>
+                <th class="sortable" data-key="acmg_classification">ACMG</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="tblVariantsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Variant Detail Panel -->
+      <div id="variantDetail" class="variant-detail hidden"></div>
+
+      <!-- Generate Report Tab -->
+      <div id="reviewReport" class="hidden">
+        <div class="row">
+          <div class="col-12">
+            <div class="card" style="margin:0">
+              <h3 style="font-size:14px">Selected Variants for Report</h3>
+              <div id="selectedVariantsList" class="muted">No variants selected</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="card" style="margin:0;margin-top:12px">
+              <h3 style="font-size:14px">Reviewer Information</h3>
+              <div class="row">
+                <div class="col-6"><label class="required">Reviewer Name</label><input id="rRevName" placeholder="Dr. Smith" /></div>
+                <div class="col-6"><label>Reviewer ID</label><input id="rRevId" placeholder="REV-001" /></div>
+                <div class="col-12"><label>Institution</label><input id="rRevInst" placeholder="Genolyx Lab" /></div>
+              </div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="card" style="margin:0;margin-top:12px">
+              <h3 style="font-size:14px">Patient Information</h3>
+              <div class="row">
+                <div class="col-6"><label>Patient Name</label><input id="rPatName" /></div>
+                <div class="col-6"><label>Date of Birth</label><input id="rPatDob" type="date" /></div>
+                <div class="col-6"><label>Gender</label><select id="rPatGender"><option value="">-</option><option>Male</option><option>Female</option></select></div>
+                <div class="col-6"><label>Partner Name</label><input id="rPartnerName" placeholder="For couple test" /></div>
+              </div>
+            </div>
+          </div>
+          <div class="col-12" style="margin-top:12px">
+            <div class="card" style="margin:0">
+              <h3 style="font-size:14px">Report Options</h3>
+              <div class="row">
+                <div class="col-4">
+                  <label>Languages</label>
+                  <div style="display:flex;gap:12px;margin-top:4px">
+                    <label class="checkbox-label"><input type="checkbox" id="langEN" checked /> EN</label>
+                    <label class="checkbox-label"><input type="checkbox" id="langCN" /> CN</label>
+                    <label class="checkbox-label"><input type="checkbox" id="langKO" /> KO</label>
+                  </div>
+                </div>
+                <div class="col-8" style="display:flex;align-items:flex-end;gap:10px">
+                  <button class="btn primary" id="btnGenReport" onclick="generateReport()">Generate Report</button>
+                  <span id="reportMsg" class="muted"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    // ═══════════════════════════════════════════════════════════
+    // Configuration
+    // ═══════════════════════════════════════════════════════════
+    let API_BASE = localStorage.getItem('apiBase') || (location.hostname === 'localhost' ? 'http://localhost:8000' : location.origin.replace(/8080/, '8000'));
+    const qs = id => document.getElementById(id);
+
+    // State
+    let allOrders = [];
+    let reviewData = null;  // result.json data
+    let selectedVariants = new Set();  // variant_ids selected for report
+    let variantComments = {};  // variant_id -> {classification, comment}
+    let variantSortKey = null, variantSortAsc = true;
+
+    // ═══════════════════════════════════════════════════════════
+    // Utilities
+    // ═══════════════════════════════════════════════════════════
+    const toast = (m, ok = true) => {
+      const t = qs('toast');
+      t.textContent = m;
+      t.className = 'toast ' + (ok ? 'ok' : 'err') + ' show';
+      setTimeout(() => t.classList.remove('show'), 3000);
+    };
+
+    const fmtDate = s => {
+      if (!s) return '';
+      const d = new Date(s);
+      return isNaN(d) ? '' : d.toLocaleString('en-CA', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    };
+
+    const pill = (text, cls) => `<span class="pill ${cls}">${text}</span>`;
+
+    const statusPill = s => {
+      const v = (s || '').toUpperCase();
+      if (v === 'COMPLETED') return pill(s, 'done');
+      if (v === 'FAILED') return pill(s, 'err');
+      if (v === 'RUNNING' || v === 'PROCESSING' || v === 'DOWNLOADING' || v === 'UPLOADING') return pill(s, 'inp');
+      if (v === 'QUEUED' || v === 'RECEIVED') return pill(s, 'new');
+      return pill(s, 'warn');
+    };
+
+    const acmgClass = cls => {
+      const c = (cls || '').toLowerCase();
+      if (c === 'pathogenic') return 'cls-pathogenic';
+      if (c === 'likely pathogenic') return 'cls-likely-pathogenic';
+      if (c === 'vus' || c === 'uncertain significance') return 'cls-vus';
+      if (c === 'likely benign') return 'cls-likely-benign';
+      if (c === 'benign') return 'cls-benign';
+      return '';
+    };
+
+    const fmtAF = af => {
+      if (af === null || af === undefined || af === '') return '-';
+      const n = parseFloat(af);
+      return isNaN(n) ? '-' : n < 0.0001 ? n.toExponential(2) : n.toFixed(4);
+    };
+
+    // ═══════════════════════════════════════════════════════════
+    // API Helpers
+    // ═══════════════════════════════════════════════════════════
+    async function apiGet(path) {
+      try {
+        const r = await fetch(`${API_BASE}${path}`);
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        return await r.json();
+      } catch (e) {
+        console.error('API GET error:', e);
+        throw e;
+      }
+    }
+
+    async function apiPost(path, body) {
+      try {
+        const r = await fetch(`${API_BASE}${path}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.detail || `${r.status} ${r.statusText}`);
+        }
+        return await r.json();
+      } catch (e) {
+        console.error('API POST error:', e);
+        throw e;
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // View Navigation
+    // ═══════════════════════════════════════════════════════════
+    function showView(name) {
+      ['Dash', 'Submit', 'Track', 'Review'].forEach(v => {
+        qs('view' + v).classList.add('hidden');
+        qs('tab' + v).classList.remove('active');
+      });
+      qs('view' + name.charAt(0).toUpperCase() + name.slice(1)).classList.remove('hidden');
+      qs('tab' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
+
+      // Wide mode for track and review
+      qs('mainWrap').classList.toggle('wide', name === 'track' || name === 'review');
+
+      // Auto-load data
+      if (name === 'dash') loadDashboard();
+      if (name === 'track') loadOrders();
+      if (name === 'review') refreshReviewOrderList();
+
+      localStorage.setItem('activeTab', name);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Dashboard
+    // ═══════════════════════════════════════════════════════════
+    async function loadDashboard() {
+      try {
+        const [health, queue, services] = await Promise.all([
+          apiGet('/health'),
+          apiGet('/queue/summary'),
+          apiGet('/services'),
+        ]);
+
+        qs('connStatus').innerHTML = `<span class="conn-dot ok"></span>${health.environment || 'Connected'}`;
+        qs('statServices').textContent = services.total || 0;
+        qs('statQueued').textContent = queue.total_queued || 0;
+        qs('statRunning').textContent = queue.total_running || 0;
+        qs('statCompleted').textContent = queue.total_completed || 0;
+        qs('statFailed').textContent = queue.total_failed || 0;
+
+        // Running jobs
+        const running = queue.running_jobs || [];
+        if (running.length > 0) {
+          qs('dashRunning').innerHTML = '<div class="muted" style="font-weight:600;margin-bottom:6px">Running Jobs</div>' +
+            running.map(j => `
+              <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)">
+                <span class="pill inp">${j.service_code}</span>
+                <span style="font-weight:600">${j.order_id}</span>
+                <span class="muted">${j.sample_name}</span>
+                <div style="flex:1;max-width:200px">
+                  <div class="progress-bar"><div class="progress-fill" style="width:${j.progress}%"></div></div>
+                </div>
+                <span class="muted">${j.progress}%</span>
+                <span class="muted">${j.message || ''}</span>
+              </div>
+            `).join('');
+        } else {
+          qs('dashRunning').innerHTML = '<div class="muted" style="text-align:center;padding:20px">No running jobs</div>';
+        }
+      } catch (e) {
+        qs('connStatus').innerHTML = `<span class="conn-dot err"></span>Disconnected`;
+        toast('Cannot connect to daemon at ' + API_BASE, false);
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Submit Order
+    // ═══════════════════════════════════════════════════════════
+    qs('btnSubmitOrder').onclick = async () => {
+      const btn = qs('btnSubmitOrder');
+      if (btn.classList.contains('loading')) return;
+
+      const orderId = qs('fOrderId').value.trim();
+      const sampleName = qs('fSampleName').value.trim();
+      if (!orderId || !sampleName) return toast('Order ID and Sample Name are required', false);
+
+      const body = {
+        order_id: orderId,
+        service_code: 'carrier_screening',
+        sample_name: sampleName,
+        work_dir: qs('fWorkDir').value.trim() || undefined,
+        fastq_r1_url: qs('fR1Url').value.trim() || undefined,
+        fastq_r2_url: qs('fR2Url').value.trim() || undefined,
+        fastq_r1_path: qs('fR1Path').value.trim() || undefined,
+        fastq_r2_path: qs('fR2Path').value.trim() || undefined,
+        priority: qs('fPriority').value,
+        callback_url: qs('fCallback').value.trim() || undefined,
+        params: {},
+      };
+
+      // Optional params
+      const bb = qs('fBackboneBed').value.trim();
+      const db = qs('fDiseaseBed').value.trim();
+      const maf = qs('fMaxAf').value.trim();
+      const hpo = qs('fHpoTerms').value.trim();
+      const gf = qs('fGeneFilter').value.trim();
+      if (bb) body.params.backbone_bed = bb;
+      if (db) body.params.disease_bed = db;
+      if (maf) body.params.max_af = parseFloat(maf);
+      if (hpo) body.params.hpo_terms = hpo;
+      if (gf) body.params.gene_filter = gf;
+
+      try {
+        btn.classList.add('loading'); btn.textContent = 'Submitting...';
+        const res = await apiPost('/order/carrier_screening/submit', body);
+        toast(`Order submitted: ${res.message}`);
+        qs('submitMsg').textContent = `Queue position: ${res.queue_position || '-'}`;
+        // Clear form
+        ['fOrderId','fSampleName','fWorkDir','fR1Url','fR2Url','fR1Path','fR2Path','fCallback','fBackboneBed','fDiseaseBed','fMaxAf','fHpoTerms','fGeneFilter'].forEach(id => qs(id).value = '');
+      } catch (e) {
+        toast(e.message || 'Submit failed', false);
+      } finally {
+        btn.classList.remove('loading'); btn.textContent = 'Submit Order';
+      }
+    };
+
+    // ═══════════════════════════════════════════════════════════
+    // Track Orders
+    // ═══════════════════════════════════════════════════════════
+    async function loadOrders() {
+      try {
+        const statusFilter = qs('trackFilter').value;
+        let path = '/orders?service_code=carrier_screening';
+        if (statusFilter) path += `&status=${statusFilter}`;
+        const data = await apiGet(path);
+        allOrders = data.orders || [];
+        renderOrders();
+        qs('trackMsg').textContent = `${allOrders.length} order(s)`;
+      } catch (e) {
+        toast('Failed to load orders: ' + e.message, false);
+      }
+    }
+
+    function renderOrders() {
+      const q = qs('trackSearch').value.trim().toLowerCase();
+      let filtered = allOrders;
+      if (q) {
+        filtered = filtered.filter(o =>
+          (o.order_id || '').toLowerCase().includes(q) ||
+          (o.sample_name || '').toLowerCase().includes(q) ||
+          (o.status || '').toLowerCase().includes(q)
+        );
+      }
+
+      const tb = qs('tblOrdersBody');
+      tb.innerHTML = '';
+      filtered.forEach(o => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="font-weight:600">${o.order_id}</td>
+          <td>${o.sample_name}</td>
+          <td>${statusPill(o.status)}</td>
+          <td>
+            <div class="progress-bar" style="min-width:80px"><div class="progress-fill" style="width:${o.progress}%"></div></div>
+            <span class="muted">${o.progress}%</span>
+          </td>
+          <td>${fmtDate(o.created_at)}</td>
+          <td><span class="pill ${o.priority === 'urgent' ? 'warn' : 'new'}">${o.priority}</span></td>
+          <td class="muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${o.message || ''}</td>
+          <td>
+            ${o.status === 'COMPLETED' ? `<button class="btn" style="padding:4px 12px;font-size:11px" onclick="openReview('${o.order_id}')">Review</button>` : ''}
+            ${o.status === 'RUNNING' ? `<button class="btn danger-btn" style="padding:4px 12px;font-size:11px" onclick="cancelOrder('${o.order_id}')">Cancel</button>` : ''}
+          </td>
+        `;
+        tb.appendChild(tr);
+      });
+    }
+
+    async function cancelOrder(orderId) {
+      try {
+        await apiPost(`/order/${orderId}/cancel`, {});
+        toast('Order cancelled');
+        loadOrders();
+      } catch (e) {
+        toast(e.message, false);
+      }
+    }
+
+    function openReview(orderId) {
+      qs('reviewOrderSelect').value = orderId;
+      showView('review');
+      loadReviewData();
+    }
+
+    qs('trackSearch').oninput = renderOrders;
+    qs('trackFilter').onchange = loadOrders;
+
+    // ═══════════════════════════════════════════════════════════
+    // Variant Review
+    // ═══════════════════════════════════════════════════════════
+    async function refreshReviewOrderList() {
+      try {
+        const data = await apiGet('/orders?service_code=carrier_screening');
+        const sel = qs('reviewOrderSelect');
+        const current = sel.value;
+        sel.innerHTML = '<option value="">-- Select Order --</option>';
+        (data.orders || []).forEach(o => {
+          const opt = document.createElement('option');
+          opt.value = o.order_id;
+          opt.textContent = `${o.order_id} (${o.sample_name}) - ${o.status}`;
+          sel.appendChild(opt);
+        });
+        if (current) sel.value = current;
+      } catch (e) { /* ignore */ }
+    }
+
+    async function loadReviewData() {
+      const orderId = qs('reviewOrderSelect').value;
+      if (!orderId) return toast('Select an order first', false);
+
+      try {
+        reviewData = await apiGet(`/order/${orderId}/result`);
+        selectedVariants = new Set();
+        variantComments = {};
+        renderReviewQC();
+        renderReviewStats();
+        renderVariantsTable();
+        showReviewTab('variants');
+        toast(`Loaded ${(reviewData.variants || []).length} variants`);
+      } catch (e) {
+        toast('Failed to load result: ' + e.message, false);
+      }
+    }
+
+    function showReviewTab(tab) {
+      ['variants', 'qc', 'stats', 'report'].forEach(t => {
+        const el = qs('review' + t.charAt(0).toUpperCase() + t.slice(1));
+        if (el) el.classList.toggle('hidden', t !== tab);
+      });
+      document.querySelectorAll('#reviewSubTabs .sub-tab').forEach(el => {
+        el.classList.toggle('active', el.textContent.toLowerCase().includes(tab === 'variants' ? 'variant' : tab === 'qc' ? 'qc' : tab === 'stats' ? 'stat' : 'report'));
+      });
+      if (tab === 'report') updateSelectedVariantsList();
+      // Always hide variant detail when switching tabs (except when staying on variants)
+      if (tab !== 'variants') qs('variantDetail').classList.add('hidden');
+    }
+
+    // QC Summary
+    function renderReviewQC() {
+      if (!reviewData) return;
+      const qc = reviewData.qc_summary || {};
+      const cov = qc.coverage || {};
+      const aln = qc.alignment || {};
+
+      qs('qcStats').innerHTML = [
+        { label: 'Mean Coverage', value: cov.mean_coverage ? cov.mean_coverage.toFixed(1) + 'x' : '-' },
+        { label: 'Total Reads', value: aln.total_reads ? (aln.total_reads / 1e6).toFixed(1) + 'M' : (aln.raw_total_sequences ? (aln.raw_total_sequences / 1e6).toFixed(1) + 'M' : '-') },
+        { label: 'Mapping Rate', value: aln.mapping_rate ? aln.mapping_rate.toFixed(1) + '%' : '-' },
+        { label: 'Properly Paired', value: aln.properly_paired_rate ? aln.properly_paired_rate.toFixed(1) + '%' : '-' },
+        { label: 'Duplicates', value: aln.duplicates ? aln.duplicates.toLocaleString() : '-' },
+        { label: 'Avg Quality', value: aln.average_quality ? aln.average_quality.toFixed(1) : '-' },
+      ].map(s => `<div class="stat-card"><div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div></div>`).join('');
+    }
+
+    // Statistics
+    function renderReviewStats() {
+      if (!reviewData) return;
+      const stats = reviewData.variant_stats || {};
+
+      // By classification
+      const byClass = stats.by_classification || {};
+      qs('statsClassBody').innerHTML = Object.entries(byClass)
+        .sort((a, b) => b[1] - a[1])
+        .map(([cls, cnt]) => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)"><span class="${acmgClass(cls)}">${cls}</span><span style="font-weight:600">${cnt}</span></div>`)
+        .join('') || '<div class="muted">No data</div>';
+
+      // By gene (top 20)
+      const byGene = stats.by_gene || {};
+      qs('statsGeneBody').innerHTML = Object.entries(byGene)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 20)
+        .map(([gene, cnt]) => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)"><span style="font-weight:600">${gene}</span><span>${cnt}</span></div>`)
+        .join('') || '<div class="muted">No data</div>';
+    }
+
+    // Variants Table
+    function renderVariantsTable() {
+      if (!reviewData) return;
+      let variants = reviewData.variants || [];
+
+      // Filter
+      const q = qs('variantSearch').value.trim().toLowerCase();
+      const classFilter = qs('variantClassFilter').value;
+      if (q) {
+        variants = variants.filter(v =>
+          (v.gene || '').toLowerCase().includes(q) ||
+          (v.variant_id || '').toLowerCase().includes(q) ||
+          (v.hgvsc || '').toLowerCase().includes(q) ||
+          (v.hgvsp || '').toLowerCase().includes(q) ||
+          (v.acmg_classification || '').toLowerCase().includes(q) ||
+          (`${v.chrom}:${v.pos}`).includes(q)
+        );
+      }
+      if (classFilter) {
+        variants = variants.filter(v => v.acmg_classification === classFilter);
+      }
+
+      // Sort
+      if (variantSortKey) {
+        variants = [...variants].sort((a, b) => {
+          let va = a[variantSortKey] ?? '', vb = b[variantSortKey] ?? '';
+          if (typeof va === 'number' && typeof vb === 'number') {
+            return variantSortAsc ? va - vb : vb - va;
+          }
+          va = String(va).toLowerCase(); vb = String(vb).toLowerCase();
+          if (va < vb) return variantSortAsc ? -1 : 1;
+          if (va > vb) return variantSortAsc ? 1 : -1;
+          return 0;
+        });
+      }
+
+      qs('variantCount').textContent = `${variants.length} variant(s), ${selectedVariants.size} selected`;
+
+      const tb = qs('tblVariantsBody');
+      tb.innerHTML = '';
+      variants.forEach(v => {
+        const isSelected = selectedVariants.has(v.variant_id);
+        const tr = document.createElement('tr');
+        tr.className = 'variant-row' + (isSelected ? ' selected' : '');
+        tr.innerHTML = `
+          <td><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleVariant('${v.variant_id}', this.checked)" /></td>
+          <td class="muted">${v.variant_id}</td>
+          <td style="font-weight:600">${v.gene || '-'}</td>
+          <td class="muted" style="max-width:150px;overflow:hidden;text-overflow:ellipsis" title="${v.hgvsc || ''}">${v.hgvsc || '-'}</td>
+          <td class="muted" style="max-width:150px;overflow:hidden;text-overflow:ellipsis" title="${v.hgvsp || ''}">${v.hgvsp || '-'}</td>
+          <td>${v.effect || '-'}</td>
+          <td>${v.zygosity || '-'}</td>
+          <td>${fmtAF(v.gnomad_af)}</td>
+          <td>${v.clinvar_sig_primary ? pill(v.clinvar_sig_primary, v.clinvar_sig_primary.toLowerCase().includes('pathogenic') ? 'err' : v.clinvar_sig_primary.toLowerCase().includes('benign') ? 'done' : 'warn') : '-'}</td>
+          <td><span class="${acmgClass(v.acmg_classification)}">${v.acmg_classification || '-'}</span></td>
+          <td><button class="btn" style="padding:3px 10px;font-size:11px" onclick="showVariantDetail('${v.variant_id}')">Detail</button></td>
+        `;
+        tb.appendChild(tr);
+      });
+    }
+
+    function toggleVariant(variantId, checked) {
+      if (checked) selectedVariants.add(variantId);
+      else selectedVariants.delete(variantId);
+      qs('variantCount').textContent = `${(reviewData?.variants || []).length} variant(s), ${selectedVariants.size} selected`;
+    }
+
+    function toggleAllCheckboxes(masterCb) {
+      const checkboxes = qs('tblVariantsBody').querySelectorAll('input[type="checkbox"]');
+      checkboxes.forEach(cb => {
+        cb.checked = masterCb.checked;
+        const vid = cb.closest('tr').querySelector('td:nth-child(2)').textContent.trim();
+        if (masterCb.checked) selectedVariants.add(vid);
+        else selectedVariants.delete(vid);
+      });
+      qs('variantCount').textContent = `${(reviewData?.variants || []).length} variant(s), ${selectedVariants.size} selected`;
+    }
+
+    function selectAllVisible() {
+      qs('tblVariantsBody').querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.checked = true;
+        const vid = cb.closest('tr').querySelector('td:nth-child(2)').textContent.trim();
+        selectedVariants.add(vid);
+      });
+      qs('chkAll').checked = true;
+      qs('variantCount').textContent = `${(reviewData?.variants || []).length} variant(s), ${selectedVariants.size} selected`;
+    }
+
+    function deselectAll() {
+      selectedVariants.clear();
+      variantComments = {};
+      qs('tblVariantsBody').querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+      qs('chkAll').checked = false;
+      qs('variantCount').textContent = `${(reviewData?.variants || []).length} variant(s), ${selectedVariants.size} selected`;
+    }
+
+    // Variant Detail
+    function showVariantDetail(variantId) {
+      if (!reviewData) return;
+      const v = (reviewData.variants || []).find(x => x.variant_id === variantId);
+      if (!v) return;
+
+      const comment = variantComments[variantId] || {};
+      const panel = qs('variantDetail');
+      panel.classList.remove('hidden');
+      panel.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h3 style="margin:0;font-size:16px">${v.gene} - ${v.variant_id}</h3>
+          <button class="btn" style="padding:4px 12px;font-size:11px" onclick="qs('variantDetail').classList.add('hidden')">Close</button>
+        </div>
+        <div class="detail-grid">
+          <div class="detail-item"><div class="detail-label">Position</div><div class="detail-value">${v.chrom}:${v.pos} ${v.ref}>${v.alt}</div></div>
+          <div class="detail-item"><div class="detail-label">Gene / Transcript</div><div class="detail-value">${v.gene} / ${v.transcript || v.canonical_enst || '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">HGVSc</div><div class="detail-value">${v.hgvsc || '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">HGVSp</div><div class="detail-value">${v.hgvsp || '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">Effect</div><div class="detail-value">${v.effect || '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">Zygosity</div><div class="detail-value">${v.zygosity || '-'} (${v.gt || '-'})</div></div>
+          <div class="detail-item"><div class="detail-label">Depth / VAF</div><div class="detail-value">DP=${v.dp || '-'}, REF=${v.ref_depth || '-'}, ALT=${v.alt_depth || '-'}, VAF=${v.vaf ? (v.vaf * 100).toFixed(1) + '%' : '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">gnomAD AF</div><div class="detail-value">${fmtAF(v.gnomad_af)} (${v.gnomad_source || '-'})</div></div>
+          <div class="detail-item"><div class="detail-label">ClinVar</div><div class="detail-value">${v.clinvar_sig || '-'} (${v.clinvar_revstat || '-'}, ${v.clinvar_stars || 0} stars)</div></div>
+          <div class="detail-item"><div class="detail-label">ClinVar Disease</div><div class="detail-value">${v.clinvar_dn || '-'}</div></div>
+          ${v.clinvar_conflicting ? `<div class="detail-item"><div class="detail-label">ClinVar Conflict</div><div class="detail-value" style="color:var(--err)">${v.clinvar_conflict_detail || 'Yes'}</div></div>` : ''}
+          <div class="detail-item"><div class="detail-label">dbSNP</div><div class="detail-value">${v.dbsnp_rsid ? `<a href="${v.dbsnp_url || '#'}" target="_blank" style="color:var(--brand)">${v.dbsnp_rsid}</a>` : '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">ClinGen HI/TS</div><div class="detail-value">${v.clingen_hi_score ?? '-'} / ${v.clingen_ts_score ?? '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">HGMD</div><div class="detail-value">${v.hgmd_class || '-'} ${v.hgmd_disease ? '(' + v.hgmd_disease + ')' : ''}</div></div>
+          <div class="detail-item"><div class="detail-label">Curated DB</div><div class="detail-value">${v.curated_classification || '-'} ${v.curated_source ? '(' + v.curated_source + ')' : ''}</div></div>
+          <div class="detail-item"><div class="detail-label">Inheritance</div><div class="detail-value">${v.inheritance || '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">ACMG Classification</div><div class="detail-value"><span class="${acmgClass(v.acmg_classification)}">${v.acmg_classification || '-'}</span></div></div>
+          <div class="detail-item"><div class="detail-label">ACMG Criteria</div><div class="detail-value">${(v.acmg_criteria || []).join(', ') || '-'}</div></div>
+        </div>
+        ${v.diseases && v.diseases.length > 0 ? `
+          <div style="margin-top:12px">
+            <div class="detail-label">Associated Diseases</div>
+            ${v.diseases.map(d => `<div style="padding:4px 0;font-size:13px">${d.name || '-'} <span class="muted">(${d.inheritance || '-'})</span></div>`).join('')}
+          </div>
+        ` : ''}
+        ${v.hpo_phenotypes && v.hpo_phenotypes.length > 0 ? `
+          <div style="margin-top:8px">
+            <div class="detail-label">HPO Phenotypes</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
+              ${v.hpo_phenotypes.slice(0, 20).map(p => `<span class="pill new" style="font-size:10px">${typeof p === 'string' ? p : (p.name || p.hpo_id || '-')}</span>`).join('')}
+              ${v.hpo_phenotypes.length > 20 ? `<span class="muted">+${v.hpo_phenotypes.length - 20} more</span>` : ''}
+            </div>
+          </div>
+        ` : ''}
+        <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:12px">
+          <div class="row">
+            <div class="col-4">
+              <label>Reviewer Classification</label>
+              <select id="detailClass_${v.variant_id}" onchange="updateVariantComment('${v.variant_id}')" style="font-size:13px">
+                <option value="">-- Same as ACMG --</option>
+                <option value="Pathogenic" ${comment.classification === 'Pathogenic' ? 'selected' : ''}>Pathogenic</option>
+                <option value="Likely pathogenic" ${comment.classification === 'Likely pathogenic' ? 'selected' : ''}>Likely Pathogenic</option>
+                <option value="VUS" ${comment.classification === 'VUS' ? 'selected' : ''}>VUS</option>
+                <option value="Likely benign" ${comment.classification === 'Likely benign' ? 'selected' : ''}>Likely Benign</option>
+                <option value="Benign" ${comment.classification === 'Benign' ? 'selected' : ''}>Benign</option>
+              </select>
+            </div>
+            <div class="col-8">
+              <label>Reviewer Comment</label>
+              <input id="detailComment_${v.variant_id}" value="${comment.comment || ''}" placeholder="Add your comment..." onchange="updateVariantComment('${v.variant_id}')" />
+            </div>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <label class="checkbox-label">
+              <input type="checkbox" ${selectedVariants.has(v.variant_id) ? 'checked' : ''} onchange="toggleVariant('${v.variant_id}', this.checked); renderVariantsTable()" />
+              Include in Report
+            </label>
+          </div>
+        </div>
+      `;
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function updateVariantComment(variantId) {
+      const cls = qs('detailClass_' + variantId)?.value || '';
+      const comment = qs('detailComment_' + variantId)?.value || '';
+      if (cls || comment) {
+        variantComments[variantId] = { classification: cls, comment: comment };
+      } else {
+        delete variantComments[variantId];
+      }
+    }
+
+    // Search & filter handlers
+    qs('variantSearch').oninput = renderVariantsTable;
+    qs('variantClassFilter').onchange = renderVariantsTable;
+
+    // Sort handlers for variant table
+    document.querySelectorAll('#tblVariants thead th').forEach(th => {
+      if (!th.hasAttribute('data-key')) return;
+      th.classList.add('sortable');
+      th.onclick = () => {
+        const key = th.getAttribute('data-key');
+        if (variantSortKey === key) variantSortAsc = !variantSortAsc;
+        else { variantSortKey = key; variantSortAsc = true; }
+        // Update indicators
+        document.querySelectorAll('#tblVariants thead th').forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+        th.classList.add(variantSortAsc ? 'sort-asc' : 'sort-desc');
+        renderVariantsTable();
+      };
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    // Report Generation
+    // ═══════════════════════════════════════════════════════════
+    function updateSelectedVariantsList() {
+      const list = qs('selectedVariantsList');
+      if (selectedVariants.size === 0) {
+        list.innerHTML = '<div class="muted" style="padding:8px">No variants selected. Go to the Variants tab and select variants to include in the report.</div>';
+        return;
+      }
+      const variants = (reviewData?.variants || []).filter(v => selectedVariants.has(v.variant_id));
+      list.innerHTML = `<div class="muted" style="margin-bottom:8px">${variants.length} variant(s) selected</div>` +
+        variants.map(v => {
+          const comment = variantComments[v.variant_id] || {};
+          return `<div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--line)">
+            <span style="font-weight:600;min-width:80px">${v.gene}</span>
+            <span class="muted">${v.hgvsc || v.variant_id}</span>
+            <span class="${acmgClass(comment.classification || v.acmg_classification)}">${comment.classification || v.acmg_classification}</span>
+            ${comment.comment ? `<span class="muted" style="font-style:italic">"${comment.comment}"</span>` : ''}
+            <button class="btn danger-btn" style="padding:2px 8px;font-size:10px;margin-left:auto" onclick="selectedVariants.delete('${v.variant_id}');updateSelectedVariantsList()">Remove</button>
+          </div>`;
+        }).join('');
+    }
+
+    async function generateReport() {
+      const orderId = qs('reviewOrderSelect').value;
+      if (!orderId) return toast('Select an order first', false);
+      if (selectedVariants.size === 0) return toast('Select at least one variant', false);
+
+      const revName = qs('rRevName').value.trim();
+      if (!revName) return toast('Reviewer name is required', false);
+
+      // Build confirmed variants
+      const confirmed = (reviewData?.variants || [])
+        .filter(v => selectedVariants.has(v.variant_id))
+        .map(v => {
+          const comment = variantComments[v.variant_id] || {};
+          return {
+            ...v,
+            reviewer_confirmed: true,
+            reviewer_classification: comment.classification || v.acmg_classification,
+            reviewer_comment: comment.comment || '',
+            include_in_report: true,
+          };
+        });
+
+      // Languages
+      const languages = [];
+      if (qs('langEN').checked) languages.push('EN');
+      if (qs('langCN').checked) languages.push('CN');
+      if (qs('langKO').checked) languages.push('KO');
+      if (languages.length === 0) languages.push('EN');
+
+      const body = {
+        confirmed_variants: confirmed,
+        reviewer_info: {
+          name: revName,
+          id: qs('rRevId').value.trim() || undefined,
+          institution: qs('rRevInst').value.trim() || undefined,
+        },
+        patient_info: {
+          name: qs('rPatName').value.trim() || undefined,
+          dob: qs('rPatDob').value || undefined,
+          gender: qs('rPatGender').value || undefined,
+        },
+        partner_info: qs('rPartnerName').value.trim() ? {
+          name: qs('rPartnerName').value.trim(),
+        } : undefined,
+        languages: languages,
+      };
+
+      const btn = qs('btnGenReport');
+      try {
+        btn.classList.add('loading'); btn.textContent = 'Generating...';
+        const res = await apiPost(`/order/${orderId}/report`, body);
+        toast(`Report generated: ${res.message}`);
+        qs('reportMsg').innerHTML = `Generated files: ${(res.report_files || []).join(', ')}`;
+      } catch (e) {
+        toast('Report generation failed: ' + e.message, false);
+      } finally {
+        btn.classList.remove('loading'); btn.textContent = 'Generate Report';
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Theme Toggle
+    // ═══════════════════════════════════════════════════════════
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    if (savedTheme === 'light') document.body.classList.add('light');
+
+    qs('btnTheme').onclick = () => {
+      document.body.classList.toggle('light');
+      localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
+    };
+
+    // ═══════════════════════════════════════════════════════════
+    // Init
+    // ═══════════════════════════════════════════════════════════
+    (async function init() {
+      const lastTab = localStorage.getItem('activeTab') || 'dash';
+      showView(lastTab);
+      // Always check connection status on init
+      try {
+        const health = await apiGet('/health');
+        qs('connStatus').innerHTML = `<span class="conn-dot ok"></span>${health.environment || 'Connected'}`;
+      } catch (e) {
+        qs('connStatus').innerHTML = `<span class="conn-dot err"></span>Disconnected`;
+      }
+    })();
+  </script>
+</body>
+</html>

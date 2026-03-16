@@ -189,7 +189,7 @@
     <!-- Header -->
     <header>
       <div class="logo">Carrier Screening Portal</div>
-      <span id="connStatus" class="badge"><span class="conn-dot warn"></span>Connecting...</span>
+      <span id="connStatus" class="badge" onclick="changeDaemonUrl()" style="cursor:pointer" title="Click to change daemon URL"><span class="conn-dot warn"></span>Connecting...</span>
 
       <button id="tabDash" class="btn active" onclick="showView('dash')">Dashboard</button>
       <button id="tabSubmit" class="btn" onclick="showView('submit')">Submit</button>
@@ -451,7 +451,9 @@
     // ═══════════════════════════════════════════════════════════
     // Configuration
     // ═══════════════════════════════════════════════════════════
-    let API_BASE = localStorage.getItem('apiBase') || (location.hostname === 'localhost' ? 'http://localhost:8000' : location.origin.replace(/8080/, '8000'));
+    // Default daemon address - change this to match your service-daemon host
+    const DEFAULT_DAEMON = 'http://100.112.118.12:8000';
+    let API_BASE = localStorage.getItem('apiBase') || DEFAULT_DAEMON;
     const qs = id => document.getElementById(id);
 
     // State
@@ -464,6 +466,16 @@
     // ═══════════════════════════════════════════════════════════
     // Utilities
     // ═══════════════════════════════════════════════════════════
+    function changeDaemonUrl() {
+      const url = prompt('Daemon URL:', API_BASE);
+      if (url && url.trim()) {
+        API_BASE = url.trim().replace(/\/+$/, '');
+        localStorage.setItem('apiBase', API_BASE);
+        toast('Daemon URL changed to ' + API_BASE);
+        loadDashboard();
+      }
+    }
+
     const toast = (m, ok = true) => {
       const t = qs('toast');
       t.textContent = m;

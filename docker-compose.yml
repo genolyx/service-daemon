@@ -1,43 +1,56 @@
-version: "3.8"
+# Production-style run (image에 app/portal baked-in). 앱 로그: docker logs (파이프라인 로그는 /data/log).
+# 사용 전: cp .env.compose.example .env.compose 후 HOST_UID / HOST_GID / DOCKER_GID 설정.
+# 실행: docker compose --env-file .env.compose up -d --build
 
 services:
   service-daemon:
-    build: .
-    container_name: service-daemon
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TZ: ${TZ:-Asia/Seoul}
+        HOST_UID: ${HOST_UID}
+        HOST_GID: ${HOST_GID}
+        DOCKER_GID: ${DOCKER_GID}
+    image: service-daemon:latest
+    container_name: ${APP_ENV:-prod}-service-daemon
     restart: unless-stopped
-    ports:
-      - "${APP_PORT:-8000}:8000"
+
     env_file:
-      - .env
+      - ${ENV_FILE:-.env.docker}
+
+    command: /bin/sh -c "uvicorn app.main:app --host 0.0.0.0 --port $${APP_PORT:-8000} --no-access-log"
+
+    ports:
+      - "${HOST_PORT:-8000}:${APP_PORT:-8000}"
+
+    user: "${HOST_UID}:${HOST_GID}"
+    group_add:
+      - "${DOCKER_GID}"
+
     volumes:
-      # 데이터 디렉토리 (carrier-screening 구조 포함)
-      # carrier-screening/fastq/<work_dir>/<sample_name>/
-      # carrier-screening/analysis/<work_dir>/<sample_name>/
-      # carrier-screening/output/<work_dir>/<sample_name>/
-      # carrier-screening/log/<work_dir>/<sample_name>/
       - ${BASE_DIR:-/data}:/data
-      # Reference data (read-only)
+      - ${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}:/data/carrier_screening
+      - ${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}:${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}
+      - ${SGNIPT_FASTQ_HOST:-/home/ken/sgNIPT/fastq}:/data/sgnipt/fastq:ro
       - ${BASE_DIR:-/data}/reference:/data/reference:ro
-      # Pipeline directories (read-only)
       - ${CARRIER_SCREENING_PIPELINE_DIR:-/opt/pipelines/carrier-screening}:/opt/pipelines/carrier-screening:ro
       - ${NIPT_PIPELINE_DIR:-/opt/pipelines/nipt}:/opt/pipelines/nipt:ro
       - ${SGNIPT_PIPELINE_DIR:-/opt/pipelines/sgnipt}:/opt/pipelines/sgnipt:ro
-      # Nextflow executable
-      - /usr/local/bin/nextflow:/usr/local/bin/nextflow:ro
+      # - ${NEXTFLOW_HOST_PATH:-/usr/local/bin/nextflow}:/usr/local/bin/nextflow:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      # snpEff JAR+config: 이미지에 포함했으면 생략 가능. 호스트 복사본을 쓰려면 주석 해제:
+      # - ${SNPEFF_TOOLS_HOST:-./tools/snpEff}:/opt/tools/snpEff:ro
+
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:$${APP_PORT:-8000}/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 30s
+
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
         max-size: "50m"
         max-file: "5"
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-        reservations:
-          memory: 1G

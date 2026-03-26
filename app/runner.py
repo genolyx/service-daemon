@@ -34,6 +34,7 @@ class PipelineRunner:
         self._platform_client = get_platform_client()
         self._shutdown_event = asyncio.Event()
         self._active_processes: dict = {}  # order_id -> asyncio.subprocess.Process
+        self._user_cancelled: set = set()  # Stop(실행 중) 시 mark_failed 대신 CANCELLED 처리
 
     async def start(self):
         """워커 루프 시작"""
@@ -47,15 +48,22 @@ class PipelineRunner:
             for i in range(self._queue_manager.max_concurrent)
         ]
 
-        # Graceful shutdown 시그널 등록
-        loop = asyncio.get_event_loop()
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            try:
-                loop.add_signal_handler(sig, self._handle_shutdown)
-            except NotImplementedError:
-                pass  # Windows에서는 지원되지 않음
+        # SIGINT/SIGTERM은 uvicorn이 처리하고 lifespan에서 _shutdown_event를 설정한다.
+        # 여기서 add_signal_handler로 등록하면 uvicorn 핸들러를 덮어써 Ctrl+C로도
+        # 서버가 종료되지 않고 로그만 반복되는 경우가 있다.
 
         await self._shutdown_event.wait()
+
+        # 실행 중 파이프라인 자식 프로세스 종료 (worker cancel만으로는 nextflow 등이 남을 수 있음)
+        for order_id, proc in list(self._active_processes.items()):
+            if proc.returncode is None:
+                try:
+                    proc.terminate()
+                    logger.info(
+                        f"Shutdown: sent SIGTERM to pipeline PID {proc.pid} (order {order_id})"
+                    )
+                except ProcessLookupError:
+                    pass
 
         # 워커 정리
         for worker in workers:
@@ -63,11 +71,6 @@ class PipelineRunner:
         await asyncio.gather(*workers, return_exceptions=True)
 
         logger.info("PipelineRunner stopped")
-
-    def _handle_shutdown(self):
-        """Graceful shutdown 처리"""
-        logger.info("Shutdown signal received, stopping workers...")
-        self._shutdown_event.set()
 
     async def _worker(self, worker_id: int):
         """개별 워커 루프"""
@@ -144,6 +147,18 @@ class PipelineRunner:
 
             exit_code = await self._run_pipeline(job, command)
 
+            if job.order_id in self._user_cancelled:
+                self._user_cancelled.discard(job.order_id)
+                await self._update_status(
+                    job, OrderStatus.CANCELLED, 0, "Cancelled by user"
+                )
+                await self._queue_manager.mark_cancelled(job)
+                try:
+                    await plugin.on_job_failed(job, "Cancelled by user")
+                except Exception:
+                    pass
+                return
+
             if exit_code != 0:
                 raise RuntimeError(
                     f"Pipeline exited with code {exit_code}"
@@ -159,9 +174,32 @@ class PipelineRunner:
             await self._update_status(job, OrderStatus.PROCESSING, 90, "Processing results...")
             process_ok = await plugin.process_results(job)
             if not process_ok:
+                if job.order_id in self._user_cancelled:
+                    self._user_cancelled.discard(job.order_id)
+                    await self._update_status(
+                        job, OrderStatus.CANCELLED, 0, "Cancelled by user"
+                    )
+                    await self._queue_manager.mark_cancelled(job)
+                    try:
+                        await plugin.on_job_failed(job, "Cancelled by user")
+                    except Exception:
+                        pass
+                    return
                 raise RuntimeError("Result processing failed")
 
             # ── Step 5: 파일 업로드 ──
+            if job.order_id in self._user_cancelled:
+                self._user_cancelled.discard(job.order_id)
+                await self._update_status(
+                    job, OrderStatus.CANCELLED, 0, "Cancelled by user"
+                )
+                await self._queue_manager.mark_cancelled(job)
+                try:
+                    await plugin.on_job_failed(job, "Cancelled by user")
+                except Exception:
+                    pass
+                return
+
             await self._update_status(job, OrderStatus.UPLOADING, 95, "Uploading results...")
             output_files = await plugin.get_output_files(job)
 
@@ -189,16 +227,27 @@ class PipelineRunner:
             await plugin.on_job_complete(job)
 
         except Exception as e:
-            error_msg = str(e)
-            logger.error(
-                f"[{job.service_code}] Job {job.order_id} failed: {error_msg}",
-                exc_info=True
-            )
-            await self._queue_manager.mark_failed(job, error_msg)
-            await self._platform_client.notify_analysis_failed(
-                job.order_id, job.service_code, error_msg
-            )
-            await plugin.on_job_failed(job, error_msg)
+            if job.order_id in self._user_cancelled:
+                self._user_cancelled.discard(job.order_id)
+                await self._update_status(
+                    job, OrderStatus.CANCELLED, 0, "Cancelled by user"
+                )
+                await self._queue_manager.mark_cancelled(job)
+                try:
+                    await plugin.on_job_failed(job, "Cancelled by user")
+                except Exception:
+                    pass
+            else:
+                error_msg = str(e)
+                logger.error(
+                    f"[{job.service_code}] Job {job.order_id} failed: {error_msg}",
+                    exc_info=True
+                )
+                await self._queue_manager.mark_failed(job, error_msg)
+                await self._platform_client.notify_analysis_failed(
+                    job.order_id, job.service_code, error_msg
+                )
+                await plugin.on_job_failed(job, error_msg)
 
         finally:
             # 프로세스 참조 정리
@@ -259,7 +308,46 @@ class PipelineRunner:
         logger.info(
             f"[{job.service_code}] Pipeline finished with exit code: {exit_code}"
         )
+        if exit_code != 0:
+            self._emit_pipeline_log_tail(job.service_code, log_file, exit_code)
+
         return exit_code
+
+    @staticmethod
+    def _emit_pipeline_log_tail(
+        service_code: str, log_path: str, exit_code: int, max_chars: int = 16000
+    ) -> None:
+        """비정상 종료 시 docker logs 에서 바로 원인 추적할 수 있도록 pipeline.log 꼬리를 남김."""
+        if not os.path.isfile(log_path):
+            logger.error(
+                "[%s] pipeline failed (exit %s); no log file at %s",
+                service_code,
+                exit_code,
+                log_path,
+            )
+            return
+        try:
+            with open(log_path, "r", errors="replace") as lf:
+                lf.seek(0, os.SEEK_END)
+                size = lf.tell()
+                lf.seek(max(0, size - max_chars))
+                tail = lf.read()
+            if tail.strip():
+                logger.error(
+                    "[%s] pipeline.log tail (exit %s) — full file: %s\n%s",
+                    service_code,
+                    exit_code,
+                    log_path,
+                    tail,
+                )
+            else:
+                logger.error(
+                    "[%s] pipeline log is empty: %s", service_code, log_path
+                )
+        except OSError as e:
+            logger.error(
+                "[%s] could not read pipeline log %s: %s", service_code, log_path, e
+            )
 
     async def _monitor_progress(self, job: Job, log_file: str):
         """
@@ -314,7 +402,8 @@ class PipelineRunner:
     ):
         """작업 상태를 내부 + 플랫폼에 동시 업데이트"""
         job.update_status(status, progress, message)
-        
+        await self._queue_manager.persist_job(job)
+
         # 플랫폼에 비동기 업데이트 (실패해도 계속 진행)
         try:
             await self._platform_client.update_order_status(
@@ -326,10 +415,22 @@ class PipelineRunner:
                 f"[{job.service_code}] Failed to update platform status: {e}"
             )
 
+    def record_stop_request(self, order_id: str) -> None:
+        """
+        파이프라인 PID가 이미 없을 때(결과 처리·업로드 단계 등) 사용자 Stop을 반영.
+        process_results / 업로드 루프에서 이 플래그를 확인해 CANCELLED 로 마무리한다.
+        """
+        self._user_cancelled.add(order_id)
+        logger.info(f"Stop request recorded for {order_id} (post-pipeline or no PID)")
+
+    def stop_requested(self, order_id: str) -> bool:
+        return order_id in self._user_cancelled
+
     async def cancel_job(self, order_id: str) -> bool:
-        """실행 중인 작업을 취소합니다."""
+        """실행 중인 파이프라인 서브프로세스에 SIGTERM. 없으면 False."""
         process = self._active_processes.get(order_id)
         if process and process.returncode is None:
+            self._user_cancelled.add(order_id)
             try:
                 process.send_signal(signal.SIGTERM)
                 logger.info(f"Sent SIGTERM to job {order_id} (PID: {process.pid})")
@@ -346,7 +447,10 @@ class PipelineRunner:
                 logger.error(f"Failed to cancel job {order_id}: {e}")
                 return False
         
-        logger.warning(f"No active process found for job {order_id}")
+        logger.info(
+            f"No active pipeline PID for job {order_id} "
+            f"(likely in check_completion / process_results / upload)"
+        )
         return False
 
 

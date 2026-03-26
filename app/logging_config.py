@@ -6,12 +6,18 @@ Logging Configuration
 
 import logging
 import time
-import json
 from datetime import datetime
 from colorlog import ColoredFormatter
 from fastapi import Request
 
 from .config import settings
+from .datetime_kst import KST
+
+log = logging.getLogger(__name__)
+
+
+def _kst_log_converter(seconds: float):
+    return datetime.fromtimestamp(seconds, tz=KST).timetuple()
 
 
 def setup_logging():
@@ -32,6 +38,7 @@ def setup_logging():
         secondary_log_colors={},
         style="%",
     )
+    formatter.converter = _kst_log_converter
 
     logging.basicConfig(
         level=logging_level,
@@ -51,7 +58,7 @@ def setup_logging():
 
 
 def setup_middleware(app):
-    """HTTP 요청 로깅 미들웨어"""
+    """HTTP 요청 로깅 미들웨어 (한 줄 요약)"""
 
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
@@ -77,57 +84,31 @@ def setup_middleware(app):
         should_skip = should_skip_path or should_skip_ua or is_external_root
 
         start_time = time.time()
-
-        if not should_skip:
-            await pretty_print_request(request)
-
         response = await call_next(request)
         process_time = time.time() - start_time
 
         if not should_skip:
-            print(f"  Response Time: {process_time:.3f}s | Status: {response.status_code}")
-            print("=" * 80 + "\n")
+            path_qs = request.url.path
+            if request.url.query:
+                path_qs = f"{path_qs}?{request.url.query}"
+            peer = (
+                f"{request.client.host}:{request.client.port}"
+                if request.client else "-"
+            )
+            log.info(
+                "%s %s -> %s %.3fs %s",
+                request.method,
+                path_qs,
+                response.status_code,
+                process_time,
+                peer,
+            )
         else:
-            logger = logging.getLogger(__name__)
-            logger.debug(
-                f"Skipped logging: {request.method} {request.url.path} "
-                f"from {request.client.host}"
+            log.debug(
+                "skip access log: %s %s from %s",
+                request.method,
+                request.url.path,
+                request.client.host if request.client else "-",
             )
 
         return response
-
-
-async def pretty_print_request(request: Request):
-    """Request 정보 출력"""
-    print("\n" + "=" * 80)
-    print(f" REQUEST LOG - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f" Client: {request.client.host}:{request.client.port}")
-    print(f" {request.method} {request.url}")
-    print("-" * 80)
-
-    important_headers = ['authorization', 'content-type', 'user-agent', 'accept']
-    print(" HEADERS:")
-    for name, value in request.headers.items():
-        if name.lower() in important_headers:
-            if name.lower() == 'authorization':
-                print(f"   {name}: Bearer ***masked***")
-            else:
-                print(f"   {name}: {value}")
-
-    try:
-        body = await request.body()
-        if body:
-            print("\n BODY:")
-            try:
-                json_body = json.loads(body.decode('utf-8'))
-                print(json.dumps(json_body, indent=3, ensure_ascii=False))
-            except json.JSONDecodeError:
-                body_str = body.decode('utf-8')
-                if len(body_str) > 200:
-                    print(f"   {body_str[:200]}... (truncated)")
-                else:
-                    print(f"   {body_str}")
-        else:
-            print("\n BODY: (empty)")
-    except Exception as e:
-        print(f"\n BODY: Error reading - {e}")

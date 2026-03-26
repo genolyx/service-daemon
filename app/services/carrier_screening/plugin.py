@@ -18,13 +18,21 @@ import glob
 import asyncio
 import json
 import logging
+import shlex
 from typing import Dict, Any, List, Optional, Tuple
 
 from ..base import ServicePlugin
 from ...config import settings
 from ...models import Job, OutputFile
+from .layout_norm import carrier_sequencing_folder
 
 logger = logging.getLogger(__name__)
+
+
+def _job_stop_requested(order_id: str) -> bool:
+    """Portal Stop during PROCESSING: 파이프라인 PID는 없지만 취소 플래그만 설정된 경우."""
+    from ...runner import get_runner
+    return get_runner().stop_requested(order_id)
 
 
 class CarrierScreeningPlugin(ServicePlugin):
@@ -71,13 +79,150 @@ class CarrierScreeningPlugin(ServicePlugin):
             carrier-screening/output/<work_dir>/<sample_name>/
             carrier-screening/log/<work_dir>/<sample_name>/
         """
-        base = os.path.join(settings.base_dir, "carrier-screening")
+        layout_base = settings.carrier_screening_layout_base
+        work_root = settings.carrier_screening_work_root
         return {
-            "fastq": job.fastq_dir or os.path.join(base, "fastq", job.work_dir, job.sample_name),
-            "analysis": job.analysis_dir or os.path.join(base, "analysis", job.work_dir, job.sample_name),
-            "output": job.output_dir or os.path.join(base, "output", job.work_dir, job.sample_name),
-            "log": job.log_dir or os.path.join(base, "log", job.work_dir, job.sample_name),
+            "fastq": job.fastq_dir
+            or os.path.join(layout_base, "fastq", job.work_dir, job.sample_name),
+            "analysis": job.analysis_dir
+            or os.path.join(work_root, "analysis", job.work_dir, job.sample_name),
+            "output": job.output_dir
+            or os.path.join(work_root, "output", job.work_dir, job.sample_name),
+            "log": job.log_dir
+            or os.path.join(work_root, "log", job.work_dir, job.sample_name),
         }
+
+    def _qc_extra_search_dirs(self, job: Job, analysis_dir: str) -> List[str]:
+        """
+        artifact 전용 analysis_dir(예: carrier_screening_work) 에 QC 파일이 없을 때,
+        파이프라인 원본 디렉터리를 추가 검색합니다.
+
+        Nextflow 출력이 job.sample_name 이 아닌 FASTQ 폴더명(sequencing_folder) 아래에만
+        있을 수 있으므로, layout_base/analysis/{work}/ 샘플·시퀀싱 폴더 둘 다 후보에 넣습니다.
+        """
+        from .layout_norm import carrier_sequencing_folder
+
+        wk = str(job.work_dir).strip() or "00"
+        base = settings.carrier_screening_layout_base
+        seq = carrier_sequencing_folder(job)
+        smp = str(job.sample_name).strip()
+        candidates: List[str] = []
+        if smp:
+            candidates.append(os.path.join(base, "analysis", wk, smp))
+        if seq and seq != smp:
+            candidates.append(os.path.join(base, "analysis", wk, seq))
+
+        try:
+            ad_abs = os.path.abspath(analysis_dir)
+        except OSError:
+            ad_abs = ""
+        seen_real: set = set()
+        out: List[str] = []
+        for cand in candidates:
+            if not cand or not os.path.isdir(cand):
+                continue
+            try:
+                if ad_abs and os.path.abspath(cand) == ad_abs:
+                    continue
+            except OSError:
+                pass
+            real = os.path.realpath(cand)
+            if real in seen_real:
+                continue
+            seen_real.add(real)
+            out.append(cand)
+        return out
+
+    def _qc_more_roots_from_outputs(self, job: Job) -> List[str]:
+        """
+        alignment QC(flagstat, MultiQC, Picard)가 analysis 트리가 아니라
+        output / layout output / log 에만 있을 때 검색 루트 확장.
+        """
+        dirs = self._get_dirs(job)
+        seen: set = set()
+        out: List[str] = []
+
+        def add(p: Optional[str]) -> None:
+            if not p:
+                return
+            p = str(p).strip()
+            if not p or not os.path.isdir(p):
+                return
+            r = os.path.realpath(p)
+            if r in seen:
+                return
+            seen.add(r)
+            out.append(p)
+
+        for p in self._vcf_completion_search_roots(job, dirs):
+            add(p)
+        add(dirs.get("log") or "")
+        return out
+
+    def _carrier_bed_directories(self) -> List[str]:
+        """파이프라인 패키지 · run_analysis -d 프로젝트 · FASTQ layout 의 data/bed 후보."""
+        dirs: List[str] = []
+        pd = settings.carrier_screening_pipeline_dir
+        dirs.append(os.path.join(pd, "data", "bed"))
+        sd = (settings.carrier_screening_script_data_dir or "").strip()
+        if sd:
+            dirs.append(os.path.join(os.path.abspath(sd), "data", "bed"))
+        dirs.append(os.path.join(settings.carrier_screening_layout_base, "data", "bed"))
+        seen = set()
+        out: List[str] = []
+        for d in dirs:
+            if d in seen:
+                continue
+            seen.add(d)
+            out.append(d)
+        return out
+
+    def _find_default_bed_in_dirs(self, bed_dirs: List[str], prefix: str) -> Optional[str]:
+        for bed_dir in bed_dirs:
+            if not os.path.isdir(bed_dir):
+                continue
+            candidates = glob.glob(os.path.join(bed_dir, f"{prefix}*.bed"))
+            if candidates:
+                return sorted(candidates)[0]
+        return None
+
+    def _resolve_disease_gene_json_path(self) -> str:
+        candidates: List[str] = []
+        if settings.disease_gene_json:
+            candidates.append(settings.disease_gene_json)
+        pd = settings.carrier_screening_pipeline_dir
+        candidates.append(os.path.join(pd, "data", "db", "disease_gene_mapping.json"))
+        sd = (settings.carrier_screening_script_data_dir or "").strip()
+        if sd:
+            candidates.append(
+                os.path.join(os.path.abspath(sd), "data", "db", "disease_gene_mapping.json")
+            )
+        candidates.append(
+            os.path.join(settings.carrier_screening_layout_base, "data", "db", "disease_gene_mapping.json")
+        )
+        seen = set()
+        for c in candidates:
+            if not c or c in seen:
+                continue
+            seen.add(c)
+            if os.path.isfile(c):
+                logger.info("[carrier_screening] Using disease_gene_mapping: %s", c)
+                return c
+        return settings.disease_gene_json or ""
+
+    def _resolve_carrier_bed(
+        self,
+        job: Job,
+        param_key: str,
+        prefix: str,
+        default_setting_path: Optional[str],
+    ) -> Optional[str]:
+        p = job.params.get(param_key)
+        if p and os.path.isfile(p):
+            return p
+        if default_setting_path and os.path.isfile(default_setting_path):
+            return default_setting_path
+        return self._find_default_bed_in_dirs(self._carrier_bed_directories(), prefix)
 
     # ─── Step 1: 입력 준비 ─────────────────────────────────
 
@@ -85,9 +230,18 @@ class CarrierScreeningPlugin(ServicePlugin):
         """FASTQ 파일 확인 및 디렉토리 구조 생성"""
         dirs = self._get_dirs(job)
 
-        # 디렉토리 생성
-        for d in dirs.values():
-            os.makedirs(d, exist_ok=True)
+        try:
+            for d in dirs.values():
+                os.makedirs(d, exist_ok=True)
+        except PermissionError as e:
+            logger.error(
+                "[carrier_screening] Permission denied creating %s — fix host ownership, set "
+                ".env.compose HOST_UID/HOST_GID to `id -u`/`id -g`, or set CARRIER_SCREENING_ARTIFACT_BASE "
+                "to a writable dir under /data (e.g. /data/carrier_screening_work) so analysis/log are not "
+                "next to read-only FASTQ.",
+                e.filename or dirs,
+            )
+            raise
 
         # Job 경로 업데이트
         job.fastq_dir = dirs["fastq"]
@@ -188,11 +342,169 @@ class CarrierScreeningPlugin(ServicePlugin):
 
     # ─── Step 2: 파이프라인 실행 명령 ──────────────────────
 
+    def _effective_run_analysis_script(self) -> Optional[str]:
+        """
+        1) CARRIER_SCREENING_RUN_SCRIPT (절대 경로)
+        2) 프로젝트 루트(layout base, 예: /data/carrier_screening) 아래 src/run_analysis.sh
+           — compose 가 CARRIER_SCREENING_HOST 로 레포 전체를 붙인 경우
+        3) CARRIER_SCREENING_PIPELINE_DIR 아래 src/, 루트, scripts/
+        없으면 None → Nextflow 직접.
+        """
+        explicit = (settings.carrier_screening_run_script or "").strip()
+        layout_base = settings.carrier_screening_layout_base
+        pd = settings.carrier_screening_pipeline_dir
+        to_try: List[str] = []
+        if explicit:
+            to_try.append(explicit)
+        for rel in ("src/run_analysis.sh", "run_analysis.sh", "scripts/run_analysis.sh"):
+            p = os.path.join(layout_base, rel)
+            if p not in to_try:
+                to_try.append(p)
+        for rel in ("src/run_analysis.sh", "run_analysis.sh", "scripts/run_analysis.sh"):
+            p = os.path.join(pd, rel)
+            if p not in to_try:
+                to_try.append(p)
+        for path in to_try:
+            if path and os.path.isfile(path):
+                if not explicit or path != explicit:
+                    logger.info("[carrier_screening] Using run_analysis.sh at %s", path)
+                return path
+        if explicit:
+            logger.warning(
+                "[carrier_screening] CARRIER_SCREENING_RUN_SCRIPT not found: %s; "
+                "also checked %s and %s — using Nextflow direct",
+                explicit,
+                layout_base,
+                pd,
+            )
+        else:
+            logger.warning(
+                "[carrier_screening] No run_analysis.sh — set CARRIER_SCREENING_RUN_SCRIPT or mount "
+                "repo at layout base (e.g. %s/src/run_analysis.sh) or under %s — using Nextflow direct",
+                layout_base,
+                pd,
+            )
+        return None
+
+    def _run_analysis_data_dir(self) -> str:
+        """run_analysis.sh -d: CARRIER_SCREENING_SCRIPT_DATA_DIR 또는 FASTQ 루트의 부모."""
+        d = (settings.carrier_screening_script_data_dir or "").strip()
+        if d:
+            return d
+        return settings.carrier_screening_layout_base
+
+    def _run_analysis_ref_dir(self) -> str:
+        r = (settings.carrier_screening_script_ref_dir or "").strip()
+        if r:
+            return r
+        return os.path.join(self._run_analysis_data_dir(), "data", "refs")
+
+    def _shell_command_run_analysis(self, job: Job, script: str) -> str:
+        """
+        Dark Gene run_analysis.sh 호출 (-w/-s/-d/-r).
+        예: ./src/run_analysis.sh -w 2601 -s NA12878_Twist_Exome -d . -r ./data/refs --skip-cnv
+        -s 는 fastq/<work>/<s>/ 폴더명과 같아야 함 (Portal 의 Sample name 파이프라인).
+        """
+        data_dir = self._run_analysis_data_dir()
+        ref_dir = self._run_analysis_ref_dir()
+        sample_folder = carrier_sequencing_folder(job)
+        parts = [
+            "bash",
+            script,
+            "-w",
+            str(job.work_dir),
+            "-s",
+            sample_folder,
+            "-d",
+            data_dir,
+            "-r",
+            ref_dir,
+        ]
+        extra = (settings.carrier_screening_script_extra_args or "").strip()
+        if extra:
+            parts.extend(shlex.split(extra))
+        return " ".join(shlex.quote(p) for p in parts)
+
+    def _resolve_nextflow_main_and_config(
+        self,
+    ) -> Tuple[str, Optional[str]]:
+        """
+        main.nf / nextflow.config 위치 — 레포마다 bin/, 루트, workflow/ 등 다름.
+        """
+        pd = settings.carrier_screening_pipeline_dir.rstrip("/")
+        explicit = (settings.carrier_screening_main_nf or "").strip()
+        if explicit:
+            main_nf = os.path.abspath(explicit)
+            if os.path.isfile(main_nf):
+                mdir = os.path.dirname(main_nf)
+                for cand in (
+                    os.path.join(mdir, "nextflow.config"),
+                    os.path.join(pd, "nextflow.config"),
+                    os.path.join(pd, "bin", "nextflow.config"),
+                ):
+                    if os.path.isfile(cand):
+                        return main_nf, cand
+                return main_nf, None
+            logger.warning(
+                "[carrier_screening] CARRIER_SCREENING_MAIN_NF not found: %s — scanning pipeline_dir",
+                explicit,
+            )
+
+        pairs = [
+            ("bin/main.nf", "bin/nextflow.config"),
+            ("main.nf", "nextflow.config"),
+            ("workflow/main.nf", "workflow/nextflow.config"),
+            ("workflow/main.nf", "nextflow.config"),
+            ("workflows/main.nf", "nextflow.config"),
+        ]
+        tried: List[str] = []
+        for main_rel, cfg_rel in pairs:
+            main_path = os.path.join(pd, main_rel)
+            tried.append(main_path)
+            if not os.path.isfile(main_path):
+                continue
+            cfg_path = os.path.join(pd, cfg_rel)
+            if os.path.isfile(cfg_path):
+                return main_path, cfg_path
+            side = os.path.join(os.path.dirname(main_path), "nextflow.config")
+            if os.path.isfile(side):
+                return main_path, side
+            root_cfg = os.path.join(pd, "nextflow.config")
+            if os.path.isfile(root_cfg):
+                return main_path, root_cfg
+            return main_path, None
+
+        fallback = os.path.join(pd, "bin", "main.nf")
+        logger.error(
+            "[carrier_screening] No main.nf found under %s (tried: %s). "
+            "Set CARRIER_SCREENING_MAIN_NF to the real path.",
+            pd,
+            ", ".join(tried),
+        )
+        return fallback, None
+
     async def get_pipeline_command(self, job: Job) -> str:
-        """Nextflow 파이프라인 실행 명령을 생성합니다."""
+        """src/run_analysis.sh 가 있으면 우선 사용, 없으면 Nextflow 직접 실행."""
+        script_path = self._effective_run_analysis_script()
+        if script_path:
+            cmd = self._shell_command_run_analysis(job, script_path)
+            logger.info(
+                "[carrier_screening] Using run script %s: %s",
+                script_path,
+                cmd if len(cmd) <= 240 else cmd[:240] + "...",
+            )
+            return cmd
+
+        logger.warning(
+            "[carrier_screening] Pipeline command will use Nextflow (see previous warning if run_analysis.sh missing)"
+        )
         pipeline_dir = settings.carrier_screening_pipeline_dir
-        main_nf = os.path.join(pipeline_dir, "bin", "main.nf")
-        nf_config = os.path.join(pipeline_dir, "bin", "nextflow.config")
+        main_nf, nf_config = self._resolve_nextflow_main_and_config()
+        logger.info(
+            "[carrier_screening] Nextflow entry: %s (config: %s)",
+            main_nf,
+            nf_config or "(none)",
+        )
 
         # Nextflow 실행 명령 구성
         cmd_parts = [
@@ -201,12 +513,12 @@ class CarrierScreeningPlugin(ServicePlugin):
         ]
 
         # config 파일
-        if os.path.exists(nf_config):
+        if nf_config and os.path.isfile(nf_config):
             cmd_parts.extend(["-c", nf_config])
 
-        # 파라미터
+        # 파라미터 (sample_name 은 FASTQ 상위 폴더와 맞춤; 주문 ID만 쓰면 파이프라인이 못 찾는 경우 있음)
         params = {
-            "sample_name": job.sample_name,
+            "sample_name": carrier_sequencing_folder(job),
             "fastq_r1": job.fastq_r1_path,
             "fastq_r2": job.fastq_r2_path,
             "outdir": job.analysis_dir,
@@ -218,9 +530,13 @@ class CarrierScreeningPlugin(ServicePlugin):
         if settings.ref_bwa_indices:
             params["bwa_index"] = settings.ref_bwa_indices
 
-        # BED 파일 (서비스 파라미터에서 가져오기)
-        bed_dir = os.path.join(pipeline_dir, "data", "bed")
-        backbone_bed = job.params.get("backbone_bed") or self._find_default_bed(bed_dir, "backbone")
+        # BED 파일 (job → .env 기본값 → 여러 data/bed 트리에서 탐색)
+        backbone_bed = self._resolve_carrier_bed(
+            job,
+            "backbone_bed",
+            "backbone",
+            settings.carrier_default_backbone_bed,
+        )
         if backbone_bed:
             params["backbone_bed"] = backbone_bed
 
@@ -245,49 +561,139 @@ class CarrierScreeningPlugin(ServicePlugin):
 
         return " ".join(cmd_parts)
 
-    def _find_default_bed(self, bed_dir: str, prefix: str) -> Optional[str]:
-        """기본 BED 파일을 찾습니다."""
-        if not os.path.isdir(bed_dir):
-            return None
-        candidates = glob.glob(os.path.join(bed_dir, f"{prefix}*.bed"))
-        if candidates:
-            return candidates[0]
-        return None
-
     # ─── Step 3: 완료 확인 ─────────────────────────────────
+
+    def _vcf_completion_search_roots(self, job: Job, dirs: Dict[str, str]) -> List[str]:
+        """
+        VCF 후보 경로:
+        - Job이 가리키는 analysis / output (보통 CARRIER_SCREENING_ARTIFACT_BASE 아래)
+        - carrier_screening_layout_base/output/<work>/... (FASTQ 프로젝트 루트)
+        - carrier_screening_script_data_dir/output/<work>/... (run_analysis -d 트리; 호스트 경로)
+
+        ARTIFACT_BASE 를 쓰면 Nextflow outdir 은 work 아래인데, run_analysis 는 프로젝트 루트
+        아래 output/.../vcf 에만 쓰는 경우가 많다.
+        """
+        roots: List[str] = []
+
+        def add(path: str) -> None:
+            p = (path or "").strip()
+            if p and os.path.isdir(p):
+                ap = os.path.abspath(p)
+                if ap not in roots:
+                    roots.append(ap)
+
+        for key in ("analysis", "output"):
+            add(dirs.get(key) or "")
+
+        layout_base = settings.carrier_screening_layout_base
+        work_root = os.path.abspath(settings.carrier_screening_work_root)
+        script_root_raw = (settings.carrier_screening_script_data_dir or "").strip()
+        wk = str(job.work_dir).strip() or "00"
+        seq = carrier_sequencing_folder(job)
+        path_key = (str(job.sample_name).strip() or job.order_id or "").strip()
+        leaves = list(dict.fromkeys([x for x in (path_key, seq) if x]))
+
+        seen_bases = set()
+        for base in (layout_base, script_root_raw):
+            if not (base or "").strip():
+                continue
+            ba = os.path.abspath(base.strip())
+            if ba in seen_bases:
+                continue
+            seen_bases.add(ba)
+            # 동일 트리를 artifact 쪽에서 이미 검색한 경우 스킵 (output 경로 중복 방지)
+            if ba == work_root:
+                continue
+            for leaf in leaves:
+                add(os.path.join(ba, "output", wk, leaf))
+
+        return roots
+
+    def _carrier_vcf_basename_tokens(self, job: Job) -> List[str]:
+        """파이프 산출 파일명이 sample_name 전체와 다를 때(예: NA12878만 포함) 대비."""
+        seq = carrier_sequencing_folder(job)
+        raw: List[Optional[str]] = [job.sample_name, seq, job.order_id]
+        tokens: List[str] = []
+        for r in raw:
+            if not r:
+                continue
+            s = str(r).strip()
+            if not s:
+                continue
+            tokens.append(s)
+            for part in re.split(r"[-_]", s):
+                p = part.strip()
+                if len(p) >= 4:
+                    tokens.append(p)
+        seen = set()
+        out: List[str] = []
+        for t in tokens:
+            k = t.lower()
+            if k not in seen:
+                seen.add(k)
+                out.append(t)
+        return out
+
+    def _carrier_main_vcf_sort_key(self, path: str, tokens: List[str]) -> Tuple:
+        """
+        소형 변이용 메인 VCF 우선: .../vcf/*filtered* > genotyped > 기타,
+        SV(manta)·repeat 등은 후순위.
+        """
+        norm = path.replace("\\", "/")
+        base = os.path.basename(norm)
+        bl = base.lower()
+        ll = norm.lower()
+        in_vcf = "/vcf/" in ll or ll.rstrip("/").endswith("/vcf")
+        in_sv = "/sv/" in ll
+        in_rep = "/repeat/" in ll
+        has_filt = "filtered" in bl
+        has_gen = "genotyped" in bl
+        has_manta = "manta" in bl
+        token_hit = any(t.lower() in bl for t in tokens)
+        filt_rank = 0 if has_filt else (1 if has_gen else 2)
+        return (
+            0 if in_vcf else 1,
+            filt_rank,
+            1 if (in_sv or in_rep) else 0,
+            1 if has_manta else 0,
+            0 if token_hit else 1,
+            base,
+        )
+
+    def _pick_main_carrier_vcf(self, vcf_files: List[str], job: Job) -> str:
+        tokens = self._carrier_vcf_basename_tokens(job)
+        return min(vcf_files, key=lambda p: self._carrier_main_vcf_sort_key(p, tokens))
 
     async def check_completion(self, job: Job) -> bool:
         """파이프라인 완료를 확인합니다 (VCF 파일 존재 여부)."""
         dirs = self._get_dirs(job)
-        analysis_dir = dirs["analysis"]
+        search_roots = self._vcf_completion_search_roots(job, dirs)
 
-        # VCF 파일 찾기
-        vcf_files = glob.glob(os.path.join(analysis_dir, "**", "*.vcf.gz"), recursive=True)
-        vcf_files += glob.glob(os.path.join(analysis_dir, "**", "*.vcf"), recursive=True)
+        vcf_files: List[str] = []
+        for root in search_roots:
+            vcf_files.extend(
+                glob.glob(os.path.join(root, "**", "*.vcf.gz"), recursive=True)
+            )
+            vcf_files.extend(
+                glob.glob(os.path.join(root, "**", "*.vcf"), recursive=True)
+            )
+        vcf_files = list(dict.fromkeys(vcf_files))
 
         if not vcf_files:
-            logger.error(f"No VCF files found in {analysis_dir}")
+            logger.error(
+                "[carrier_screening] No VCF under any search root (artifact analysis/output, "
+                "layout_base/output, script_data_dir/output): %s",
+                " | ".join(search_roots) if search_roots else "(none)",
+            )
             return False
 
-        # 주요 VCF 파일 확인 (genotyped, filtered)
-        main_vcf = None
-        for pattern in [
-            f"*{job.sample_name}*filtered*.vcf*",
-            f"*{job.sample_name}*genotyped*.vcf*",
-            f"*{job.sample_name}*.vcf*",
-        ]:
-            matches = glob.glob(os.path.join(analysis_dir, "**", pattern), recursive=True)
-            if matches:
-                main_vcf = matches[0]
-                break
-
-        if main_vcf:
-            logger.info(f"Pipeline completed, main VCF: {main_vcf}")
-            job.params["main_vcf"] = main_vcf
-            return True
-
-        logger.warning(f"VCF files found but no main VCF identified: {vcf_files}")
-        job.params["main_vcf"] = vcf_files[0]
+        main_vcf = self._pick_main_carrier_vcf(vcf_files, job)
+        logger.info(
+            "[carrier_screening] Main VCF (ranked among %s candidates): %s",
+            len(vcf_files),
+            main_vcf,
+        )
+        job.params["main_vcf"] = main_vcf
         return True
 
     # ─── Step 4: 결과 후처리 (Annotation) ──────────────────
@@ -299,8 +705,8 @@ class CarrierScreeningPlugin(ServicePlugin):
         통합 parse_vcf_variants 파이프라인을 사용하여 처리합니다.
 
         전체 annotation 파이프라인:
-            1. VCF FORMAT 문제 필드 정리
-            2. snpEff annotation (선택적)
+            1. VCF FORMAT 문제 필드 정리 (이미 main보다 새 cleaned 가 있으면 생략)
+            2. snpEff annotation (선택적, cleaned 이상으로 최신 snpEff 가 있으면 생략)
             3. VariantAnnotator 초기화 (모든 DB 소스 포함)
             4. VariantFilterConfig 구성 (BED, HPO, AF, ClinVar 등)
             5. 통합 parse_vcf_variants 실행
@@ -329,37 +735,85 @@ class CarrierScreeningPlugin(ServicePlugin):
 
             logger.info(f"[process_results] Starting annotation for {job.sample_name}")
             logger.info(f"  Main VCF: {main_vcf}")
+            if _job_stop_requested(job.order_id):
+                logger.info("[process_results] User stop requested before cleaning VCF")
+                return False
 
-            # ── 2. FORMAT 문제 필드 정리 ──
+            # ── 2. FORMAT 문제 필드 정리 (동기 I/O → to_thread) ──
             cleaned_vcf = os.path.join(analysis_dir, f"{job.sample_name}.cleaned.vcf")
-            logger.info(f"  Cleaning VCF FORMAT fields: {main_vcf} → {cleaned_vcf}")
-            clean_vcf_remove_formats(main_vcf, cleaned_vcf)
+            main_mtime = os.path.getmtime(main_vcf)
+            if (
+                os.path.isfile(cleaned_vcf)
+                and os.path.getsize(cleaned_vcf) > 0
+                and os.path.getmtime(cleaned_vcf) >= main_mtime
+            ):
+                logger.info(
+                    "  Reuse cleaned VCF (newer than main, skip FORMAT clean): %s",
+                    cleaned_vcf,
+                )
+            else:
+                logger.info(f"  Cleaning VCF FORMAT fields: {main_vcf} → {cleaned_vcf}")
+                await asyncio.to_thread(clean_vcf_remove_formats, main_vcf, cleaned_vcf)
+            if _job_stop_requested(job.order_id):
+                logger.info("[process_results] User stop requested after VCF clean")
+                return False
 
-            # ── 3. snpEff annotation (선택적) ──
+            cleaned_mtime = os.path.getmtime(cleaned_vcf)
+
+            # ── 3. snpEff annotation (선택적 – async subprocess) ──
             annotated_vcf = cleaned_vcf
-            if settings.snpeff_jar and os.path.exists(settings.snpeff_jar):
+            snp_jar = settings.snpeff_jar
+            if snp_jar and os.path.exists(snp_jar):
                 snpeff_vcf = os.path.join(analysis_dir, f"{job.sample_name}.snpeff.vcf")
                 try:
-                    logger.info(f"  Running snpEff annotation...")
-                    run_snpeff(cleaned_vcf, snpeff_vcf, settings.snpeff_jar, settings.snpeff_db)
-                    annotated_vcf = snpeff_vcf
-                    logger.info(f"  snpEff annotation complete: {snpeff_vcf}")
+                    if (
+                        os.path.isfile(snpeff_vcf)
+                        and os.path.getsize(snpeff_vcf) > 0
+                        and os.path.getmtime(snpeff_vcf) >= cleaned_mtime
+                    ):
+                        annotated_vcf = snpeff_vcf
+                        logger.info(
+                            "  Reuse snpEff VCF (not older than cleaned VCF, skip snpEff): %s",
+                            snpeff_vcf,
+                        )
+                    else:
+                        logger.info("  Running snpEff annotation...")
+                        await run_snpeff(
+                            cleaned_vcf,
+                            snpeff_vcf,
+                            snp_jar,
+                            settings.snpeff_db,
+                            data_dir=settings.snpeff_data_dir,
+                        )
+                        annotated_vcf = snpeff_vcf
+                        logger.info(f"  snpEff annotation complete: {snpeff_vcf}")
                 except Exception as e:
                     logger.warning(f"  snpEff failed, continuing without: {e}")
-            else:
+            elif not snp_jar:
                 logger.info("  snpEff not configured, skipping")
+            else:
+                logger.info("  snpEff JAR missing at %s, skipping", snp_jar)
 
-            # ── 4. BED 기반 필터링 준비 ──
-            pipeline_dir = settings.carrier_screening_pipeline_dir
-            bed_dir = os.path.join(pipeline_dir, "data", "bed")
+            if _job_stop_requested(job.order_id):
+                logger.info("[process_results] User stop requested after snpEff step")
+                return False
 
-            # backbone BED (전체 타겟 영역)
-            backbone_bed_path = job.params.get("backbone_bed") or self._find_default_bed(bed_dir, "backbone")
+            # ── 4. BED 기반 필터링 준비 (job → CARRIER_DEFAULT_* → data/bed 탐색) ──
+            backbone_bed_path = self._resolve_carrier_bed(
+                job,
+                "backbone_bed",
+                "backbone",
+                settings.carrier_default_backbone_bed,
+            )
             backbone_regions = load_bed_regions(backbone_bed_path) if backbone_bed_path else {}
             logger.info(f"  Backbone BED: {backbone_bed_path or 'not configured'}")
 
-            # disease BED (질환 관련 유전자)
-            disease_bed_path = job.params.get("disease_bed") or self._find_default_bed(bed_dir, "disease")
+            disease_bed_path = self._resolve_carrier_bed(
+                job,
+                "disease_bed",
+                "disease",
+                settings.carrier_default_disease_bed,
+            )
             disease_regions = load_bed_regions(disease_bed_path) if disease_bed_path else {}
             logger.info(f"  Disease BED: {disease_bed_path or 'not configured'}")
 
@@ -380,7 +834,7 @@ class CarrierScreeningPlugin(ServicePlugin):
                 hpo_gene_file=settings.hpo_gene_file or "",
                 curated_db=settings.curated_variants_db or "",
                 hgmd_vcf=settings.hgmd_vcf or "",
-                disease_gene_json=settings.disease_gene_json or "",
+                disease_gene_json=self._resolve_disease_gene_json_path(),
             )
 
             # ── 6. 필터 설정 구성 ──
@@ -425,13 +879,18 @@ class CarrierScreeningPlugin(ServicePlugin):
                 disease_bed_regions=disease_regions,
             )
 
-            # ── 7. 통합 VCF 파싱 파이프라인 실행 ──
+            if _job_stop_requested(job.order_id):
+                logger.info("[process_results] User stop requested before VCF parse")
+                return False
+
+            # ── 7. 통합 VCF 파싱 파이프라인 실행 (CPU+I/O 블로킹 → to_thread) ──
             logger.info(f"  Starting integrated VCF parsing pipeline...")
-            annotated_variants, acmg_results, parse_stats = parse_vcf_variants(
+            annotated_variants, acmg_results, parse_stats = await asyncio.to_thread(
+                parse_vcf_variants,
                 vcf_path=annotated_vcf,
                 annotator=annotator,
                 filter_config=filter_config,
-                acmg_classifier=None,  # rule-based ACMG는 parse_vcf_variants 내부에서 처리
+                acmg_classifier=None,
             )
 
             logger.info(
@@ -444,18 +903,120 @@ class CarrierScreeningPlugin(ServicePlugin):
                 for w in parse_stats["warnings"]:
                     logger.warning(f"  VCF parse warning: {w}")
 
-            # ── 8. ACMG 분류 (parse_vcf_variants에서 처리되지 않은 경우) ──
+            if _job_stop_requested(job.order_id):
+                logger.info("[process_results] User stop requested after VCF parse")
+                return False
+
+            # ── 8. ACMG 분류 ──────────────────────────────────────────
+            # VUS 변이는 literature 검색 후 AI로 강화 (AI 활성화 시)
+            from .acmg import classify_variant
+
+            use_ai = settings.acmg_ai_enabled
+            ai_provider = getattr(settings, "acmg_ai_provider", "gemini")
+            if ai_provider == "gemini":
+                acmg_api_key = getattr(settings, "gemini_api_key", "")
+            else:
+                acmg_api_key = getattr(settings, "acmg_ai_api_key", "")
+
+            # literature 검색은 비동기로 사전 실행 (VUS 후보 기준 배치)
+            literature_map: dict = {}
+            if settings.literature_enabled and use_ai and annotated_variants:
+                try:
+                    from .literature import search_variant_literature
+                    lit_tasks = []
+                    lit_keys = []
+                    for ann in annotated_variants:
+                        gene = ann.get("gene", "")
+                        hgvsc = ann.get("hgvsc", "")
+                        hgvsp = ann.get("hgvsp", "")
+                        if gene:
+                            lit_tasks.append(
+                                search_variant_literature(
+                                    gene=gene,
+                                    hgvsc=hgvsc,
+                                    hgvsp=hgvsp,
+                                    effect=ann.get("effect", ""),
+                                    max_results=settings.literature_max_results,
+                                    ncbi_email=settings.ncbi_email,
+                                    ncbi_api_key=settings.ncbi_api_key,
+                                    ncbi_tool=settings.ncbi_tool,
+                                )
+                            )
+                            lit_keys.append(f"{gene}:{hgvsc or hgvsp}")
+                    if lit_tasks:
+                        logger.info(f"  Searching literature for {len(lit_tasks)} variants (semaphore=5)...")
+                        # asyncio.gather 대신 세마포어로 동시성 제한 (NCBI 429 방지)
+                        sem = asyncio.Semaphore(5)
+                        async def _bounded(key, coro):
+                            async with sem:
+                                return key, await coro
+                        bounded = [_bounded(k, t) for k, t in zip(lit_keys, lit_tasks)]
+                        for fut in asyncio.as_completed(bounded):
+                            try:
+                                key, result = await fut
+                                if isinstance(result, dict):
+                                    literature_map[key] = result
+                            except Exception:
+                                pass
+                        logger.info(
+                            f"  Literature search complete: "
+                            f"{sum(1 for v in literature_map.values() if v.get('total_found', 0) > 0)} "
+                            f"variants with papers"
+                        )
+                except Exception as e:
+                    logger.warning(f"  Literature search failed (non-fatal): {e}")
+
             if not acmg_results or all(r.get("final_classification") == "VUS" for r in acmg_results):
-                from .acmg import classify_variant
                 logger.info(f"  Running ACMG classification for {len(annotated_variants)} variants...")
                 acmg_results = []
                 for ann in annotated_variants:
-                    acmg = await classify_variant(ann, use_ai=False)
+                    if _job_stop_requested(job.order_id):
+                        logger.info("[process_results] User stop requested during ACMG step")
+                        return False
+                    gene = ann.get("gene", "")
+                    hgvsc = ann.get("hgvsc", "")
+                    hgvsp = ann.get("hgvsp", "")
+                    lit = literature_map.get(f"{gene}:{hgvsc or hgvsp}")
+                    acmg = await classify_variant(
+                        ann,
+                        use_ai=use_ai,
+                        api_key=acmg_api_key,
+                        provider=ai_provider,
+                        literature=lit,
+                    )
+                    # 문헌 요약을 ACMG 결과에 포함 (result.json에서 참조 가능)
+                    if lit:
+                        acmg["literature"] = {
+                            "total_found": lit.get("total_found", 0),
+                            "from_cache": lit.get("from_cache", False),
+                            "pmids": lit.get("pmids", []),
+                            "top_titles": [
+                                a.get("title", "")
+                                for a in lit.get("articles", [])[:3]
+                                if a.get("title")
+                            ],
+                        }
                     acmg_results.append(acmg)
 
-            # ── 9. QC 메트릭스 추출 ──
+            if _job_stop_requested(job.order_id):
+                logger.info("[process_results] User stop requested before QC extract")
+                return False
+
+            # ── 9. QC 메트릭스 추출 (동기 I/O → to_thread) ──
             logger.info(f"  Extracting QC metrics...")
-            qc_summary = extract_qc_summary(analysis_dir, job.sample_name)
+            qc_extras = self._qc_extra_search_dirs(job, analysis_dir)
+            qc_more = self._qc_more_roots_from_outputs(job)
+            qc_summary = await asyncio.to_thread(
+                extract_qc_summary,
+                analysis_dir,
+                job.sample_name,
+                qc_extras,
+                qc_more,
+            )
+
+            if _job_stop_requested(job.order_id):
+                logger.info("[process_results] User stop requested after QC extract")
+                return False
 
             # ── 10. Disease BED 정보 ──
             disease_bed_info = {}
@@ -483,9 +1044,27 @@ class CarrierScreeningPlugin(ServicePlugin):
                 "require_protein_altering": filter_config.require_protein_altering,
             }
 
-            # ── 12. result.json 생성 ──
+            if _job_stop_requested(job.order_id):
+                logger.info("[process_results] User stop requested before writing result.json")
+                return False
+
+            # ── 12. result.json 생성 (동기 I/O → to_thread) ──
             logger.info(f"  Generating result.json...")
-            result_json_path = generate_result_json(
+            seen_mr = set()
+            metric_image_roots: List[str] = []
+            for p in [output_dir] + list(qc_more or []):
+                if not p or not os.path.isdir(p):
+                    continue
+                try:
+                    rp = os.path.realpath(p)
+                except OSError:
+                    continue
+                if rp in seen_mr:
+                    continue
+                seen_mr.add(rp)
+                metric_image_roots.append(p)
+            result_json_path = await asyncio.to_thread(
+                generate_result_json,
                 annotated_variants=annotated_variants,
                 acmg_results=acmg_results,
                 qc_summary=qc_summary,
@@ -495,18 +1074,26 @@ class CarrierScreeningPlugin(ServicePlugin):
                 filter_summary=filter_summary,
                 parse_stats=parse_stats,
                 output_dir=output_dir,
+                metric_image_search_roots=metric_image_roots,
             )
 
             # ── 13. variants.tsv 생성 ──
             logger.info(f"  Generating variants.tsv...")
-            with open(result_json_path, "r") as f:
-                result_data = json.load(f)
-            generate_variants_tsv(result_data.get("variants", []), output_dir)
+
+            def _write_tsv():
+                with open(result_json_path, "r") as f:
+                    result_data = json.load(f)
+                generate_variants_tsv(result_data.get("variants", []), output_dir)
+
+            await asyncio.to_thread(_write_tsv)
 
             # ── 14. QC summary JSON 저장 ──
-            qc_path = os.path.join(output_dir, "qc_summary.json")
-            with open(qc_path, "w", encoding="utf-8") as f:
-                json.dump(qc_summary, f, ensure_ascii=False, indent=2, default=str)
+            def _write_qc():
+                qc_path = os.path.join(output_dir, "qc_summary.json")
+                with open(qc_path, "w", encoding="utf-8") as f:
+                    json.dump(qc_summary, f, ensure_ascii=False, indent=2, default=str)
+
+            await asyncio.to_thread(_write_qc)
 
             logger.info(
                 f"[process_results] Complete: {output_dir} "
@@ -611,7 +1198,11 @@ class CarrierScreeningPlugin(ServicePlugin):
             analysis_dir = dirs["analysis"]
 
             # QC 요약
-            qc_summary = extract_qc_summary(analysis_dir, job.sample_name)
+            qc_extras = self._qc_extra_search_dirs(job, analysis_dir)
+            qc_more = self._qc_more_roots_from_outputs(job)
+            qc_summary = extract_qc_summary(
+                analysis_dir, job.sample_name, qc_extras, qc_more
+            )
 
             # 리포트 언어 결정
             if languages is None:

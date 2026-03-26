@@ -7,8 +7,9 @@ Service Daemon Data Models
 
 from enum import Enum
 from typing import Optional, Dict, Any, List
-from datetime import datetime
 from pydantic import BaseModel, Field
+
+from .datetime_kst import now_kst_iso
 
 
 # ─── Enums ─────────────────────────────────────────────────
@@ -16,12 +17,14 @@ from pydantic import BaseModel, Field
 class OrderStatus(str, Enum):
     """주문 상태"""
     RECEIVED = "RECEIVED"           # 접수됨
+    SAVED = "SAVED"                 # Portal에서만 저장됨, 파이프라인 미시작
     QUEUED = "QUEUED"               # 큐 대기 중
     DOWNLOADING = "DOWNLOADING"     # 입력 파일 다운로드 중
     RUNNING = "RUNNING"             # 파이프라인 실행 중
     PROCESSING = "PROCESSING"       # 결과 후처리 중 (annotation 등)
     UPLOADING = "UPLOADING"         # 결과 업로드 중
-    COMPLETED = "COMPLETED"         # 완료
+    COMPLETED = "COMPLETED"         # 분석 완료 (리뷰/리포트 전)
+    REPORT_READY = "REPORT_READY"   # 최종 리포트 생성 완료 (Portal 다운로드 가능)
     FAILED = "FAILED"               # 실패
     CANCELLED = "CANCELLED"         # 취소됨
 
@@ -86,6 +89,45 @@ class OrderSubmitResponse(BaseModel):
     queue_position: Optional[int] = None
 
 
+class OrderSaveResponse(BaseModel):
+    """주문 저장만 (큐 미등록) 응답"""
+    status: str
+    order_id: str
+    service_code: str
+    message: str
+
+
+class OrderUpdateRequest(BaseModel):
+    """저장된·재실행 가능 주문 부분 수정 (PATCH)"""
+
+    order_id: Optional[str] = Field(
+        default=None,
+        description="변경 시 새 주문 ID(URL 경로의 기존 ID는 삭제 후 이 키로 저장)",
+    )
+    sample_name: Optional[str] = None
+    work_dir: Optional[str] = None
+    fastq_r1_url: Optional[str] = None
+    fastq_r2_url: Optional[str] = None
+    fastq_r1_path: Optional[str] = None
+    fastq_r2_path: Optional[str] = None
+    params: Optional[Dict[str, Any]] = None
+    priority: Optional[str] = None
+    callback_url: Optional[str] = None
+
+
+class OrderUpdateResponse(BaseModel):
+    status: str
+    order_id: str
+    message: str
+
+
+class UpdateFastqPathsRequest(BaseModel):
+    """큐 대기 중인 주문의 로컬 FASTQ 경로 수정 (Portal 브라우저 선택)"""
+
+    fastq_r1_path: Optional[str] = Field(default=None, description="R1 절대 경로; 빈 문자열이면 제거")
+    fastq_r2_path: Optional[str] = Field(default=None, description="R2 절대 경로; 빈 문자열이면 제거")
+
+
 # ─── Internal Job Model ───────────────────────────────────
 
 class Job(BaseModel):
@@ -118,9 +160,10 @@ class Job(BaseModel):
     callback_url: Optional[str] = None
     
     # 타임스탬프
-    created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = Field(default_factory=now_kst_iso)
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
+    updated_at: Optional[str] = None
     
     # 실행 정보
     pid: Optional[int] = None
@@ -135,7 +178,7 @@ class Job(BaseModel):
             self.progress = progress
         if message is not None:
             self.message = message
-        self.updated_at = datetime.now().isoformat()
+        self.updated_at = now_kst_iso()
 
 
 class NotificationResult(BaseModel):

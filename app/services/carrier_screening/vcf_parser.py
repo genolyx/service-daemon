@@ -21,6 +21,7 @@ import os
 import re
 import gzip
 import logging
+import asyncio
 import subprocess
 from typing import Dict, Any, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
@@ -81,19 +82,51 @@ def clean_vcf_remove_formats(input_vcf: str, output_vcf: str):
 
 # ─── snpEff Annotation ────────────────────────────────────
 
-def run_snpeff(input_vcf: str, output_vcf: str, snpeff_jar: str, snpeff_db: str = "GRCh38.86"):
-    """snpEff를 실행하여 VCF에 기능적 annotation을 추가합니다."""
+async def run_snpeff(
+    input_vcf: str,
+    output_vcf: str,
+    snpeff_jar: str,
+    snpeff_db: str = "GRCh38.86",
+    data_dir: Optional[str] = None,
+):
+    """snpEff를 실행하여 VCF에 기능적 annotation을 추가합니다.
+
+    async subprocess를 사용해 event loop를 블로킹하지 않습니다.
+    동시에 여러 샘플의 annotation이 가능합니다.
+    """
     if not os.path.exists(snpeff_jar):
         raise RuntimeError(f"snpEff jar not found at '{snpeff_jar}'")
 
-    cmd = ["java", "-Xmx4g", "-jar", snpeff_jar, snpeff_db, "-hgvs", input_vcf]
-    logger.info(f"Running snpEff: {' '.join(cmd)}")
+    # snpEff는 snpEff.config 를 JAR와 같은 디렉터리(또는 cwd)에서 찾음
+    snpeff_home = os.path.abspath(os.path.dirname(snpeff_jar))
+    cfg = os.path.join(snpeff_home, "snpEff.config")
+    if not os.path.isfile(cfg):
+        raise RuntimeError(
+            f"snpEff config missing: expected '{cfg}' next to the JAR. "
+            "Copy snpEff.config from the snpEff core distribution into tools/snpEff/."
+        )
+
+    cmd = ["java", "-Xmx8g", "-jar", os.path.abspath(snpeff_jar)]
+    if data_dir and str(data_dir).strip():
+        d = os.path.abspath(str(data_dir).strip())
+        os.makedirs(d, exist_ok=True)
+        cmd.extend(["-dataDir", d])
+    # 요약 HTML/텍스트는 cwd에 생성됨. Docker에서 JAR 디렉터리가 :ro 마운트면 실패하므로 끔.
+    cmd.extend(["-noStats", snpeff_db, "-hgvs", input_vcf])
+    logger.info(f"Running snpEff (cwd={snpeff_home}): {' '.join(cmd)}")
 
     with open(output_vcf, "w", encoding="utf-8") as out:
-        res = subprocess.run(cmd, stdout=out, stderr=subprocess.PIPE, text=True)
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=snpeff_home,
+            stdout=out,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr_bytes = await proc.communicate()
 
-    if res.returncode != 0:
-        raise RuntimeError(f"snpEff error (exit {res.returncode}):\n{res.stderr}")
+    if proc.returncode != 0:
+        stderr_text = (stderr_bytes or b"").decode("utf-8", errors="replace")
+        raise RuntimeError(f"snpEff error (exit {proc.returncode}):\n{stderr_text}")
 
     logger.info(f"snpEff annotation complete: {output_vcf}")
 
@@ -639,8 +672,11 @@ def parse_vcf_variants(
             for alt in alts:
                 alt_str = str(alt)
 
-                # 샘플 메트릭스
+                # 샘플 메트릭스 (rec.id 를 함께 전달해 rsID 폴백에 활용)
                 sample_metrics = get_sample_metrics(rec, alt_str)
+                rec_id = rec.id if rec.id and rec.id != "." else ""
+                if rec_id:
+                    sample_metrics["rec_id"] = rec_id
 
                 # 통합 annotation
                 ann = annotator.annotate(

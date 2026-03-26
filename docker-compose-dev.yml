@@ -1,0 +1,67 @@
+# 로컬 개발: 소스 마운트 + uvicorn --reload. nipt-daemon 의 docker-compose-dev.yml 패턴과 동일 계열.
+# 사용 전: cp .env.compose.example .env.compose && 편집
+# 실행: ./docker-dev-up.sh   또는
+#       docker compose --env-file .env.compose -f docker-compose-dev.yml up --build
+
+services:
+  service-daemon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TZ: ${TZ:-Asia/Seoul}
+        HOST_UID: ${HOST_UID}
+        HOST_GID: ${HOST_GID}
+        DOCKER_GID: ${DOCKER_GID}
+    image: service-daemon:latest
+    container_name: ${APP_ENV:-dev}-service-daemon
+    restart: unless-stopped
+
+    env_file:
+      - ${ENV_FILE:-.env.docker}
+
+    # .env.docker 가 APP_ENV=prod 여도 dev 스택에서는 배지·/health 의 environment 가 dev 가 되도록 덮어씀
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+
+    # 로그는 docker compose logs (표준출력). 호스트 session/ 마운트는 uid 불일치 시 Permission denied 유발.
+    command: /bin/sh -c "uvicorn app.main:app --host 0.0.0.0 --port $${APP_PORT:-8000} --no-access-log --reload --reload-dir /app/app --reload-dir /app/portal"
+
+    ports:
+      - "${HOST_PORT:-8003}:${APP_PORT:-8000}"
+
+    user: "${HOST_UID}:${HOST_GID}"
+    group_add:
+      - "${DOCKER_GID}"
+
+    volumes:
+      - ${BASE_DIR:-/data}:/data
+      # Carrier: fastq 만 :ro 로 마운트하면 /data/carrier_screening 부모가 root 소유로 생겨
+      # analysis/log/output 형제 디렉터리 생성 시 Permission denied 남. 프로젝트 루트 전체 rw 권장.
+      - ${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}:/data/carrier_screening
+      # run_analysis.sh → docker -v 는 호스트 경로 문자열을 씀. HOST 와 같은 경로를 컨테이너에도 만들어 -d 와 일치시킴
+      - ${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}:${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}
+      - ${SGNIPT_FASTQ_HOST:-/home/ken/sgNIPT/fastq}:/data/sgnipt/fastq:ro
+      - ${BASE_DIR:-/data}/reference:/data/reference:ro
+      - ${CARRIER_SCREENING_PIPELINE_DIR:-/opt/pipelines/carrier-screening}:/opt/pipelines/carrier-screening:ro
+      - ${NIPT_PIPELINE_DIR:-/opt/pipelines/nipt}:/opt/pipelines/nipt:ro
+      - ${SGNIPT_PIPELINE_DIR:-/opt/pipelines/sgnipt}:/opt/pipelines/sgnipt:ro
+      # Nextflow는 이미지에 포함. 호스트 nextflow를 쓰려면 아래 한 줄만 주석 해제 (126 오류 시 비권장)
+      # - ${NEXTFLOW_HOST_PATH:-/usr/local/bin/nextflow}:/usr/local/bin/nextflow:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./app:/app/app
+      - ./portal:/app/portal
+      - ./data:/app/data:ro
+      # snpEff: JAR + snpEff.config 둘 다 필요. 호스트 tools/snpEff 가 이미지를 덮어씀 (재빌드 없이 config 반영).
+      - ${SNPEFF_TOOLS_HOST:-./tools/snpEff}:/opt/tools/snpEff:ro
+
+      # NIPT 를 nipt-daemon 과 동일 데이터 트리로 쓸 때 (ENABLED_SERVICES 에 nipt 포함 시) 주석 해제:
+      # - /home/ken/ken-nipt/src:/home/ken/ken-nipt/src:ro
+      # - /home/ken/ken-nipt:/home/ken/ken-nipt
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:$${APP_PORT:-8000}/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s

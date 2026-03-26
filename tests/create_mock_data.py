@@ -6,11 +6,10 @@ import json
 import os
 import sys
 import asyncio
-from datetime import datetime
-
 # service-daemon 모듈 경로 추가
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from app.datetime_kst import now_kst_iso
 from app.models import Job, OrderStatus
 
 
@@ -24,7 +23,7 @@ def create_mock_result_json(output_dir: str, sample_name: str = "SAMPLE_001"):
             "sample_name": sample_name,
             "service_code": "carrier_screening",
             "pipeline_version": "1.0.0",
-            "analysis_date": datetime.now().isoformat(),
+            "analysis_date": now_kst_iso(),
             "reference_genome": "GRCh38",
         },
         "qc_summary": {

@@ -24,6 +24,13 @@ class PlatformClient:
     def __init__(self):
         self.base_url = settings.platform_api_base.rstrip("/")
 
+    @staticmethod
+    def _skipped(msg: str = "Platform API disabled") -> NotificationResult:
+        return NotificationResult(
+            status=NotificationStatus.SKIPPED,
+            message=msg,
+        )
+
     # ─── Order 관리 ────────────────────────────────────────
 
     async def get_pending_orders(self, service_code: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -38,6 +45,9 @@ class PlatformClient:
             params = {}
             if service_code:
                 params["service_code"] = service_code
+
+            if not settings.platform_api_enabled:
+                return []
 
             response = await auth_request(method="GET", url=url, params=params, timeout=30.0)
             data = response.json()
@@ -54,6 +64,8 @@ class PlatformClient:
     async def get_order_detail(self, order_id: str) -> Optional[Dict[str, Any]]:
         """주문 상세 정보 조회"""
         try:
+            if not settings.platform_api_enabled:
+                return None
             url = f"{self.base_url}/analysis/order/{order_id}"
             response = await auth_request(method="GET", url=url, timeout=30.0)
             data = response.json()
@@ -83,6 +95,8 @@ class PlatformClient:
             message: 상태 메시지
         """
         try:
+            if not settings.platform_api_enabled:
+                return self._skipped()
             url = f"{self.base_url}/analysis/order/{order_id}/status"
             payload = {
                 "service_code": service_code,
@@ -137,6 +151,8 @@ class PlatformClient:
     ) -> NotificationResult:
         """분석 결과 알림"""
         try:
+            if not settings.platform_api_enabled:
+                return self._skipped()
             url = f"{self.base_url}/analysis/order/{order_id}/result"
             payload = {
                 "service_code": service_code,
@@ -185,6 +201,8 @@ class PlatformClient:
     ) -> NotificationResult:
         """분석 실패 알림"""
         try:
+            if not settings.platform_api_enabled:
+                return self._skipped()
             url = f"{self.base_url}/analysis/order/{order_id}/failed"
             payload = {
                 "service_code": service_code,
@@ -229,6 +247,8 @@ class PlatformClient:
     ) -> NotificationResult:
         """결과 파일을 플랫폼에 업로드합니다."""
         try:
+            if not settings.platform_api_enabled:
+                return self._skipped()
             if not os.path.exists(output_file.file_path):
                 error_msg = f"File not found: {output_file.file_path}"
                 logger.error(f"[{service_code}] {error_msg}")
@@ -299,6 +319,8 @@ class PlatformClient:
     ) -> NotificationResult:
         """PDF 리포트 업로드"""
         try:
+            if not settings.platform_api_enabled:
+                return self._skipped()
             if not os.path.exists(pdf_path):
                 return NotificationResult(
                     status=NotificationStatus.NOT_FOUND,
@@ -365,6 +387,9 @@ class PlatformClient:
         output_files: List[OutputFile]
     ) -> Dict[str, NotificationResult]:
         """모든 결과 파일을 일괄 업로드합니다."""
+        if not settings.platform_api_enabled:
+            sk = self._skipped()
+            return {of.file_type: sk for of in output_files}
         results = {}
         for output_file in output_files:
             result = await self.upload_output_file(order_id, service_code, output_file)

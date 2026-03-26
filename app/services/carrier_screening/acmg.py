@@ -64,74 +64,96 @@ def classify_acmg_lite(variant: Dict[str, Any]) -> Dict[str, Any]:
     clinvar_sig = (variant.get("clinvar_sig_primary") or "").strip().lower()
     clinvar_stars = int(variant.get("clinvar_stars") or 0)
     gnomad_af = variant.get("gnomad_af")
-    zygosity = (variant.get("zygosity") or "").strip()
 
-    # ── Pathogenic Evidence ──────────────────────────────
+    # ── Priority 1: Frequency Rules (BA1 / BS1) – immediate return (원본 정렬) ──
+    if gnomad_af is not None:
+        try:
+            af_val = float(gnomad_af)
+            if af_val > 0.05:
+                return {
+                    "classification": "Benign",
+                    "criteria_met": ["BA1"],
+                    "reasoning": f"Common variant (gnomAD AF={af_val:.4f})",
+                    "confidence": "high",
+                }
+            if af_val > 0.01:
+                return {
+                    "classification": "Likely Benign",
+                    "criteria_met": ["BS1"],
+                    "reasoning": f"Elevated allele frequency (gnomAD AF={af_val:.4f})",
+                    "confidence": "high",
+                }
+        except (TypeError, ValueError):
+            pass
 
-    # PVS1: Null variant (LOF) in a gene where LOF is a known mechanism
+    # ── Priority 2: ClinVar Rules – immediate return (원본 정렬) ─────────────
+    if clinvar_sig:
+        if "pathogenic" in clinvar_sig:
+            # "Pathogenic/Likely pathogenic" 는 Pathogenic 으로
+            if "likely" in clinvar_sig and "pathogenic/likely" not in clinvar_sig:
+                return {
+                    "classification": "Likely Pathogenic",
+                    "criteria_met": ["PP5"],
+                    "reasoning": f"ClinVar: {clinvar_sig}",
+                    "confidence": "high" if clinvar_stars >= 2 else "medium",
+                }
+            return {
+                "classification": "Pathogenic",
+                "criteria_met": ["PS1", "PP5"],
+                "reasoning": f"ClinVar Pathogenic ({clinvar_stars} stars)",
+                "confidence": "high" if clinvar_stars >= 2 else "medium",
+            }
+        if "benign" in clinvar_sig:
+            if "likely" in clinvar_sig and "benign/likely" not in clinvar_sig:
+                return {
+                    "classification": "Likely Benign",
+                    "criteria_met": ["BP6"],
+                    "reasoning": f"ClinVar: {clinvar_sig}",
+                    "confidence": "high" if clinvar_stars >= 2 else "medium",
+                }
+            return {
+                "classification": "Benign",
+                "criteria_met": ["BP6", "BA1" if gnomad_af and gnomad_af > 0.05 else "BP6"],
+                "reasoning": f"ClinVar Benign ({clinvar_stars} stars)",
+                "confidence": "high" if clinvar_stars >= 2 else "medium",
+            }
+
+    # ── Priority 3: Variant Effect Rules ─────────────────────────────────────
+
+    # PVS1: LOF variant
     if effects_set & LOF_EFFECTS:
         criteria.append("PVS1")
         reasoning_parts.append(f"Loss-of-function variant ({effect})")
 
-    # PS1: Same amino acid change as established pathogenic variant
-    if clinvar_sig in ("pathogenic",) and clinvar_stars >= 2:
-        criteria.append("PS1")
-        reasoning_parts.append(f"ClinVar Pathogenic ({clinvar_stars} stars)")
+    # PM2: Absent / rare in population
+    if gnomad_af is not None:
+        try:
+            af_val = float(gnomad_af)
+            if af_val < 0.0001:
+                criteria.append("PM2")
+                reasoning_parts.append(f"Rare in population (gnomAD AF={af_val:.6f})")
+            elif af_val > 0.001:
+                criteria.append("BS2")
+                reasoning_parts.append(f"Observed in healthy controls (gnomAD AF={af_val:.4f})")
+        except (TypeError, ValueError):
+            pass
+    else:
+        criteria.append("PM2")
+        reasoning_parts.append("Not found in gnomAD")
 
-    # PM1: Located in a mutational hot spot / functional domain
-    # (simplified: moderate effect in known gene)
+    # PM2_Supporting: moderate functional impact
     if effects_set & MODERATE_EFFECTS:
         criteria.append("PM2_Supporting")
         reasoning_parts.append(f"Moderate functional impact ({effect})")
 
-    # PM2: Absent from controls (gnomAD AF < 0.0001)
-    if gnomad_af is not None and gnomad_af < 0.0001:
-        criteria.append("PM2")
-        reasoning_parts.append(f"Rare in population (gnomAD AF={gnomad_af:.6f})")
-    elif gnomad_af is None:
-        criteria.append("PM2")
-        reasoning_parts.append("Not found in gnomAD")
-
-    # PP3: Computational evidence (missense in LOF-intolerant gene)
-    # Simplified: ClinVar Likely pathogenic
-    if clinvar_sig in ("likely pathogenic",):
-        criteria.append("PP3")
-        reasoning_parts.append("ClinVar Likely pathogenic")
-
-    # PP5: Reputable source reports as pathogenic
-    if clinvar_sig in ("pathogenic",) and clinvar_stars >= 1:
-        criteria.append("PP5")
-        reasoning_parts.append("ClinVar Pathogenic report")
-
-    # ── Benign Evidence ──────────────────────────────────
-
-    # BA1: Allele frequency > 5%
-    if gnomad_af is not None and gnomad_af > 0.05:
-        criteria.append("BA1")
-        reasoning_parts.append(f"Common variant (gnomAD AF={gnomad_af:.4f})")
-
-    # BS1: Allele frequency > expected for disorder (> 1%)
-    elif gnomad_af is not None and gnomad_af > 0.01:
-        criteria.append("BS1")
-        reasoning_parts.append(f"Elevated frequency (gnomAD AF={gnomad_af:.4f})")
-
-    # BS2: Observed in healthy adult (gnomAD AF > 0.001)
-    elif gnomad_af is not None and gnomad_af > 0.001:
-        criteria.append("BS2")
-        reasoning_parts.append(f"Observed in healthy controls (gnomAD AF={gnomad_af:.4f})")
-
-    # BP1: Missense in gene where only truncating cause disease
-    if effects_set & BENIGN_EFFECTS and not (effects_set & LOF_EFFECTS) and not (effects_set & MODERATE_EFFECTS):
+    # BP7: silent / non-coding only
+    if (effects_set & BENIGN_EFFECTS
+            and not (effects_set & LOF_EFFECTS)
+            and not (effects_set & MODERATE_EFFECTS)):
         criteria.append("BP7")
         reasoning_parts.append(f"Silent/non-coding variant ({effect})")
 
-    # BP6: Reputable source reports as benign
-    if clinvar_sig in ("benign", "likely benign"):
-        criteria.append("BP6")
-        reasoning_parts.append(f"ClinVar {clinvar_sig}")
-
     # ── Classification Logic ─────────────────────────────
-
     classification = _determine_classification(criteria)
     confidence = _determine_confidence(criteria, clinvar_stars)
 
@@ -156,17 +178,18 @@ def _determine_classification(criteria: List[str]) -> str:
     bs = [c for c in has if c.startswith("BS")]
     bp = [c for c in has if c.startswith("BP")]
 
-    # Stand-alone Benign
+    # Stand-alone Benign (BA1 already handled in classify_acmg_lite early-return,
+    # but keep here as safety net for direct calls to _determine_classification)
     if ba:
         return "Benign"
 
-    # Benign
+    # Benign (two strong benign, or strong + supporting)
     if len(bs) >= 2:
         return "Benign"
     if bs and bp:
-        return "Likely benign"
+        return "Likely Benign"
     if len(bp) >= 2:
-        return "Likely benign"
+        return "Likely Benign"
 
     # Pathogenic
     if pvs and (ps or len(pm) >= 1):
@@ -176,17 +199,15 @@ def _determine_classification(criteria: List[str]) -> str:
     if ps and (len(pm) >= 1 or len(pp) >= 2):
         return "Pathogenic"
 
-    # Likely pathogenic
-    if pvs and pm:
-        return "Likely pathogenic"
-    if pvs and pp:
-        return "Likely pathogenic"
-    if ps and pm:
-        return "Likely pathogenic"
+    # Likely Pathogenic
+    if pvs and (pm or pp):
+        return "Likely Pathogenic"
+    if ps and (pm or pp):
+        return "Likely Pathogenic"
     if len(pm) >= 3:
-        return "Likely pathogenic"
+        return "Likely Pathogenic"
     if len(pm) >= 2 and len(pp) >= 2:
-        return "Likely pathogenic"
+        return "Likely Pathogenic"
 
     # VUS (default when evidence is mixed or insufficient)
     if pvs or ps or pm or pp:
@@ -194,7 +215,7 @@ def _determine_classification(criteria: List[str]) -> str:
 
     # Likely benign (single benign evidence)
     if bs or bp:
-        return "Likely benign"
+        return "Likely Benign"
 
     return "VUS"
 
@@ -221,7 +242,7 @@ Given a variant with its annotation data, classify it according to ACMG/AMP guid
 
 Respond in JSON format:
 {
-    "classification": "Pathogenic|Likely pathogenic|VUS|Likely benign|Benign",
+    "classification": "Pathogenic|Likely Pathogenic|VUS|Likely Benign|Benign",
     "criteria_met": ["PVS1", "PM2", ...],
     "reasoning": "Detailed reasoning...",
     "confidence": "high|medium|low"
@@ -232,63 +253,61 @@ Respond in JSON format:
 async def classify_acmg_ai(
     variant: Dict[str, Any],
     api_key: str = "",
-    model: str = "gpt-4.1-mini",
+    model: str = "",
+    provider: str = "",
 ) -> Optional[Dict[str, Any]]:
     """
-    OpenAI API를 사용한 AI 기반 ACMG 분류.
+    AI 기반 ACMG 분류 (Gemini / OpenAI 지원).
 
-    Args:
-        variant: annotator.annotate()의 결과 딕셔너리
-        api_key: OpenAI API 키
-        model: 사용할 모델
-
-    Returns:
-        분류 결과 딕셔너리 또는 None (실패 시)
+    provider/model은 settings에서 읽어 사용하므로 직접 전달 불필요.
     """
+    import os
+    from .._resolve_ai import call_ai_json
+
+    if not provider:
+        try:
+            from ...config import settings
+            provider = settings.acmg_ai_provider
+        except Exception:
+            provider = os.environ.get("ACMG_AI_PROVIDER", "gemini")
+
+    if not model:
+        try:
+            from ...config import settings
+            model = settings.acmg_ai_model
+        except Exception:
+            model = "gemini-2.0-flash"
+
     if not api_key:
-        import os
-        api_key = os.environ.get("OPENAI_API_KEY", "")
+        try:
+            from ...config import settings
+            api_key = settings.gemini_api_key if provider == "gemini" else settings.acmg_ai_api_key
+        except Exception:
+            pass
     if not api_key:
-        logger.warning("OpenAI API key not configured, skipping AI classification")
+        api_key = os.environ.get("GEMINI_API_KEY" if provider == "gemini" else "OPENAI_API_KEY", "")
+
+    if not api_key:
+        logger.warning(f"AI API key not configured for provider={provider}, skipping AI classification")
         return None
 
-    try:
-        from openai import AsyncOpenAI
-
-        # 변이 정보를 프롬프트용 텍스트로 변환
-        variant_text = _format_variant_for_ai(variant)
-
-        client = AsyncOpenAI(api_key=api_key)
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": ACMG_AI_SYSTEM_PROMPT},
-                {"role": "user", "content": variant_text},
-            ],
-            temperature=0.1,
-            max_tokens=1000,
-            response_format={"type": "json_object"},
-        )
-
-        content = response.choices[0].message.content
-        result = json.loads(content)
-
-        # 필수 필드 검증
-        if "classification" not in result:
-            logger.warning("AI classification missing 'classification' field")
-            return None
-
-        return {
-            "classification": result.get("classification", "VUS"),
-            "criteria_met": result.get("criteria_met", []),
-            "reasoning": result.get("reasoning", ""),
-            "confidence": result.get("confidence", "low"),
-            "source": "AI",
-        }
-
-    except Exception as e:
-        logger.error(f"AI ACMG classification failed: {e}")
+    variant_text = _format_variant_for_ai(variant)
+    result = await call_ai_json(
+        provider=provider,
+        model=model,
+        api_key=api_key,
+        system_prompt=ACMG_AI_SYSTEM_PROMPT,
+        user_content=variant_text,
+    )
+    if not result or "classification" not in result:
         return None
+    return {
+        "classification": result.get("classification", "VUS"),
+        "criteria_met": result.get("criteria_met", []),
+        "reasoning": result.get("reasoning", ""),
+        "confidence": result.get("confidence", "low"),
+        "source": f"AI({provider})",
+    }
 
 
 def _format_variant_for_ai(variant: Dict[str, Any]) -> str:
@@ -321,28 +340,52 @@ async def classify_variant(
     variant: Dict[str, Any],
     use_ai: bool = False,
     api_key: str = "",
+    provider: str = "",
+    literature: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Rule-based + AI (선택적) 결합 분류.
+    Rule-based + (선택적) Literature-enhanced AI 결합 분류.
+
+    흐름:
+      1. Rule-based (항상 실행)
+      2. 결과가 VUS이고 literature 있으면 → Literature-enhanced AI로 강화 시도
+      3. VUS가 아닌 경우(B/LB/LP/P)에는 AI 호출 불필요 (이미 명확)
+
+    Args:
+        variant:     annotator.annotate() 결과 딕셔너리
+        use_ai:      AI 분류 활성화 여부
+        api_key:     AI API 키 (Gemini 또는 OpenAI)
+        provider:    "gemini" | "openai" (기본값: settings에서 읽음)
+        literature:  search_variant_literature() 결과 (없으면 AI는 문헌 없이 동작)
 
     Returns:
         {
             "rule_based": {...},
             "ai": {...} or None,
+            "literature_enhanced": bool,
             "final_classification": str,
             "final_criteria": list,
             "final_reasoning": str,
         }
     """
-    # Rule-based 분류
     rule_result = classify_acmg_lite(variant)
 
-    # AI 분류 (선택적)
     ai_result = None
-    if use_ai:
-        ai_result = await classify_acmg_ai(variant, api_key=api_key)
+    literature_enhanced = False
 
-    # 최종 분류 결정
+    if use_ai and rule_result["classification"] == "VUS":
+        if literature and literature.get("articles"):
+            ai_result = await classify_acmg_with_literature(
+                variant, literature["articles"],
+                api_key=api_key, provider=provider,
+            )
+            literature_enhanced = True
+        else:
+            ai_result = await classify_acmg_ai(
+                variant, api_key=api_key, provider=provider,
+            )
+
+    # 최종 분류: AI confidence=high이면 AI 우선, 아니면 rule-based
     if ai_result and ai_result.get("confidence") == "high":
         final_class = ai_result["classification"]
         final_criteria = ai_result.get("criteria_met", [])
@@ -355,7 +398,114 @@ async def classify_variant(
     return {
         "rule_based": rule_result,
         "ai": ai_result,
+        "literature_enhanced": literature_enhanced,
         "final_classification": final_class,
         "final_criteria": final_criteria,
         "final_reasoning": final_reasoning,
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+# Literature-enhanced VUS Classification
+# ══════════════════════════════════════════════════════════════
+
+LITERATURE_ACMG_SYSTEM_PROMPT = """You are a clinical genetics expert specializing in ACMG/AMP variant classification.
+You are given a variant with its annotation data AND relevant PubMed abstracts.
+
+Use the literature to identify additional ACMG evidence criteria:
+  - PS3/BS3: Functional studies showing damaging or benign effect
+  - PP4:     Phenotype matches disease known to be caused by this gene
+  - PM1:     Located in mutational hotspot or critical functional domain
+  - PP3/BP4: Computational predictions (mention if cited in literature)
+
+IMPORTANT:
+  - Only cite criteria that are DIRECTLY supported by the provided abstracts
+  - Do NOT invent or hallucinate criteria
+  - If abstracts are irrelevant, return the same classification as rule_based
+  - Cite PMIDs when applying PS3/PP4
+
+Respond ONLY in JSON:
+{
+    "classification": "Pathogenic|Likely Pathogenic|VUS|Likely Benign|Benign",
+    "criteria_met": ["PS3:PMID_12345678", "PP4", ...],
+    "reasoning": "Brief reasoning with PMID citations",
+    "confidence": "high|medium|low"
+}"""
+
+
+async def classify_acmg_with_literature(
+    variant: Dict[str, Any],
+    articles: List[Dict[str, Any]],
+    api_key: str = "",
+    model: str = "",
+    provider: str = "",
+) -> Optional[Dict[str, Any]]:
+    """
+    PubMed 논문 초록을 컨텍스트로 제공하여 VUS를 추가 분류합니다.
+    Rule-based에서 VUS가 나왔을 때만 호출됩니다.
+    """
+    import os
+    from .._resolve_ai import call_ai_json
+
+    if not provider:
+        try:
+            from ...config import settings
+            provider = settings.acmg_ai_provider
+        except Exception:
+            provider = os.environ.get("ACMG_AI_PROVIDER", "gemini")
+
+    if not model:
+        try:
+            from ...config import settings
+            model = settings.acmg_ai_model
+        except Exception:
+            model = "gemini-2.0-flash"
+
+    if not api_key:
+        try:
+            from ...config import settings
+            api_key = settings.gemini_api_key if provider == "gemini" else settings.acmg_ai_api_key
+        except Exception:
+            pass
+    if not api_key:
+        api_key = os.environ.get("GEMINI_API_KEY" if provider == "gemini" else "OPENAI_API_KEY", "")
+
+    if not api_key:
+        logger.warning(f"AI API key not configured for provider={provider}, skipping literature classification")
+        return None
+
+    top_articles = sorted(articles, key=lambda a: a.get("relevance_score", 0), reverse=True)[:5]
+    if not top_articles:
+        return None
+
+    abstracts_text = "\n\n".join(
+        f"PMID {a.get('pmid', '?')} ({a.get('pub_date', '')}): {a.get('title', '')}\n"
+        f"{a.get('abstract', '')[:800]}"
+        for a in top_articles
+    )
+    variant_text = _format_variant_for_ai(variant)
+    user_content = (
+        f"VARIANT:\n{variant_text}\n\n"
+        f"RULE-BASED RESULT: VUS (no definitive criteria met)\n\n"
+        f"RELEVANT LITERATURE ({len(top_articles)} papers):\n{abstracts_text}\n\n"
+        "Based on this literature, can you identify any additional ACMG criteria? "
+        "If the literature is not relevant to this specific variant, keep classification as VUS."
+    )
+
+    result = await call_ai_json(
+        provider=provider,
+        model=model,
+        api_key=api_key,
+        system_prompt=LITERATURE_ACMG_SYSTEM_PROMPT,
+        user_content=user_content,
+    )
+    if not result or "classification" not in result:
+        return None
+    return {
+        "classification": result.get("classification", "VUS"),
+        "criteria_met": result.get("criteria_met", []),
+        "reasoning": result.get("reasoning", ""),
+        "confidence": result.get("confidence", "low"),
+        "source": f"AI+Literature({provider})",
+        "pmids_used": [a.get("pmid") for a in top_articles if a.get("pmid")],
     }

@@ -316,6 +316,10 @@ class GnomADAnnotator:
             self._has_chr_cache[vcf_path] = self._detect_vcf_has_chr(vcf_path)
         return vf
 
+    @staticmethod
+    def _has_index(vcf_path: str) -> bool:
+        return os.path.exists(vcf_path + ".tbi") or os.path.exists(vcf_path + ".csi")
+
     def _pick_file(self, dataset: str, chrom: str) -> Optional[str]:
         key = (dataset, str(chrom))
         if key in self._pick_cache:
@@ -327,28 +331,55 @@ class GnomADAnnotator:
 
         c = str(chrom)
         c_nochr = c[3:] if c.startswith("chr") else c
-        token_chr = f"chr{c_nochr}".lower()
+        token_chr = f"chr{c_nochr}".lower()   # e.g. chr1
+        token_no = c_nochr.lower()             # e.g. 1
 
         glob_pat = self._exomes_glob if dataset == "exomes" else self._genomes_glob
-        candidates = list(Path(self._gnomad_dir).glob(glob_pat))
+        # Filter to only files that have a usable index
+        candidates = [
+            p for p in Path(self._gnomad_dir).glob(glob_pat)
+            if self._has_index(str(p))
+        ]
+
+        if not candidates:
+            # Retry without index check so we can log a useful warning
+            all_cands = list(Path(self._gnomad_dir).glob(glob_pat))
+            if all_cands:
+                logger.warning(
+                    f"gnomAD {dataset}: {len(all_cands)} file(s) found but none have .tbi/.csi index"
+                )
+            self._pick_cache[key] = None
+            return None
 
         best = None
+
+        # 1. Prefer explicit chr-token match (e.g. ".chr1." or "chr1." in filename)
         for p in candidates:
             name = p.name.lower()
             if token_chr in name:
                 best = str(p)
                 break
 
+        # 2. Fallback: bare number token (e.g. ".1." or "_1_")
         if best is None:
-            token_no = c_nochr.lower()
             for p in candidates:
                 name = p.name.lower()
                 if f".{token_no}." in name or f"_{token_no}_" in name:
                     best = str(p)
                     break
 
+        # 3. Fallback: single-file dataset covering all chromosomes
         if best is None and len(candidates) == 1:
             best = str(candidates[0])
+            logger.debug(f"gnomAD {dataset}: single file assumed to cover all chroms: {best}")
+
+        if best:
+            logger.debug(f"gnomAD {dataset} {chrom} -> {os.path.basename(best)}")
+        else:
+            logger.debug(
+                f"gnomAD {dataset}: no file matched chrom={chrom} "
+                f"(candidates: {[p.name for p in candidates]})"
+            )
 
         self._pick_cache[key] = best
         return best
@@ -372,10 +403,6 @@ class GnomADAnnotator:
     def _lookup_one(self, dataset: str, chrom: str, pos: int, ref: str, alt: str) -> Optional[float]:
         vcf_path = self._pick_file(dataset, chrom)
         if not vcf_path or not os.path.exists(vcf_path):
-            return None
-
-        has_index = (os.path.exists(vcf_path + ".tbi") or os.path.exists(vcf_path + ".csi"))
-        if not has_index:
             return None
 
         try:
@@ -989,8 +1016,15 @@ class VariantAnnotator:
         clinvar = self.clinvar.lookup(chrom, pos, ref, alt)
         cv_primary = (clinvar or {}).get("clnsig_primary", "")
 
-        # dbSNP rsID: ClinVar rsID 우선, 없으면 빈 문자열
+        # dbSNP rsID: ClinVar rsID 우선, 없으면 rec.id 에서 추출 (원본 로직 정렬)
         dbsnp_rsid = (clinvar or {}).get("rsid", "")
+        if not dbsnp_rsid:
+            # rec.id 는 호출 시점에 없으므로 sample_metrics 를 통해 전달된 rsid 를 확인
+            rsid_from_rec = (sample_metrics or {}).get("rec_id", "")
+            if rsid_from_rec:
+                m = re.search(r"\brs(\d+)\b", str(rsid_from_rec), re.IGNORECASE)
+                if m:
+                    dbsnp_rsid = f"rs{m.group(1)}"
         dbsnp_url = make_dbsnp_url(dbsnp_rsid)
 
         # HGMD

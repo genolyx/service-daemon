@@ -8,5 +8,14 @@ python-dotenv>=1.0.0
 python-multipart>=0.0.6
 colorlog>=6.7.0
 
-# Optional: VCF annotation (install if pysam is available)
-# pysam>=0.22.0
+# Carrier VCF parsing / annotation
+pysam>=0.22.0
+intervaltree>=3.1.0
+
+# Report rendering
+jinja2>=3.1.0
+weasyprint>=61.0
+
+# AI / Literature
+openai>=1.30.0
+google-genai>=1.0.0

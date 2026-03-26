@@ -20,10 +20,24 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, description="API server port")
     log_level: str = Field(default="INFO", description="Logging level")
 
+    # ─── Inbound API protection (optional) ─────────────────
+    # 비어 있으면 비활성. 설정 시 Authorization: Bearer <값> 또는 X-API-Key 헤더 필요 (portal/health/static 제외)
+    api_key: Optional[str] = Field(
+        default=None,
+        description="Optional shared secret; enables Bearer / X-API-Key guard on API routes",
+    )
+
     # ─── Platform API ──────────────────────────────────────
     platform_api_base: str = Field(
         default="https://api.genolyx.com",
         description="Platform API base URL"
+    )
+    platform_api_enabled: bool = Field(
+        default=True,
+        description=(
+            "If false, skip Genolyx login and all platform calls (status, uploads, notify). "
+            "Use for local/portal dev when credentials are not configured."
+        ),
     )
     auth_url: Optional[str] = Field(
         default=None,
@@ -47,9 +61,24 @@ class Settings(BaseSettings):
         default="/data",
         description="Root data directory"
     )
+    orders_db_path: Optional[str] = Field(
+        default=None,
+        description=(
+            "SQLite file for order/job persistence and JSON snapshots "
+            "(result, review, report). Default: {BASE_DIR}/service-daemon/orders.db"
+        ),
+    )
     fastq_base_dir: str = Field(
         default="/data/fastq",
-        description="Base directory for FASTQ files"
+        description="Default FASTQ directory (nipt 등, 포털 browse 미지정 시)"
+    )
+    sgnipt_fastq_dir: str = Field(
+        default="/home/ken/sgNIPT/fastq",
+        description="sgNIPT: 포털 FASTQ browse 및 경로 검증용 루트"
+    )
+    carrier_screening_fastq_dir: str = Field(
+        default="/home/ken/carrier_screening/fastq",
+        description="Carrier screening: 포털 FASTQ browse 및 경로 검증용 루트"
     )
     analysis_base_dir: str = Field(
         default="/data/analysis",
@@ -69,6 +98,48 @@ class Settings(BaseSettings):
     carrier_screening_pipeline_dir: str = Field(
         default="/opt/pipelines/carrier-screening",
         description="Carrier Screening Nextflow pipeline directory"
+    )
+    carrier_screening_main_nf: Optional[str] = Field(
+        default=None,
+        description=(
+            "Absolute path to main.nf if not at pipeline_dir/bin/main.nf "
+            "(e.g. /opt/pipelines/carrier-screening/main.nf)"
+        ),
+    )
+    carrier_screening_run_script: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional: host path to run_analysis.sh (Dark Gene wrapper). "
+            "If set, carrier jobs run this script instead of direct nextflow; requires Docker socket."
+        ),
+    )
+    carrier_screening_script_data_dir: Optional[str] = Field(
+        default=None,
+        description="-d for run_analysis: project root with fastq/, data/refs, data/bed (default: BASE_DIR/carrier-screening)",
+    )
+    carrier_screening_script_ref_dir: Optional[str] = Field(
+        default=None,
+        description="-r for run_analysis (default: <data_dir>/data/refs)",
+    )
+    carrier_screening_script_extra_args: str = Field(
+        default="--skip-cnv",
+        description="Extra args for run_analysis.sh (e.g. empty string to allow CNV)",
+    )
+    carrier_screening_artifact_base: Optional[str] = Field(
+        default=None,
+        description=(
+            "Writable root for carrier analysis/output/log (subdirs analysis|output|log). "
+            "FASTQ paths stay under carrier_screening_layout_base. "
+            "Set when project/FASTQ tree is not writable by the container UID (e.g. use /data/carrier_screening_work)."
+        ),
+    )
+    carrier_default_backbone_bed: Optional[str] = Field(
+        default=None,
+        description="Default backbone BED if job params omit backbone_bed (portal override still wins)",
+    )
+    carrier_default_disease_bed: Optional[str] = Field(
+        default=None,
+        description="Default disease/panel BED if job params omit disease_bed",
     )
     nipt_pipeline_dir: str = Field(
         default="/opt/pipelines/nipt",
@@ -109,7 +180,11 @@ class Settings(BaseSettings):
     )
     dbsnp_vcf: Optional[str] = Field(default=None, description="dbSNP VCF path")
     snpeff_jar: Optional[str] = Field(default=None, description="snpEff JAR path")
-    snpeff_db: str = Field(default="GRCh38.86", description="snpEff database name")
+    snpeff_db: str = Field(default="GRCh38.86", description="snpEff genome DB name (snpEff download -v)")
+    snpeff_data_dir: Optional[str] = Field(
+        default=None,
+        description="snpEff -dataDir (persistent genomes; e.g. /data/reference/snpeff on host)",
+    )
 
     # ─── ClinGen ───────────────────────────────────────────
     clingen_tsv: Optional[str] = Field(
@@ -186,9 +261,47 @@ class Settings(BaseSettings):
         default=False,
         description="Enable AI-assisted ACMG classification"
     )
+    acmg_ai_provider: str = Field(
+        default="gemini",
+        description="AI provider: gemini | openai"
+    )
     acmg_ai_model: str = Field(
-        default="gpt-4.1-mini",
-        description="AI model for ACMG classification"
+        default="gemini-2.0-flash",
+        description="AI model name (e.g. gemini-2.0-flash or gpt-4.1-mini)"
+    )
+    gemini_api_key: str = Field(
+        default="",
+        description="Google Gemini API key"
+    )
+    acmg_ai_api_key: str = Field(
+        default="",
+        description="OpenAI API key (used when acmg_ai_provider=openai)"
+    )
+
+    # ─── Literature Search (PubMed) ────────────────────────
+    literature_enabled: bool = Field(
+        default=True,
+        description="Enable PubMed literature search for variants (cached permanently)"
+    )
+    literature_db_path: Optional[str] = Field(
+        default=None,
+        description="SQLite path for literature cache (default: {base_dir}/service-daemon/literature.db)"
+    )
+    literature_max_results: int = Field(
+        default=10,
+        description="Maximum PubMed articles to fetch per variant query"
+    )
+    ncbi_email: str = Field(
+        default="service-daemon@example.com",
+        description="NCBI E-utilities contact email (required by NCBI policy)"
+    )
+    ncbi_api_key: str = Field(
+        default="",
+        description="NCBI API key (optional; increases rate limit from 3 to 10 req/s)"
+    )
+    ncbi_tool: str = Field(
+        default="service-daemon",
+        description="NCBI E-utilities tool name"
     )
 
     # ─── Enabled Services ──────────────────────────────────
@@ -196,6 +309,39 @@ class Settings(BaseSettings):
         default="carrier_screening,nipt,sgnipt",
         description="Comma-separated list of enabled service codes"
     )
+
+    @property
+    def resolved_orders_db_path(self) -> str:
+        """Effective SQLite path for orders (always under base_dir unless overridden)."""
+        if self.orders_db_path and str(self.orders_db_path).strip():
+            return os.path.abspath(str(self.orders_db_path).strip())
+        return os.path.join(self.base_dir, "service-daemon", "orders.db")
+
+    @property
+    def resolved_literature_db_path(self) -> str:
+        """Effective SQLite path for literature cache."""
+        if self.literature_db_path and str(self.literature_db_path).strip():
+            return os.path.abspath(str(self.literature_db_path).strip())
+        return os.path.join(self.base_dir, "service-daemon", "literature.db")
+
+    @property
+    def carrier_screening_layout_base(self) -> str:
+        """
+        Carrier FASTQ 트리 상위 (fastq/ 가 그 아래).
+        CARRIER_SCREENING_FASTQ_DIR 가 .../fastq 로 끝나면 그 부모를 씀 (예: /data/carrier_screening).
+        """
+        fq = (self.carrier_screening_fastq_dir or "").strip().rstrip("/")
+        if fq.lower().endswith("/fastq"):
+            return os.path.abspath(os.path.dirname(fq))
+        return os.path.join(self.base_dir, "carrier-screening")
+
+    @property
+    def carrier_screening_work_root(self) -> str:
+        """analysis / output / log 를 둘 쓰기 가능 루트 (미설정 시 layout_base 와 동일)."""
+        ab = (self.carrier_screening_artifact_base or "").strip()
+        if ab:
+            return os.path.abspath(ab)
+        return self.carrier_screening_layout_base
 
     @property
     def enabled_service_list(self) -> List[str]:

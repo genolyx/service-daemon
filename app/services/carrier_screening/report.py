@@ -26,8 +26,9 @@ report.json 구조:
 import os
 import json
 import logging
-from datetime import datetime
 from typing import Dict, Any, List, Optional
+
+from ...datetime_kst import now_kst_date_iso, now_kst_iso
 
 logger = logging.getLogger(__name__)
 
@@ -124,12 +125,12 @@ def generate_report_json(
     report = {
         "version": "2.0",
         "type": "carrier_screening_report",
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": now_kst_iso(),
 
         # 리포트 메타데이터 (Carrier_result/generate.py 호환)
         "report_metadata": {
             "order_id": order_id,
-            "report_date": datetime.now().strftime("%Y-%m-%d"),
+            "report_date": now_kst_date_iso(),
             "pipeline_version": "carrier-screening-v2.0",
             "report_version": "2.0",
             "is_couple": is_couple,
@@ -653,7 +654,7 @@ def _render_builtin_html(report_data: Dict[str, Any], lang: str) -> str:
     <div class="footer">
         <p>{labels['footer_pipeline']}</p>
         <p>{labels['footer_acmg']}</p>
-        <p>{labels['reviewer']}: {report_data.get('reviewer', {{}}).get('name', 'N/A')}</p>
+        <p>{labels['reviewer']}: {(report_data.get('reviewer') or {}).get('name', 'N/A')}</p>
     </div>
 </body>
 </html>"""

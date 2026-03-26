@@ -14,7 +14,9 @@ build/
 
 # Environment
 .env
+.env.compose
 .env.*.local
+.env.integration
 # .env.local, .env.docker, .env.example are tracked as templates
 
 # IDE
@@ -33,6 +35,30 @@ htmlcov/
 *.log
 logs/
 
+# Integration daemon (run-integration.sh -b)
+.integration.pid
+
+# Accidental pip / tooling output at repo root (e.g. mistyped install)
+=1.0.0
+
+# Runtime / dev session state (Portal, local SQLite, etc.)
+session/
+
+# Reference & annotation dumps (large or licensed; mount or download in deploy)
+data/clingen/
+data/reference/
+
 # OS
 .DS_Store
 Thumbs.db
+
+# Tools: 바이너리는 git 추적 제외 (도커 이미지 빌드 시 COPY)
+# snpEff 배포본에서 복사 후 docker build (예: snpEff_latest_core.zip 압축 해제)
+tools/snpEff/*.jar
+tools/snpEff/snpEff.config
+tools/snpEff/data/
+
+# Data: 대용량 BED/참조 파일 제외 (볼륨 마운트로 제공)
+data/bed/Twist_*.bed
+data/bed/*.bed.gz
+data/bed/*.bed.bgz

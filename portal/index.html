@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Carrier Screening Test Portal</title>
+  <title>Genolyx Service Portal</title>
   <style>
     /* ===== THEME TOKENS (from index_v4.html) ===== */
     :root {
@@ -91,11 +91,25 @@
     th.sort-asc::after{content:'▲';opacity:.9}
     th.sort-desc::after{content:'▼';opacity:.9}
 
+    .orders-table-hint{margin:0 0 10px;font-size:12px;line-height:1.45}
+    .orders-filters-token-bar{display:flex;justify-content:flex-end;align-items:center;margin:0 0 10px}
+    .search-tokens-switch{display:inline-flex;align-items:center;gap:6px;flex-shrink:0}
+    .search-tokens-switch-label{font-size:10px;font-weight:700;letter-spacing:.01em;color:var(--muted);white-space:nowrap}
+    .token-mode-track{display:inline-flex;border:1px solid var(--input-bd);border-radius:999px;overflow:hidden;background:var(--input-bg);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+    .token-mode-track label{display:inline-flex;align-items:center;justify-content:center;position:relative;margin:0;padding:4px 10px;font-size:10px;font-weight:700;letter-spacing:.04em;cursor:pointer;color:var(--muted);line-height:1.15;user-select:none;min-width:38px}
+    .token-mode-track label input{position:absolute;inset:0;opacity:0;cursor:pointer;margin:0;width:100%;height:100%}
+    .token-mode-track label:has(input:checked){background:linear-gradient(180deg,var(--brand),var(--brand-2));color:#fff}
+
     /* Pills */
     .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid}
     .pill.new{background:var(--pill-new-bg);border-color:var(--pill-new-bd);color:var(--pill-new-tx)}
     .pill.inp{background:var(--pill-inp-bg);border-color:var(--pill-inp-bd);color:var(--pill-inp-tx)}
     .pill.done{background:var(--pill-done-bg);border-color:var(--pill-done-bd);color:var(--pill-done-tx)}
+    .pill.report-ready{background:rgba(46,160,130,.22);border-color:rgba(46,160,130,.55);color:#2e9a82;font-weight:600}
+    .btn-icon-dl{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer;padding:0;flex-shrink:0}
+    .btn-icon-dl:hover{border-color:var(--accent);color:var(--accent);background:var(--input-bg)}
+    .btn-icon-dl .dl-glyph{font-size:16px;line-height:1;font-weight:700}
+    td.order-dl{text-align:center;vertical-align:middle}
     .pill.warn{background:var(--pill-warn-bg);border-color:var(--pill-warn-bd);color:var(--pill-warn-tx)}
     .pill.err{background:var(--pill-err-bg);border-color:var(--pill-err-bd);color:var(--pill-err-tx)}
 
@@ -128,6 +142,18 @@
     .detail-item .detail-value{font-size:13px;color:var(--text);margin-top:2px;word-break:break-all}
     .checkbox-label{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px}
     .checkbox-label input[type="checkbox"]{width:auto;cursor:pointer}
+
+    /* 변이 테이블 체크박스 크게 */
+    #tblVariants input[type="checkbox"],
+    #chkAll {
+      width:18px;height:18px;cursor:pointer;
+      accent-color:var(--accent);
+      vertical-align:middle;
+    }
+    #tblVariants th:first-child,
+    #tblVariants td:first-child {
+      width:44px;text-align:center;padding:0 6px;
+    }
 
     /* Pagination */
     .pagination{display:flex;align-items:center;justify-content:space-between;margin-top:10px}
@@ -162,6 +188,31 @@
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;display:flex;align-items:center;justify-content:center}
     .modal{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto}
     .modal h3{margin-bottom:16px}
+    #fastqBrowseModal{z-index:1000}
+    #fastqBrowseModal .modal{max-width:720px}
+    .fb-list{border:1px solid var(--line);border-radius:12px;background:var(--table-bg);max-height:48vh;overflow:auto}
+    .fb-item{padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px}
+    .fb-item:last-child{border-bottom:none}
+    .fb-item:hover{background:rgba(106,163,255,.1)}
+    .fb-item.fb-selected{background:rgba(106,163,255,.22);outline:1px solid var(--brand)}
+    .fb-file{font-weight:600;color:var(--text)}
+    .fb-crumb-link{color:var(--brand);cursor:pointer;text-decoration:none}
+    .fb-crumb-link:hover{text-decoration:underline}
+
+    td.order-more{position:relative;z-index:6;vertical-align:middle;width:1%;white-space:nowrap}
+    .more-wrap{position:relative;display:inline-block;z-index:7}
+    .more-btn{
+      padding:6px 12px;font-size:20px;line-height:1;min-width:40px;min-height:36px;border-radius:8px;
+      border:1px solid var(--line);background:var(--btn-bg);color:var(--text);cursor:pointer;
+      display:inline-flex;align-items:center;justify-content:center;pointer-events:auto;
+      -webkit-tap-highlight-color:transparent
+    }
+    /* 기본은 absolute; 열릴 때 JS가 position:fixed로 바꿔 .table-wrap overflow에 잘리지 않게 함 */
+    .more-dd{position:absolute;right:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--line);border-radius:10px;min-width:160px;z-index:10050;display:none;box-shadow:var(--shadow)}
+    .more-dd.open{display:block}
+    .more-dd button{display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:transparent;color:var(--text);font-size:13px;cursor:pointer;border-radius:0}
+    .more-dd button:hover{background:rgba(106,163,255,.12)}
+    .more-dd button.danger{color:var(--err)}
 
     /* Carrier Status Banner */
     .carrier-banner{display:flex;gap:12px;align-items:center;padding:12px 16px;border-radius:12px;margin-bottom:12px;flex-wrap:wrap}
@@ -182,19 +233,93 @@
     .qc-pass{color:var(--ok);font-weight:600}
     .qc-fail{color:var(--err);font-weight:600}
     .qc-warn{color:#f59e0b;font-weight:600}
+
+    /* sgNIPT Create Order (ken-nipt style) */
+    .submit-page-title{font-size:20px;font-weight:700;margin:0 0 4px}
+    .submit-page-sub{margin:0 0 16px;color:var(--muted);font-size:13px}
+    .order-create-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+    @media(max-width:960px){.order-create-grid{grid-template-columns:1fr}}
+    .form-section-card{background:var(--card-2);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+    .form-section-card h4{margin:0 0 14px;font-size:14px;font-weight:700;color:var(--text);letter-spacing:.02em}
+    .form-section-card .row{margin:0}
+    tr.order-row-click{cursor:pointer}
+    tr.order-row-click:hover td{background:rgba(106,163,255,.06)}
+    #orderDetailPanel{margin-top:12px}
+    .detail-back{appearance:none;background:none;border:none;color:var(--brand);cursor:pointer;font-size:13px;font-weight:600;padding:0 0 12px;display:inline-flex;align-items:center;gap:6px}
+    .detail-back:hover{text-decoration:underline}
+    #btnOrderDetailBack.order-detail-back{
+      font-size:17px;font-weight:800;color:#ef4444;padding:8px 0 16px;
+      letter-spacing:.02em;text-decoration:underline;text-underline-offset:4px;
+      text-shadow:0 0 12px rgba(239,68,68,.35)
+    }
+    #btnOrderDetailBack.order-detail-back:hover{color:#dc2626}
+    /* 전역 `input{width:100%}` 때문에 체크박스가 가로로 찢어지는 것 방지 */
+    #globalConfirmModal #globalConfirmForceWrap:not(.hidden){
+      display:flex;align-items:flex-start;gap:10px;margin:14px 0 0;padding:10px 12px;
+      border-radius:10px;background:var(--card-2);border:1px solid var(--line);
+      font-size:12px;color:var(--muted);cursor:pointer;width:100%;box-sizing:border-box
+    }
+    #globalConfirmModal #globalConfirmForceWrap input[type="checkbox"]{
+      width:16px;height:16px;min-width:16px;max-width:16px;flex-shrink:0;margin:2px 0 0;padding:0;
+      accent-color:var(--err)
+    }
+    #globalConfirmModal #globalConfirmForceWrap > span{
+      flex:1;min-width:0;line-height:1.45;word-break:break-word;cursor:pointer
+    }
+    #globalConfirmModal .modal{max-width:440px;padding:20px 22px;border-radius:14px;background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow)}
+    #globalConfirmModal h3{margin:0 0 10px;font-size:17px;font-weight:700;color:var(--text)}
+    #globalConfirmModal #globalConfirmMessage{margin:0;color:var(--text);font-size:14px;line-height:1.5;white-space:pre-wrap}
+    #globalConfirmOk.btn-danger-ok{background:#dc2626;border-color:#dc2626;color:#fff}
+    #globalConfirmOk.btn-danger-ok:hover{filter:brightness(0.92)}
+    .detail-title{font-size:18px;font-weight:700;margin:0 0 4px}
+    .detail-sub{color:var(--muted);font-size:13px;margin:0 0 18px}
+    .detail-layout{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+    @media(max-width:960px){.detail-layout{grid-template-columns:1fr}}
+    .detail-section{background:var(--card-2);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+    .detail-section h4{margin:0 0 12px;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+    .detail-kv{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
+    @media(max-width:600px){.detail-kv{grid-template-columns:1fr}}
+    .detail-kv .kv-item{padding:6px 0}
+    .detail-kv .kv-label{font-size:11px;color:var(--muted);margin-bottom:4px}
+    .detail-kv .kv-value{font-size:14px;font-weight:600;color:var(--text);word-break:break-word}
+
+    /* Order detail — pipeline.log terminal */
+    .order-pipeline-log-host{margin-top:18px}
+    .order-pipeline-log-host.hidden{display:none}
+    .pipeline-terminal{border:1px solid #30363d;border-radius:10px;background:#0d1117;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+    .pipeline-terminal-head{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      padding:10px 14px;background:#161b22;border-bottom:1px solid #30363d;
+      cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent
+    }
+    .pipeline-terminal-head:hover{background:#1c2128}
+    .pipeline-terminal-title{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;font-weight:600;color:#8b949e;letter-spacing:.02em}
+    .pipeline-terminal-meta{display:flex;align-items:center;gap:10px}
+    .pipeline-log-refresh{
+      font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid #30363d;background:#21262d;color:#c9d1d9;cursor:pointer
+    }
+    .pipeline-log-refresh:hover{background:#30363d}
+    .pipeline-terminal-chev{font-size:12px;color:#6e7681;width:1.2em;text-align:center}
+    .pipeline-terminal-body{
+      display:block;margin:0;padding:14px 16px;max-height:min(52vh,440px);overflow:auto;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;line-height:1.5;
+      color:#c9d1d9;white-space:pre-wrap;word-break:break-word;tab-size:4
+    }
+    .pipeline-terminal.collapsed .pipeline-terminal-body{display:none}
+    .pipeline-terminal.collapsed .pipeline-log-refresh{visibility:hidden}
   </style>
 </head>
 <body>
   <div class="wrap" id="mainWrap">
     <!-- Header -->
     <header>
-      <div class="logo">Carrier Screening Portal</div>
-      <span id="connStatus" class="badge" onclick="changeDaemonUrl()" style="cursor:pointer" title="Click to change daemon URL"><span class="conn-dot warn"></span>Connecting...</span>
+      <div class="logo">Genolyx Service Portal</div>
+      <span id="connStatus" class="badge" onclick="changeDaemonUrl()" style="cursor:pointer" title="Click to change daemon URL and optional X-API-Key"><span class="conn-dot warn"></span>Connecting...</span>
 
       <button id="tabDash" class="btn active" onclick="showView('dash')">Dashboard</button>
-      <button id="tabSubmit" class="btn" onclick="showView('submit')">Submit</button>
-      <button id="tabTrack" class="btn" onclick="showView('track')">Track</button>
+      <button id="tabOrders" class="btn" onclick="showView('orders')">Orders</button>
       <button id="tabReview" class="btn" onclick="showView('review')">Review</button>
+      <button id="tabLiterature" class="btn" onclick="showView('literature')">Literature</button>
 
       <div class="theme-switch" id="btnTheme">
         <div class="switch-ball"></div>
@@ -214,83 +339,513 @@
       <div id="dashRunning" style="margin-top:12px"></div>
     </section>
 
-    <!-- Submit Order View -->
-    <section id="viewSubmit" class="card hidden">
-      <h3>Submit Carrier Screening Order</h3>
+    <!-- Orders: list + create -->
+    <section id="viewOrders" class="card hidden">
+      <div id="ordersListPanel">
+        <div id="ordersBrowseChrome">
+        <div style="margin-bottom:14px">
+          <h3 class="submit-page-title" style="margin-bottom:4px">Client Order List</h3>
+          <p class="submit-page-sub">Orders on this daemon. <strong>Save</strong> stores a draft (<strong>SAVED</strong>) without starting the pipeline. Use <strong>⋯ → Submit</strong> to queue a first run. <strong>Stop</strong> removes a draft, cancels queued, or stops a running job. <strong>⋯ → Delete</strong> removes the order from the daemon and deletes <code>analysis</code>, <code>output</code>, and <code>log</code> for that run (FASTQ is kept; stop a running job first). Carrier: <strong>⋯ → Force Run</strong> queues the <strong>full pipeline from FASTQ</strong> again (alignment + calling + post-process). Optional <strong>Reprocess only</strong> refreshes <code>result.json</code>/QC from existing VCFs without Nextflow.</p>
+          <button type="button" class="btn primary" id="btnGotoCreateOrder" style="margin-top:10px">+ Create an order</button>
+        </div>
+        <div class="form-section-card" style="margin-bottom:16px">
+          <div class="orders-filters-token-bar">
+            <div class="search-tokens-switch" title="Multi-word search: match all words (AND) or any word (OR)">
+              <span class="search-tokens-switch-label">Search Option</span>
+              <div class="token-mode-track" role="group" aria-label="Search option: token match mode">
+                <label>AND<input type="radio" name="ordersSearchMode" value="and" checked /></label>
+                <label>OR<input type="radio" name="ordersSearchMode" value="or" /></label>
+              </div>
+            </div>
+          </div>
+          <div class="row" style="margin:0;align-items:flex-end">
+            <div class="col-6">
+              <label class="muted" style="font-size:11px">Search across text fields</label>
+              <input id="trackSearch" placeholder="e.g. CS-2026 sample QUEUED" style="width:100%" />
+            </div>
+            <div class="col-3">
+              <label class="muted" style="font-size:11px">Order created from</label>
+              <input type="date" id="ordersDateFrom" />
+            </div>
+            <div class="col-3">
+              <label class="muted" style="font-size:11px">Order created to</label>
+              <input type="date" id="ordersDateTo" />
+            </div>
+            <div class="col-4">
+              <label class="muted" style="font-size:11px">Pregnancy type</label>
+              <select id="ordersPregnancyFilter">
+                <option value="">All</option>
+                <option value="Singleton">Singleton</option>
+                <option value="Twin">Twin</option>
+                <option value="Multiple">Multiple</option>
+              </select>
+            </div>
+            <div class="col-4">
+              <label class="muted" style="font-size:11px">Result</label>
+              <select id="ordersResultFilter">
+                <option value="">All</option>
+                <option value="completed_ok">Completed</option>
+                <option value="failed">Failed / cancelled</option>
+                <option value="inprogress">Saved / queued / running</option>
+              </select>
+            </div>
+            <div class="col-4" style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;padding-top:8px">
+              <select id="trackServiceFilter" style="flex:1;min-width:130px;padding:8px 12px;border-radius:12px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">
+                <option value="">All Services</option>
+                <option value="carrier_screening">Carrier Screening</option>
+                <option value="sgnipt">sgNIPT</option>
+              </select>
+              <select id="trackFilter" style="flex:1;min-width:130px;padding:8px 12px;border-radius:12px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">
+                <option value="">All Status</option>
+                <option value="SAVED">Saved (draft)</option>
+                <option value="QUEUED">Queued</option>
+                <option value="RUNNING">Running</option>
+                <option value="COMPLETED">Completed</option>
+                <option value="REPORT_READY">Report ready</option>
+                <option value="FAILED">Failed</option>
+                <option value="CANCELLED">Cancelled</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+            <button type="button" class="btn" onclick="loadOrders()">Apply filters</button>
+            <button type="button" class="btn" id="btnExportOrdersTsv">Export data as TSV</button>
+            <button type="button" class="btn" onclick="loadOrders()">Refresh</button>
+          </div>
+        </div>
+        <div id="trackListArea">
+          <p class="muted orders-table-hint">Click a row for detail. Open <strong>⋯</strong> for Submit, Force Run (carrier full re-run), Stop / Review. <strong>Report ready</strong> orders show a download button for the PDF.</p>
+          <div class="table-wrap" id="ordersTableWrap">
+            <table id="tblOrders">
+              <thead>
+                <tr>
+                  <th class="sortable" data-key="order_id">Order ID</th>
+                  <th class="sortable" data-key="service_code">Service</th>
+                  <th class="sortable" data-key="sample_name">Patient / Sample</th>
+                  <th class="sortable" data-key="status">Status</th>
+                  <th>Progress</th>
+                  <th class="sortable" data-key="created_at">Order created</th>
+                  <th class="sortable" data-key="priority">Priority</th>
+                  <th>Message</th>
+                  <th style="width:76px" title="Download generated report">Report</th>
+                  <th style="width:52px">More</th>
+                </tr>
+              </thead>
+              <tbody id="tblOrdersBody"></tbody>
+            </table>
+          </div>
+          <div id="trackMsg" class="muted" style="margin-top:8px"></div>
+        </div>
+        </div>
+        <div id="orderDetailPanel" class="hidden">
+          <button type="button" class="detail-back order-detail-back" id="btnOrderDetailBack">← Go back to order list</button>
+          <h3 class="detail-title" id="orderDetailTitle">Order Detail</h3>
+          <p class="detail-sub" id="orderDetailSub">Detail info of order</p>
+          <div class="detail-layout" id="orderDetailBody"></div>
+          <div id="orderPipelineLogHost" class="order-pipeline-log-host hidden" aria-live="polite"></div>
+        </div>
+      </div>
+      <div id="ordersCreatePanel" class="hidden">
+        <button type="button" class="detail-back" id="btnBackFromCreate" style="margin-bottom:12px">← Order list</button>
       <div class="row">
-        <div class="col-6">
-          <label class="required">Order ID</label>
-          <input id="fOrderId" placeholder="e.g. CS-2026-001" />
-        </div>
-        <div class="col-6">
-          <label class="required">Sample Name</label>
-          <input id="fSampleName" placeholder="e.g. SAMPLE_001" />
-        </div>
-        <div class="col-4">
-          <label>Work Directory</label>
-          <input id="fWorkDir" placeholder="e.g. 2603 (auto if empty)" />
-        </div>
-        <div class="col-4">
-          <label>Priority</label>
-          <select id="fPriority"><option value="normal">Normal</option><option value="urgent">Urgent</option><option value="low">Low</option></select>
-        </div>
-        <div class="col-4">
-          <label>Callback URL</label>
-          <input id="fCallback" placeholder="Optional" />
+        <div class="col-12" style="margin-bottom:8px">
+          <div class="muted" style="font-weight:600;margin-bottom:6px">Service</div>
+          <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+            <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin:0">
+              <input type="radio" name="fService" value="carrier_screening" checked />
+              <span>Carrier Screening</span>
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin:0">
+              <input type="radio" name="fService" value="sgnipt" />
+              <span>sgNIPT</span>
+            </label>
+          </div>
         </div>
 
-        <div class="col-12" style="margin-top:4px"><div class="muted" style="font-weight:600;margin-bottom:6px">FASTQ Input (URL or Local Path)</div></div>
-        <div class="col-6"><label>R1 FASTQ URL</label><input id="fR1Url" placeholder="https://..." /></div>
-        <div class="col-6"><label>R2 FASTQ URL</label><input id="fR2Url" placeholder="https://..." /></div>
-        <div class="col-6"><label>R1 FASTQ Local Path</label><input id="fR1Path" placeholder="/data/fastq/..." /></div>
-        <div class="col-6"><label>R2 FASTQ Local Path</label><input id="fR2Path" placeholder="/data/fastq/..." /></div>
+        <!-- Carrier: clinical order (params.carrier) + pipeline -->
+        <div id="carrierSubmitBlock" class="col-12">
+          <h3 class="submit-page-title">Create Carrier Order</h3>
+          <p class="submit-page-sub">Clinical metadata → <code>params.carrier</code>. Use <strong>Save order</strong> to store a draft; start analysis from the order list <strong>⋯ → Submit</strong>.</p>
+          <div class="row" style="margin-bottom:12px">
+            <div class="col-6">
+              <label class="required">Order ID</label>
+              <input id="cr_order_id" placeholder="e.g. CS-2026-001" />
+            </div>
+            <div class="col-6">
+              <label class="required">Sample name (pipeline / FASTQ folder)</label>
+              <input id="cr_pipeline_sample" placeholder="Defaults from Sample ID or Sample Barcode if empty" />
+              <span class="muted" style="display:block;margin-top:4px">Daemon <code>sample_name</code> for this analysis.</span>
+            </div>
+            <div class="col-4">
+              <label>Work Directory</label>
+              <input id="cr_work_dir" placeholder="e.g. 2603 (auto if empty)" />
+            </div>
+            <div class="col-4">
+              <label>Priority</label>
+              <select id="cr_priority"><option value="normal">Normal</option><option value="urgent">Urgent</option><option value="low">Low</option></select>
+            </div>
+            <div class="col-4">
+              <label>Callback URL</label>
+              <input id="cr_callback" placeholder="Optional" />
+            </div>
+          </div>
 
-        <div class="col-12" style="margin-top:4px"><div class="muted" style="font-weight:600;margin-bottom:6px">Optional Parameters</div></div>
-        <div class="col-4"><label>Backbone BED</label><input id="fBackboneBed" placeholder="Path to backbone.bed" /></div>
-        <div class="col-4"><label>Disease BED</label><input id="fDiseaseBed" placeholder="Path to disease.bed" /></div>
-        <div class="col-4"><label>Max AF Filter</label><input id="fMaxAf" type="number" step="0.001" placeholder="e.g. 0.05" /></div>
-        <div class="col-6"><label>HPO Terms</label><input id="fHpoTerms" placeholder="e.g. HP:0001250,HP:0001263" /></div>
-        <div class="col-6"><label>Gene Filter</label><input id="fGeneFilter" placeholder="e.g. CFTR,SMN1,GJB2" /></div>
+          <div class="order-create-grid">
+            <div class="order-create-left" style="display:flex;flex-direction:column;gap:16px">
+              <div class="form-section-card">
+                <h4>Package code (test type)</h4>
+                <div class="row">
+                  <div class="col-12">
+                    <label class="required">Primary</label>
+                    <select id="cr_test_category">
+                      <option value="standard_carrier">Carrier screening (standard)</option>
+                      <option value="other">Other — extended test type…</option>
+                    </select>
+                  </div>
+                  <div class="col-12 hidden" id="cr_other_type_wrap">
+                    <label class="required">Other test type</label>
+                    <select id="cr_other_type">
+                      <option value="">Select…</option>
+                      <option value="Exome">Exome</option>
+                      <option value="ExomeDuo">ExomeDuo</option>
+                      <option value="ExomeTrio">ExomeTrio</option>
+                      <option value="ExomeRapid">ExomeRapid</option>
+                      <option value="ExomeMax">ExomeMax</option>
+                      <option value="ExomeMaxDuo">ExomeMaxDuo</option>
+                      <option value="ExomeMaxTrio">ExomeMaxTrio</option>
+                      <option value="KaryoSeq_1Mb">KaryoSeq &gt;1MB</option>
+                      <option value="KaryoSeqHD_50kb">KaryoSeqHD &gt;50kb</option>
+                      <option value="WGS">WGS</option>
+                      <option value="HereditaryCancer">Hereditary Cancer</option>
+                      <option value="CouplesCarrier">CouplesCarrier</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
 
-        <div class="col-12" style="display:flex;gap:10px;align-items:center;margin-top:8px">
-          <button class="btn primary" id="btnSubmitOrder">Submit Order</button>
+              <div class="form-section-card">
+                <h4>Patient</h4>
+                <div class="row">
+                  <div class="col-12"><label class="required">Patient Name</label><input id="cr_patient_name" /></div>
+                  <div class="col-6"><label class="required">Patient Birth</label><input id="cr_patient_birth" type="date" /></div>
+                  <div class="col-6"><label class="required">Patient Gender</label>
+                    <select id="cr_patient_gender"><option value="">Select…</option><option value="Female">Female</option><option value="Male">Male</option><option value="Other">Other</option></select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-section-card hidden" id="carrierPatient2Block">
+                <h4>Patient 2 <span class="muted" style="font-weight:600">(ExomeDuo, CouplesCarrier, ExomeMaxDuo, or trio)</span></h4>
+                <div class="row">
+                  <div class="col-12"><label class="required">Patient2 Name</label><input id="cr_p2_name" /></div>
+                  <div class="col-6"><label class="required">Patient2 Birth</label><input id="cr_p2_birth" type="date" /></div>
+                  <div class="col-6"><label class="required">Patient2 Gender</label>
+                    <select id="cr_p2_gender"><option value="">Select…</option><option value="Female">Female</option><option value="Male">Male</option><option value="Other">Other</option></select>
+                  </div>
+                  <div class="col-12"><label class="required">Affected2</label>
+                    <select id="cr_p2_affected"><option value="">Select…</option><option value="Yes">Yes</option><option value="No">No</option></select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-section-card hidden" id="carrierPatient3Block">
+                <h4>Patient 3 <span class="muted" style="font-weight:600">(ExomeTrio / ExomeMaxTrio)</span></h4>
+                <div class="row">
+                  <div class="col-12"><label class="required">Patient3 Name</label><input id="cr_p3_name" /></div>
+                  <div class="col-6"><label class="required">Patient3 Birth</label><input id="cr_p3_birth" type="date" /></div>
+                  <div class="col-6"><label class="required">Patient3 Gender</label>
+                    <select id="cr_p3_gender"><option value="">Select…</option><option value="Female">Female</option><option value="Male">Male</option><option value="Other">Other</option></select>
+                  </div>
+                  <div class="col-12"><label class="required">Affected3</label>
+                    <select id="cr_p3_affected"><option value="">Select…</option><option value="Yes">Yes</option><option value="No">No</option></select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-section-card">
+                <h4>Couples carrier report</h4>
+                <p class="muted" style="margin:0 0 10px;font-size:12px">Single report (default) vs couples merged report using another order’s carrier result JSON (logic to be wired on the backend).</p>
+                <div class="row">
+                  <div class="col-12" style="display:flex;flex-direction:column;gap:8px">
+                    <label class="checkbox-label" style="margin:0"><input type="radio" name="cr_report_mode" value="single" checked /> Single report (this order only)</label>
+                    <label class="checkbox-label" style="margin:0"><input type="radio" name="cr_report_mode" value="couples" /> Couples report — combine with another order</label>
+                  </div>
+                  <div class="col-12 hidden" id="cr_partner_order_wrap">
+                    <label class="required">Partner Order ID</label>
+                    <input id="cr_partner_order_id" placeholder="Other carrier order ID to pull carrier JSON for combined report" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="order-create-right" style="display:flex;flex-direction:column;gap:16px">
+              <div class="form-section-card">
+                <h4>Hospital and identifiers</h4>
+                <div class="row">
+                  <div class="col-6"><label class="required">Hospital Name</label><input id="cr_hospital" /></div>
+                  <div class="col-6"><label class="required">Doctor</label><input id="cr_doctor" /></div>
+                  <div class="col-6"><label>Medical Record ID</label><input id="cr_mrn" /></div>
+                  <div class="col-6"><label>Sample ID</label><input id="cr_sample_id" /></div>
+                  <div class="col-12"><label class="required">Affected</label>
+                    <select id="cr_affected"><option value="">Select…</option><option value="Yes">Yes</option><option value="No">No</option></select>
+                  </div>
+                  <div class="col-12"><label>Clinical information</label>
+                    <textarea id="cr_clinical_info" placeholder="Relevant clinical notes for this order…" rows="5"></textarea>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-section-card">
+                <h4>Sample and report details</h4>
+                <div class="row">
+                  <div class="col-6"><label class="required">Sample Collection Date</label><input id="cr_collect_date" type="date" /></div>
+                  <div class="col-6"><label>Receipt Date</label><input id="cr_receipt_date" type="date" /></div>
+                  <div class="col-6"><label class="required">Report Language</label>
+                    <select id="cr_report_lang"><option value="">Select…</option><option value="EN">English</option><option value="KO">Korean</option><option value="CN">Chinese</option><option value="ID">Indonesian</option><option value="Other">Other</option></select>
+                  </div>
+                  <div class="col-6"><label class="required">Report Type</label>
+                    <select id="cr_report_type"><option value="">Select…</option><option value="Printout">Printout</option><option value="Email">Email</option><option value="Portal">Portal</option></select>
+                  </div>
+                  <div class="col-6"><label>Sample Specimen Type</label>
+                    <select id="cr_specimen"><option value="Blood">Blood</option><option value="Saliva">Saliva</option><option value="Other">Other</option></select>
+                  </div>
+                  <div class="col-6"><label>Sample Barcode</label><input id="cr_barcode" /></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- sgNIPT: Create Client Order (ken-nipt / NIPT fields) -->
+        <div id="sgniptSubmitBlock" class="col-12 hidden">
+          <h3 class="submit-page-title">Create Client Order</h3>
+          <p class="submit-page-sub">Clinical fields → <code>params.nipt</code>. <strong>Save order</strong> stores a draft; queue from the list <strong>⋯ → Submit</strong>.</p>
+          <div class="row" style="margin-bottom:12px">
+            <div class="col-6">
+              <label class="required">Order ID</label>
+              <input id="sgOrderId" placeholder="e.g. GNCI26030045" />
+            </div>
+            <div class="col-6">
+              <label class="required">Sample name (pipeline / FASTQ folder)</label>
+              <input id="sgPipelineSample" placeholder="e.g. 2603100011 — defaults from Sample ID or Barcode if empty" />
+              <span class="muted" style="display:block;margin-top:4px">Used as daemon <code>sample_name</code>; pre-filled from Sample ID or Sample Barcode when you leave this empty.</span>
+            </div>
+            <div class="col-4">
+              <label>Work Directory</label>
+              <input id="sgWorkDir" placeholder="YYMM, auto if empty" />
+            </div>
+            <div class="col-4">
+              <label>Priority</label>
+              <select id="sgPriority"><option value="normal">Normal</option><option value="urgent">Urgent</option><option value="low">Low</option></select>
+            </div>
+            <div class="col-4">
+              <label>Callback URL</label>
+              <input id="sgCallback" placeholder="Optional" />
+            </div>
+          </div>
+
+          <div class="order-create-grid">
+            <div class="order-create-left" style="display:flex;flex-direction:column;gap:16px">
+              <div class="form-section-card">
+                <h4>Patient and Pregnancy Information</h4>
+                <div class="row">
+                  <div class="col-12"><label>Previous Order</label><input id="sg_prev_order" placeholder="Optional — link to prior order ID" /></div>
+                  <div class="col-6"><label class="required">Patient Name</label><input id="sg_patient_name" /></div>
+                  <div class="col-6"><label class="required">Patient Birth</label><input id="sg_patient_birth" type="date" /></div>
+                  <div class="col-6"><label class="required">Patient Gender</label>
+                    <select id="sg_patient_gender"><option value="">Select…</option><option value="Female">Female</option><option value="Male">Male</option><option value="Other">Other</option></select>
+                  </div>
+                  <div class="col-3"><label class="required">GA Weeks</label><input id="sg_ga_weeks" type="number" min="0" step="1" /></div>
+                  <div class="col-3"><label class="required">GA Days</label><input id="sg_ga_days" type="number" min="0" max="6" step="1" /></div>
+                  <div class="col-3"><label>Height (cm)</label><input id="sg_height_cm" type="number" min="0" step="0.1" /></div>
+                  <div class="col-3"><label>Weight (kg)</label><input id="sg_weight_kg" type="number" min="0" step="0.1" /></div>
+                  <div class="col-6"><label class="required">Pregnancy Type</label>
+                    <select id="sg_pregnancy_type"><option value="">Select…</option><option value="Singleton">Singleton</option><option value="Twin">Twin</option><option value="Multiple">Multiple</option></select>
+                  </div>
+                  <div class="col-6"><label class="required">Estimated Delivery Date (EDD)</label><input id="sg_edd" type="date" /></div>
+                </div>
+              </div>
+              <div class="form-section-card">
+                <h4>Hospital and Identifier Information</h4>
+                <div class="row">
+                  <div class="col-6"><label class="required">Hospital Name</label><input id="sg_hospital" /></div>
+                  <div class="col-6"><label class="required">Doctor</label><input id="sg_doctor" /></div>
+                  <div class="col-6"><label>Medical Record ID</label><input id="sg_mrn" /></div>
+                  <div class="col-6"><label>Sample ID</label><input id="sg_sample_id" placeholder="Lab sample ID" /></div>
+                  <div class="col-12"><label>Indication for Testing</label><select id="sg_indication"><option value="">Select…</option><option value="Advanced_maternal_age">Advanced maternal age</option><option value="Abnormal_ultrasound">Abnormal ultrasound</option><option value="Other">Other</option></select></div>
+                </div>
+              </div>
+            </div>
+            <div class="form-section-card">
+              <h4>Sample and Test Details</h4>
+              <div class="row">
+                <div class="col-6"><label class="required">Sample Collection Date</label><input id="sg_collect_date" type="date" /></div>
+                <div class="col-6"><label>Receipt Date</label><input id="sg_receipt_date" type="date" /></div>
+                <div class="col-6"><label class="required">Package Code</label><select id="sg_package"><option value="">Select…</option><option value="Basic">Basic</option><option value="Standard">Standard</option><option value="Ultimate_Plus">Ultimate Plus</option><option value="Other">Other</option></select></div>
+                <div class="col-6"><label class="required">Report Language</label><select id="sg_report_lang"><option value="">Select…</option><option value="EN">English</option><option value="KO">Korean</option><option value="CN">Chinese</option><option value="ID">Indonesian</option><option value="Other">Other</option></select></div>
+                <div class="col-6"><label class="required">Report Type</label>
+                  <select id="sg_report_type"><option value="">Select…</option><option value="Printout">Printout</option><option value="Email">Email</option><option value="Portal">Portal</option></select>
+                </div>
+                <div class="col-6"><label>Sample Specimen Type</label>
+                  <select id="sg_specimen"><option value="Blood">Blood</option><option value="Plasma">Plasma</option><option value="Other">Other</option></select>
+                </div>
+                <div class="col-6"><label>Measurement Method</label>
+                  <select id="sg_measure_method"><option value="LMP">LMP</option><option value="US">Ultrasound</option><option value="IVF">IVF</option><option value="Other">Other</option></select>
+                </div>
+                <div class="col-6"><label>Sample Barcode</label><input id="sg_barcode" /></div>
+                <div class="col-6"><label>Category</label>
+                  <select id="sg_category"><option value="Domestic">Domestic</option><option value="Overseas">Overseas</option></select>
+                </div>
+                <div class="col-6"><label>NIPT Kit ID</label><input id="sg_kit_id" /></div>
+                <div class="col-6"><label>Sequencing Batch ID</label><input id="sg_batch_id" /></div>
+                <div class="col-6"><label class="required">Control Sample</label>
+                  <select id="sg_control"><option value="No">No</option><option value="Yes">Yes</option></select>
+                </div>
+                <div class="col-6"><label class="required">TRF Consent</label>
+                  <select id="sg_trf"><option value="Yes">Yes</option><option value="No">No</option></select>
+                </div>
+                <div class="col-6"><label class="required">Show Fetal Gender</label>
+                  <select id="sg_fetal_gender"><option value="Yes">Yes</option><option value="No">No</option></select>
+                </div>
+                <div class="col-6"><label class="required">Resample</label>
+                  <select id="sg_resample"><option value="No">No</option><option value="Yes">Yes</option></select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--line)">
+          <div class="muted" style="font-weight:600;margin-bottom:6px">FASTQ (server local paths)</div>
+          <p class="muted" style="margin:0 0 10px;font-size:12px">Use <strong>Browse FASTQ (R1+R2)…</strong> on the <strong>daemon server</strong> to pick <strong>two</strong> files (Ctrl+click up to two, or click one then Shift+click another if only those two lie in range). Paths still editable below. Roots: <strong>sgNIPT</strong> / <strong>Carrier screening</strong> (see <code>SGNIPT_FASTQ_DIR</code> / <code>CARRIER_SCREENING_FASTQ_DIR</code> in daemon <code>.env</code>).</p>
+          <div class="row">
+            <div class="col-12" style="margin-bottom:10px">
+              <button type="button" class="btn" id="btnBrowseFastq">Browse FASTQ (R1+R2)…</button>
+            </div>
+            <div class="col-6">
+              <label>R1 FASTQ</label>
+              <input id="fR1Path" placeholder="From browse or paste absolute path" style="width:100%" />
+            </div>
+            <div class="col-6">
+              <label>R2 FASTQ</label>
+              <input id="fR2Path" placeholder="From browse or paste absolute path" style="width:100%" />
+            </div>
+          </div>
+        </div>
+
+        <div id="carrierParams" class="col-12" style="margin-top:12px">
+          <div class="muted" style="font-weight:600;margin-bottom:6px">Carrier Screening Parameters</div>
+          <div class="row">
+            <div class="col-4"><label>Backbone BED</label><input id="fBackboneBed" placeholder="Path to backbone.bed" /></div>
+            <div class="col-4"><label>Disease BED</label><input id="fDiseaseBed" placeholder="Path to disease.bed" /></div>
+            <div class="col-4"><label>Max AF Filter</label><input id="fMaxAf" type="number" step="0.001" placeholder="e.g. 0.05" /></div>
+            <div class="col-6"><label>HPO Terms</label><input id="fHpoTerms" placeholder="e.g. HP:0001250,HP:0001263" /></div>
+            <div class="col-6"><label>Gene Filter</label><input id="fGeneFilter" placeholder="e.g. CFTR,SMN1,GJB2" /></div>
+          </div>
+        </div>
+
+        <div class="col-12" style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
+          <button class="btn primary" id="btnSaveOrder">Save order</button>
+          <button type="button" class="btn" id="btnCancelCreate">Cancel</button>
           <span id="submitMsg" class="muted"></span>
         </div>
       </div>
+      </div>
     </section>
 
-    <!-- Track Orders View -->
-    <section id="viewTrack" class="card hidden">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <h3 style="margin:0">Orders</h3>
-        <input id="trackSearch" placeholder="Search..." style="max-width:250px;margin-left:auto" />
-        <select id="trackFilter" style="width:auto;padding:8px 12px;border-radius:12px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">
-          <option value="">All Status</option>
-          <option value="QUEUED">Queued</option>
-          <option value="RUNNING">Running</option>
-          <option value="COMPLETED">Completed</option>
-          <option value="FAILED">Failed</option>
-        </select>
-        <button class="btn" id="btnRefreshTrack" onclick="loadOrders()">Refresh</button>
+    <!-- ═══════════════════════════════════════════════════════
+         Literature Cache View
+         API: /api/literature/* (service-daemon REST)
+         이 탭은 어떤 포털에도 이식 가능한 API 클라이언트 구조입니다.
+         NIPT Client Portal 이식 시: 이 섹션의 JS를 복사하고
+         API_BASE를 service-daemon URL로 설정하면 됩니다.
+    ═══════════════════════════════════════════════════════ -->
+    <section id="viewLiterature" class="card hidden">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+        <h3 style="margin:0">📚 Literature Cache</h3>
+        <div id="litStats" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <button class="btn" onclick="loadLiterature()">↻ Refresh</button>
+          <button class="btn danger-btn" onclick="clearLiteratureCache()" id="btnClearLitCache">Clear All</button>
+        </div>
       </div>
-      <div class="table-wrap">
-        <table id="tblOrders">
+
+      <!-- Search bar -->
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+        <input id="litSearchInput" type="text" placeholder="Search by title, abstract, PMID, author…"
+               style="flex:1;min-width:220px;padding:9px 14px;border-radius:12px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-size:14px"
+               oninput="debounce(loadLiterature,400)()" />
+        <select id="litSortSelect" style="padding:9px 14px;border-radius:12px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-size:14px"
+                onchange="loadLiterature()">
+          <option value="cached_at">Cached Date</option>
+          <option value="pub_date">Pub Date</option>
+        </select>
+      </div>
+
+      <!-- Manual search -->
+      <details style="margin-bottom:16px;border:1px solid var(--line);border-radius:12px;padding:12px 16px">
+        <summary style="cursor:pointer;font-weight:600;color:var(--muted);font-size:14px">🔍 Search literature for a variant</summary>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label style="font-size:12px;color:var(--muted)">Gene *</label>
+            <input id="litGeneInput" type="text" placeholder="e.g. BRCA2"
+                   style="width:120px;padding:8px 12px;border-radius:10px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-size:14px" />
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label style="font-size:12px;color:var(--muted)">HGVS.c</label>
+            <input id="litHgvscInput" type="text" placeholder="e.g. c.5266dupC"
+                   style="width:160px;padding:8px 12px;border-radius:10px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-size:14px" />
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label style="font-size:12px;color:var(--muted)">HGVS.p</label>
+            <input id="litHgvspInput" type="text" placeholder="e.g. p.Gln1756fs"
+                   style="width:160px;padding:8px 12px;border-radius:10px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-size:14px" />
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);padding-bottom:4px">
+            <input type="checkbox" id="litForceRefresh" /> Force refresh
+          </label>
+          <button class="btn primary" onclick="searchVariantLiterature()" id="btnLitSearch" style="padding-bottom:4px">Search &amp; Cache</button>
+          <span id="litSearchMsg" class="muted" style="font-size:13px;align-self:flex-end;padding-bottom:6px"></span>
+        </div>
+        <div id="litSearchResult" style="margin-top:12px"></div>
+      </details>
+
+      <!-- Articles table -->
+      <div style="overflow-x:auto">
+        <table id="litTable" style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>
-            <tr>
-              <th class="sortable" data-key="order_id">Order ID</th>
-              <th class="sortable" data-key="sample_name">Sample</th>
-              <th class="sortable" data-key="status">Status</th>
-              <th>Progress</th>
-              <th class="sortable" data-key="created_at">Created</th>
-              <th class="sortable" data-key="priority">Priority</th>
-              <th>Message</th>
-              <th>Actions</th>
+            <tr style="background:var(--thead-bg);color:var(--thead-text)">
+              <th style="padding:10px 12px;text-align:left;border-radius:8px 0 0 8px">PMID</th>
+              <th style="padding:10px 12px;text-align:left">Title</th>
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap">Journal</th>
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap">Pub Date</th>
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap">Cached</th>
+              <th style="padding:10px 12px;text-align:center;border-radius:0 8px 8px 0">Del</th>
             </tr>
           </thead>
-          <tbody id="tblOrdersBody"></tbody>
+          <tbody id="litTableBody">
+            <tr><td colspan="6" style="text-align:center;padding:20px;color:var(--muted)">Loading…</td></tr>
+          </tbody>
         </table>
       </div>
-      <div id="trackMsg" class="muted" style="margin-top:8px"></div>
+
+      <!-- Pagination -->
+      <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
+        <button class="btn" id="litPrevBtn" onclick="litPage(-1)" disabled>‹ Prev</button>
+        <span id="litPageInfo" style="font-size:13px;color:var(--muted)"></span>
+        <button class="btn" id="litNextBtn" onclick="litPage(1)" disabled>Next ›</button>
+      </div>
+
+      <!-- Article detail modal -->
+      <div id="litDetailModal" class="modal hidden">
+        <div class="modal-card" style="max-width:700px">
+          <div class="modal-header">
+            <h3 style="margin:0" id="litDetailTitle">Article Detail</h3>
+            <button class="btn" onclick="qs('litDetailModal').classList.add('hidden')">✕</button>
+          </div>
+          <div id="litDetailBody" style="padding:16px;max-height:60vh;overflow-y:auto;font-size:14px;line-height:1.7"></div>
+        </div>
+      </div>
     </section>
 
     <!-- Variant Review View -->
@@ -350,7 +905,7 @@
           <table id="tblVariants">
             <thead>
               <tr>
-                <th style="width:36px"><input type="checkbox" id="chkAll" onchange="toggleAllCheckboxes(this)" /></th>
+                <th style="width:44px;text-align:center"><input type="checkbox" id="chkAll" onchange="toggleAllCheckboxes(this)" /></th>
                 <th class="sortable" data-key="gene">Gene</th>
                 <th class="sortable" data-key="hgvsc">HGVSc</th>
                 <th class="sortable" data-key="hgvsp">HGVSp</th>
@@ -447,17 +1002,231 @@
 
   <div id="toast" class="toast"></div>
 
+  <div id="globalConfirmModal" class="modal-overlay hidden" style="z-index:20000" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="globalConfirmTitle" onclick="event.stopPropagation()">
+      <h3 id="globalConfirmTitle"></h3>
+      <p id="globalConfirmMessage"></p>
+      <label id="globalConfirmForceWrap" class="hidden">
+        <input type="checkbox" id="globalConfirmForce" />
+        <span>Force: DB 행을 제거합니다. 상태가 RUNNING 등으로 막혀 있어도 진행합니다(프로세스는 자동 종료되지 않습니다).</span>
+      </label>
+      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;flex-wrap:wrap">
+        <button type="button" class="btn" id="globalConfirmCancel">Cancel</button>
+        <button type="button" class="btn primary" id="globalConfirmOk">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="qcImageModal" class="modal-overlay hidden" style="z-index:20001" aria-hidden="true" onclick="qcImageModalBackdropClick(event)">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="qcImageModalTitle" onclick="event.stopPropagation()" style="max-width:min(920px,94vw);max-height:90vh;overflow:auto">
+      <h3 id="qcImageModalTitle" style="font-size:15px;margin:0 0 12px">QC chart</h3>
+      <div id="qcImageModalBody" class="muted" style="min-height:48px">Loading…</div>
+      <div style="margin-top:16px;text-align:right">
+        <button type="button" class="btn" onclick="qcImageModalClose()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="fastqBrowseModal" class="modal-overlay hidden">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="fastqBrowseTitle" onclick="event.stopPropagation()">
+      <h3 id="fastqBrowseTitle">Select R1 + R2 FASTQ</h3>
+      <p class="muted" id="fastqBrowseHint" style="margin-top:-8px;font-size:12px">Pick exactly two files. Ctrl+click (⌘ on Mac) to add/remove. Or click one file, then Shift+click another — only if at most two FASTQ files lie between them in the list.</p>
+      <div id="fastqBrowseBreadcrumb" class="muted" style="margin-bottom:10px;font-size:12px;line-height:1.5"></div>
+      <div id="fastqBrowseErr" style="color:var(--err);font-size:13px;margin-bottom:8px"></div>
+      <div id="fastqBrowseList" class="fb-list"></div>
+      <p class="muted" id="fastqBrowseSelStatus" style="margin-top:10px;font-size:12px">Selected: 0 / 2</p>
+      <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+        <button type="button" class="btn" id="fastqBrowseCancel">Cancel</button>
+        <button type="button" class="btn primary" id="fastqBrowseApply" disabled>Apply R1 / R2</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ═══════════════════════════════════════════════════════════
     // Configuration
     // ═══════════════════════════════════════════════════════════
-    // Default daemon address - change this to match your service-daemon host
-    const DEFAULT_DAEMON = 'http://100.112.118.12:8000';
+    // Daemon URL: same-origin when served at /portal/, else use saved or default
+    const isServedByDaemon = window.location.pathname.startsWith('/portal');
+    const DEFAULT_DAEMON = isServedByDaemon ? '' : 'http://100.112.118.12:8000';
     let API_BASE = localStorage.getItem('apiBase') || DEFAULT_DAEMON;
+    /** When set, Save sends PATCH `/order/{id}` instead of POST save */
+    let editingOrderId = null;
     const qs = id => document.getElementById(id);
+
+    function getDaemonApiKey() {
+      const k = localStorage.getItem('daemonApiKey');
+      if (!k) return null;
+      const t = String(k).trim();
+      return t || null;
+    }
+
+    function apiFetchHeaders(base) {
+      const h = Object.assign({}, base || {});
+      const key = getDaemonApiKey();
+      if (key) h['X-API-Key'] = key;
+      return h;
+    }
+
+    let _qcImageBlobUrls = null;
+
+    function qcImageModalBackdropClick(ev) {
+      if (ev && ev.target !== qs('qcImageModal')) return;
+      qcImageModalClose();
+    }
+
+    function qcImageModalClose() {
+      const m = qs('qcImageModal');
+      if (m) {
+        m.classList.add('hidden');
+        m.setAttribute('aria-hidden', 'true');
+      }
+      if (_qcImageBlobUrls) {
+        _qcImageBlobUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) { /* ignore */ } });
+        _qcImageBlobUrls = null;
+      }
+      const b = qs('qcImageModalBody');
+      if (b) b.innerHTML = '';
+    }
+
+    async function openQcMetricImages(paths) {
+      if (!paths || !paths.length || !reviewData || !reviewData.order_id) return;
+      const oid = reviewData.order_id;
+      const m = qs('qcImageModal');
+      const body = qs('qcImageModalBody');
+      if (!m || !body) return;
+      m.classList.remove('hidden');
+      m.setAttribute('aria-hidden', 'false');
+      body.innerHTML = '<span class="muted">Loading…</span>';
+      const urls = [];
+      const parts = [];
+      for (const p of paths) {
+        const url = `${API_BASE}/order/${encodeURIComponent(oid)}/file/${encodeURIComponent(p)}`;
+        try {
+          const r = await fetch(url, { headers: apiFetchHeaders() });
+          if (!r.ok) continue;
+          const blob = await r.blob();
+          const u = URL.createObjectURL(blob);
+          urls.push(u);
+          parts.push(`<img src="${u}" alt="" style="max-width:100%;height:auto;display:block;margin:0 auto 16px;border-radius:8px;border:1px solid var(--line)"/>`);
+        } catch (e) {
+          console.warn('QC image fetch failed', p, e);
+        }
+      }
+      _qcImageBlobUrls = urls;
+      body.innerHTML = parts.length ? parts.join('') : '<span class="muted">Could not load image(s).</span>';
+    }
+
+    let _globalConfirmResolve = null;
+
+    function wireGlobalConfirmModal() {
+      const overlay = qs('globalConfirmModal');
+      const cancel = qs('globalConfirmCancel');
+      const ok = qs('globalConfirmOk');
+      const forceWrap = qs('globalConfirmForceWrap');
+      const forceCb = qs('globalConfirmForce');
+
+      function closeOverlay() {
+        if (!overlay) return;
+        overlay.classList.add('hidden');
+        overlay.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+      }
+
+      function finish(result) {
+        const fn = _globalConfirmResolve;
+        _globalConfirmResolve = null;
+        closeOverlay();
+        if (fn) fn(result);
+      }
+
+      if (cancel) cancel.onclick = () => finish({ ok: false, force: false });
+      if (ok) {
+        ok.onclick = () => {
+          const showForce = forceWrap && !forceWrap.classList.contains('hidden');
+          const force = !!(showForce && forceCb && forceCb.checked);
+          finish({ ok: true, force });
+        };
+      }
+      if (overlay) {
+        overlay.addEventListener('click', e => {
+          if (e.target === overlay) finish({ ok: false, force: false });
+        });
+      }
+      document.addEventListener('keydown', e => {
+        if (!overlay || overlay.classList.contains('hidden')) return;
+        if (e.key === 'Escape') finish({ ok: false, force: false });
+      });
+    }
+
+    function openConfirmModal(opts) {
+      return new Promise(resolve => {
+        _globalConfirmResolve = resolve;
+        const title = opts.title || 'Confirm';
+        const message = opts.message || '';
+        const okText = opts.okText || 'OK';
+        const cancelText = opts.cancelText || 'Cancel';
+        const danger = !!opts.danger;
+        const showForceOption = !!opts.showForceOption;
+        const titleEl = qs('globalConfirmTitle');
+        const msgEl = qs('globalConfirmMessage');
+        if (titleEl) titleEl.textContent = title;
+        if (msgEl) msgEl.textContent = message;
+        const okBtn = qs('globalConfirmOk');
+        if (okBtn) {
+          okBtn.textContent = okText;
+          okBtn.classList.toggle('btn-danger-ok', danger);
+        }
+        const cBtn = qs('globalConfirmCancel');
+        if (cBtn) cBtn.textContent = cancelText;
+        const fw = qs('globalConfirmForceWrap');
+        const fc = qs('globalConfirmForce');
+        if (fw) {
+          if (showForceOption) {
+            fw.classList.remove('hidden');
+            if (fc) fc.checked = false;
+          } else {
+            fw.classList.add('hidden');
+            if (fc) fc.checked = false;
+          }
+        }
+        const overlay = qs('globalConfirmModal');
+        if (!overlay) {
+          resolve({ ok: false, force: false });
+          return;
+        }
+        overlay.classList.remove('hidden');
+        overlay.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+      });
+    }
 
     // State
     let allOrders = [];
+    let ordersPollTimer = null;
+
+    function stopOrdersListPolling() {
+      if (ordersPollTimer) {
+        clearInterval(ordersPollTimer);
+        ordersPollTimer = null;
+      }
+    }
+
+    /** Orders 목록이 보일 때 주기적으로 갱신 (파이프라인 종료 후 Status 반영). */
+    function startOrdersListPolling() {
+      stopOrdersListPolling();
+      ordersPollTimer = setInterval(() => {
+        const vo = qs('viewOrders');
+        if (!vo || vo.classList.contains('hidden')) return;
+        const lp = qs('ordersListPanel');
+        if (lp && lp.classList.contains('hidden')) return;
+        const dp = qs('orderDetailPanel');
+        if (dp && !dp.classList.contains('hidden')) return;
+        loadOrders();
+      }, 10000);
+    }
+    let pipelineLogPollTimer = null;
+
     let reviewData = null;
     let selectedVariants = new Set();
     let variantComments = {};
@@ -468,12 +1237,21 @@
     // ═══════════════════════════════════════════════════════════
     function changeDaemonUrl() {
       const url = prompt('Daemon URL:', API_BASE);
-      if (url && url.trim()) {
-        API_BASE = url.trim().replace(/\/+$/, '');
-        localStorage.setItem('apiBase', API_BASE);
-        toast('Daemon URL changed to ' + API_BASE);
-        loadDashboard();
+      if (!(url && url.trim())) return;
+      API_BASE = url.trim().replace(/\/+$/, '');
+      localStorage.setItem('apiBase', API_BASE);
+      const curKey = localStorage.getItem('daemonApiKey') || '';
+      const keyAns = prompt(
+        'X-API-Key (optional; required if daemon sets API_KEY env). Leave empty to clear:',
+        curKey
+      );
+      if (keyAns !== null) {
+        const kt = String(keyAns).trim();
+        if (kt) localStorage.setItem('daemonApiKey', kt);
+        else localStorage.removeItem('daemonApiKey');
       }
+      toast('Daemon URL changed to ' + API_BASE);
+      loadDashboard();
     }
 
     const toast = (m, ok = true) => {
@@ -483,21 +1261,26 @@
       setTimeout(() => t.classList.remove('show'), 3000);
     };
 
+    const TZ_KST = 'Asia/Seoul';
     const fmtDate = s => {
       if (!s) return '';
       const d = new Date(s);
-      return isNaN(d) ? '' : d.toLocaleString('en-CA', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+      return isNaN(d) ? '' : d.toLocaleString('en-CA', { timeZone: TZ_KST, year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
     };
 
     const pill = (text, cls) => `<span class="pill ${cls}">${text}</span>`;
 
-    const statusPill = s => {
-      const v = (s || '').toUpperCase();
-      if (v === 'COMPLETED') return pill(s, 'done');
-      if (v === 'FAILED') return pill(s, 'err');
-      if (v === 'RUNNING' || v === 'PROCESSING' || v === 'DOWNLOADING' || v === 'UPLOADING') return pill(s, 'inp');
-      if (v === 'QUEUED' || v === 'RECEIVED') return pill(s, 'new');
-      return pill(s, 'warn');
+    /** 정규화된 상태 키 문자열 (대문자 + 언더스코어) */
+    const statusPill = key => {
+      const v = (key || '').toString().trim().toUpperCase().replace(/\s+/g, '_');
+      if (v === 'COMPLETED') return pill('COMPLETED', 'done');
+      if (v === 'REPORT_READY') return pill('Report Ready', 'report-ready');
+      if (v === 'FAILED') return pill('FAILED', 'err');
+      if (v === 'CANCELLED') return pill('CANCELLED', 'warn');
+      if (v === 'SAVED') return pill('SAVED', 'new');
+      if (v === 'RUNNING' || v === 'PROCESSING' || v === 'DOWNLOADING' || v === 'UPLOADING') return pill(v, 'inp');
+      if (v === 'QUEUED' || v === 'RECEIVED') return pill(v, 'new');
+      return pill(key || '—', 'warn');
     };
 
     const acmgClass = cls => {
@@ -554,10 +1337,22 @@
     // ═══════════════════════════════════════════════════════════
     // API Helpers
     // ═══════════════════════════════════════════════════════════
+    function errorDetailFromResponseBody(body) {
+      if (!body || typeof body !== 'object') return null;
+      const d = body.detail;
+      if (typeof d === 'string') return d;
+      if (Array.isArray(d)) return d.map(x => (x && x.msg) || JSON.stringify(x)).join('; ');
+      return null;
+    }
+
     async function apiGet(path) {
       try {
-        const r = await fetch(`${API_BASE}${path}`);
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        const r = await fetch(`${API_BASE}${path}`, { headers: apiFetchHeaders() });
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          const detail = errorDetailFromResponseBody(body);
+          throw new Error(detail || `${r.status} ${r.statusText}`);
+        }
         return await r.json();
       } catch (e) {
         console.error('API GET error:', e);
@@ -565,16 +1360,75 @@
       }
     }
 
+    async function apiGetPlainText(path) {
+      const r = await fetch(`${API_BASE}${path}`, { headers: apiFetchHeaders() });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        const detail = errorDetailFromResponseBody(body);
+        throw new Error(detail || `${r.status} ${r.statusText}`);
+      }
+      return await r.text();
+    }
+
+    function stopPipelineLogPoll() {
+      if (pipelineLogPollTimer) {
+        clearInterval(pipelineLogPollTimer);
+        pipelineLogPollTimer = null;
+      }
+    }
+
+    /** FASTQ browse: `/api/fastq/browse` 우선 (Mount(/portal)·프록시와 `/api/portal/...` 충돌 회피), 실패 시 구 경로 */
+    async function apiGetFastqBrowse(relPath, serviceCode) {
+      const q = encodeURIComponent(relPath || '');
+      const sc = encodeURIComponent(serviceCode || 'carrier_screening');
+      const paths = [
+        `/api/fastq/browse?path=${q}&service_code=${sc}`,
+        `/api/portal/browse/fastq?path=${q}&service_code=${sc}`,
+      ];
+      const base = API_BASE || '';
+      let last404 = null;
+      for (const apiPath of paths) {
+        const r = await fetch(`${base}${apiPath}`, { headers: apiFetchHeaders() });
+        const text = await r.text();
+        let body = null;
+        try {
+          body = text ? JSON.parse(text) : null;
+        } catch (_) {
+          body = null;
+        }
+        if (r.ok && body && typeof body === 'object' && !Array.isArray(body)) {
+          return body;
+        }
+        if (r.status === 404) {
+          last404 = { apiPath, text, body };
+          continue;
+        }
+        const detail = body ? errorDetailFromResponseBody(body) : '';
+        throw new Error(detail || text.slice(0, 200) || `${r.status} ${r.statusText}`);
+      }
+      const origin = base ? base.replace(/\/+$/, '') : window.location.origin;
+      const tried = paths.map(p => origin + p).join('\n');
+      const d = last404 && last404.body ? errorDetailFromResponseBody(last404.body) : '';
+      const dpre = (d && d !== 'Not Found') ? `${d}\n` : '';
+      throw new Error(
+        `${dpre}HTTP 404 — 아래 둘 다 실패했습니다:\n${tried}\n\n` +
+        '【조치】 서버에서 `curl -s "http://127.0.0.1:포트/api/fastq/browse?service_code=carrier_screening"` 로 확인하세요.\n' +
+        '· JSON이 오면 데몬은 정상 — 브라우저 Daemon URL/포트만 맞추면 됩니다.\n' +
+        '· 404면 이 포트에서 돌아가는 프로세스가 최신 service-daemon이 아닙니다 → 해당 머신에서 코드 갱신 후 uvicorn 재시작.\n' +
+        '· `/docs` 에 `GET /api/fastq/browse` 가 보이면 라우트는 등록된 것입니다.'
+      );
+    }
+
     async function apiPost(path, body) {
       try {
         const r = await fetch(`${API_BASE}${path}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: apiFetchHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(body),
         });
         if (!r.ok) {
           const err = await r.json().catch(() => ({}));
-          throw new Error(err.detail || `${r.status} ${r.statusText}`);
+          throw new Error(errorDetailFromResponseBody(err) || `${r.status} ${r.statusText}`);
         }
         return await r.json();
       } catch (e) {
@@ -583,24 +1437,635 @@
       }
     }
 
+    /** Report Ready 주문: PDF 우선, 없으면 HTML / report.json */
+    async function downloadOrderReportPdf(orderId) {
+      try {
+        const res = await apiGet(`/order/${encodeURIComponent(orderId)}/files`);
+        const files = res.files || [];
+        const pdfs = files.filter(f => /^Report_.*\.pdf$/i.test(f.name)).sort((a, b) => a.name.localeCompare(b.name));
+        const htmls = files.filter(f => /^Report_.*\.html$/i.test(f.name)).sort((a, b) => a.name.localeCompare(b.name));
+        const target = pdfs[0]
+          || files.find(f => f.name === 'report.pdf')
+          || htmls[0]
+          || files.find(f => f.name === 'report.json');
+        if (!target) {
+          toast('No report files found in output folder', false);
+          return;
+        }
+        const url = `${API_BASE}/order/${encodeURIComponent(orderId)}/file/${encodeURIComponent(target.name)}`;
+        const r = await fetch(url, { headers: apiFetchHeaders() });
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(errorDetailFromResponseBody(body) || `${r.status} ${r.statusText}`);
+        }
+        const blob = await r.blob();
+        const u = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = u;
+        a.download = target.name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(u);
+        toast(`Download: ${target.name}`);
+      } catch (e) {
+        toast((e && e.message) || 'Download failed', false);
+      }
+    }
+
+    async function apiPatch(path, body) {
+      try {
+        const r = await fetch(`${API_BASE}${path}`, {
+          method: 'PATCH',
+          headers: apiFetchHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(
+            (typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail)) ||
+            `${r.status} ${r.statusText}`
+          );
+        }
+        return await r.json();
+      } catch (e) {
+        console.error('API PATCH error:', e);
+        throw e;
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // FASTQ file browser — R1+R2 pair (Ctrl+click ×2 or Shift range)
+    // ═══════════════════════════════════════════════════════════
+    let fastqBrowseServiceCode = 'carrier_screening';
+    /** @type {string[]} */
+    let fastqBrowseSelected = [];
+    /** index in fastqBrowseCurrentFiles for Shift+click range */
+    let fastqBrowseAnchorFileIdx = null;
+    /** @type {{name:string,abs_path:string,rel_path?:string}[]} */
+    let fastqBrowseCurrentFiles = [];
+
+    function closeFastqBrowse() {
+      const m = qs('fastqBrowseModal');
+      if (m) m.classList.add('hidden');
+      fastqBrowseSelected = [];
+      fastqBrowseAnchorFileIdx = null;
+      fastqBrowseCurrentFiles = [];
+      updateFastqBrowseApplyUi();
+      updateFastqBrowseSelectionVisual();
+    }
+
+    function fastqRankPath(p) {
+      const n = (p || '').toLowerCase();
+      if (/[_.]r1[._]|[/_]r1\.(fastq|fq)|_1\.(fastq|fq)/.test(n)) return 1;
+      if (/[_.]r2[._]|[/_]r2\.(fastq|fq)|_2\.(fastq|fq)/.test(n)) return 2;
+      return 0;
+    }
+
+    /** @returns {[string,string]} */
+    function orderR1R2(pathA, pathB) {
+      const ra = fastqRankPath(pathA);
+      const rb = fastqRankPath(pathB);
+      if (ra && rb && ra !== rb) return ra < rb ? [pathA, pathB] : [pathB, pathA];
+      return pathA.localeCompare(pathB) <= 0 ? [pathA, pathB] : [pathB, pathA];
+    }
+
+    function updateFastqBrowseApplyUi() {
+      const st = qs('fastqBrowseSelStatus');
+      const btn = qs('fastqBrowseApply');
+      const n = fastqBrowseSelected.length;
+      if (st) {
+        st.textContent = n === 0 ? 'Selected: 0 / 2' : n === 1 ? `Selected: 1 / 2 — ${fastqBrowseSelected[0].split('/').pop()}` : `Selected: 2 / 2 — ${fastqBrowseSelected.map(p => p.split('/').pop()).join(' · ')}`;
+      }
+      if (btn) btn.disabled = n !== 2;
+    }
+
+    function updateFastqBrowseSelectionVisual() {
+      const set = new Set(fastqBrowseSelected);
+      document.querySelectorAll('#fastqBrowseList .fb-file-row').forEach(el => {
+        const p = el.dataset.absPath || '';
+        el.classList.toggle('fb-selected', set.has(p));
+      });
+    }
+
+    function onFastqFileRowClick(ev, path, fileIdx) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (ev.shiftKey && fastqBrowseAnchorFileIdx !== null) {
+        const a = Math.min(fastqBrowseAnchorFileIdx, fileIdx);
+        const b = Math.max(fastqBrowseAnchorFileIdx, fileIdx);
+        const range = fastqBrowseCurrentFiles.slice(a, b + 1);
+        if (range.length > 2) {
+          toast('That range has more than two files. Use Ctrl+click (⌘ on Mac) to pick exactly two files.');
+          return;
+        }
+        fastqBrowseSelected = range.map(f => f.abs_path);
+      } else if (ev.ctrlKey || ev.metaKey) {
+        const i = fastqBrowseSelected.indexOf(path);
+        if (i >= 0) fastqBrowseSelected.splice(i, 1);
+        else {
+          if (fastqBrowseSelected.length >= 2) fastqBrowseSelected.shift();
+          fastqBrowseSelected.push(path);
+        }
+        fastqBrowseAnchorFileIdx = fileIdx;
+      } else {
+        fastqBrowseSelected = [path];
+        fastqBrowseAnchorFileIdx = fileIdx;
+      }
+      updateFastqBrowseSelectionVisual();
+      updateFastqBrowseApplyUi();
+    }
+
+    function appendFbRow(listEl, text, classExtra, onClick) {
+      const div = document.createElement('div');
+      div.className = 'fb-item' + (classExtra || '');
+      div.textContent = text;
+      div.onclick = onClick;
+      listEl.appendChild(div);
+    }
+
+    function appendFbFileRow(listEl, it, fileIdx) {
+      const div = document.createElement('div');
+      div.className = 'fb-item fb-file fb-file-row';
+      div.dataset.absPath = it.abs_path;
+      div.textContent = '📄 ' + it.name;
+      div.onclick = (ev) => onFastqFileRowClick(ev, it.abs_path, fileIdx);
+      listEl.appendChild(div);
+    }
+
+    async function openFastqBrowsePair() {
+      const svc = document.querySelector('input[name="fService"]:checked');
+      fastqBrowseServiceCode = (svc && svc.value) ? svc.value : 'carrier_screening';
+      fastqBrowseSelected = [];
+      fastqBrowseAnchorFileIdx = null;
+      fastqBrowseCurrentFiles = [];
+      const title = qs('fastqBrowseTitle');
+      if (title) title.textContent = 'Select R1 + R2 FASTQ';
+      const hint = qs('fastqBrowseHint');
+      if (hint) {
+        const rootLabel = fastqBrowseServiceCode === 'sgnipt' ? 'sgNIPT' : 'Carrier screening';
+        hint.textContent = `Service: ${rootLabel} — open folders, then choose two FASTQ files (Ctrl+click up to two, or Shift+click range if only two files in range).`;
+      }
+      const m = qs('fastqBrowseModal');
+      if (m) m.classList.remove('hidden');
+      updateFastqBrowseApplyUi();
+      await renderFastqBrowse('');
+    }
+
+    function applyFastqBrowsePair() {
+      if (fastqBrowseSelected.length !== 2) {
+        toast('Select exactly two FASTQ files.');
+        return;
+      }
+      const [r1, r2] = orderR1R2(fastqBrowseSelected[0], fastqBrowseSelected[1]);
+      const i1 = qs('fR1Path');
+      const i2 = qs('fR2Path');
+      if (i1) i1.value = r1;
+      if (i2) i2.value = r2;
+      closeFastqBrowse();
+      toast('R1 and R2 paths set');
+    }
+
+    async function renderFastqBrowse(rel) {
+      const errEl = qs('fastqBrowseErr');
+      const listEl = qs('fastqBrowseList');
+      const bcEl = qs('fastqBrowseBreadcrumb');
+      if (!listEl || !bcEl || !errEl) return;
+      errEl.textContent = '';
+      errEl.style.whiteSpace = '';
+      bcEl.innerHTML = '';
+      listEl.innerHTML = '';
+      fastqBrowseCurrentFiles = [];
+      const loading = document.createElement('div');
+      loading.className = 'muted';
+      loading.style.padding = '12px';
+      loading.textContent = 'Loading…';
+      listEl.appendChild(loading);
+      try {
+        const data = await apiGetFastqBrowse(rel, fastqBrowseServiceCode);
+        listEl.innerHTML = '';
+        if (data.hint) {
+          errEl.textContent = data.hint;
+        } else if (!data.root_exists) {
+          errEl.textContent = 'FASTQ root does not exist on the server. Check FASTQ_BASE_DIR in the daemon .env.';
+        }
+
+        const rootLink = document.createElement('span');
+        rootLink.className = 'fb-crumb-link';
+        rootLink.textContent = '[root]';
+        rootLink.onclick = () => renderFastqBrowse('');
+        bcEl.appendChild(rootLink);
+        const parts = data.rel_path ? String(data.rel_path).split('/').filter(Boolean) : [];
+        let acc = '';
+        for (const p of parts) {
+          acc = acc ? `${acc}/${p}` : p;
+          bcEl.appendChild(document.createTextNode(' / '));
+          const sp = document.createElement('span');
+          sp.className = 'fb-crumb-link';
+          sp.textContent = p;
+          const relAcc = acc;
+          sp.onclick = () => renderFastqBrowse(relAcc);
+          bcEl.appendChild(sp);
+        }
+
+        if (data.rel_path) {
+          appendFbRow(listEl, '📁 .. (parent folder)', '', () => renderFastqBrowse(data.parent_rel || ''));
+        }
+        const files = [];
+        for (const it of data.items || []) {
+          if (it.kind === 'dir') {
+            appendFbRow(listEl, '📁 ' + it.name, '', () => renderFastqBrowse(it.rel_path));
+          } else if (it.kind === 'file' && it.abs_path) {
+            files.push({ name: it.name, abs_path: it.abs_path, rel_path: it.rel_path });
+          }
+        }
+        fastqBrowseCurrentFiles = files;
+        files.forEach((it, idx) => appendFbFileRow(listEl, it, idx));
+        fastqBrowseAnchorFileIdx = null;
+        updateFastqBrowseSelectionVisual();
+        updateFastqBrowseApplyUi();
+
+        if (listEl.children.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'muted';
+          empty.style.padding = '12px';
+          empty.textContent = 'No subfolders or FASTQ files here.';
+          listEl.appendChild(empty);
+        }
+      } catch (e) {
+        listEl.innerHTML = '';
+        errEl.style.whiteSpace = 'pre-wrap';
+        errEl.textContent = e.message || String(e);
+      }
+    }
+
+    function wireFastqBrowseUi() {
+      const m = qs('fastqBrowseModal');
+      if (m) m.addEventListener('click', () => closeFastqBrowse());
+      const inner = m && m.querySelector('.modal');
+      if (inner) inner.addEventListener('click', ev => ev.stopPropagation());
+      const bf = qs('btnBrowseFastq');
+      const bc = qs('fastqBrowseCancel');
+      const ba = qs('fastqBrowseApply');
+      if (bf) bf.onclick = () => openFastqBrowsePair();
+      if (bc) bc.onclick = (e) => { e.stopPropagation(); closeFastqBrowse(); };
+      if (ba) ba.onclick = (e) => { e.stopPropagation(); applyFastqBrowsePair(); };
+    }
+
     // ═══════════════════════════════════════════════════════════
     // View Navigation
     // ═══════════════════════════════════════════════════════════
+    function showOrdersListOnly() {
+      clearEditMode();
+      const lp = qs('ordersListPanel');
+      const cp = qs('ordersCreatePanel');
+      if (lp) lp.classList.remove('hidden');
+      if (cp) cp.classList.add('hidden');
+      hideOrderDetail();
+    }
+
+    function showCreateOrderPanel() {
+      const lp = qs('ordersListPanel');
+      const cp = qs('ordersCreatePanel');
+      if (lp) lp.classList.add('hidden');
+      if (cp) cp.classList.remove('hidden');
+      toggleServiceSubmitBlocks();
+    }
+
     function showView(name) {
-      ['Dash', 'Submit', 'Track', 'Review'].forEach(v => {
-        qs('view' + v).classList.add('hidden');
-        qs('tab' + v).classList.remove('active');
+      ['Dash', 'Orders', 'Review', 'Literature'].forEach(v => {
+        const ve = qs('view' + v);
+        const te = qs('tab' + v);
+        if (ve) ve.classList.add('hidden');
+        if (te) te.classList.remove('active');
       });
-      qs('view' + name.charAt(0).toUpperCase() + name.slice(1)).classList.remove('hidden');
-      qs('tab' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
+      const cap = name.charAt(0).toUpperCase() + name.slice(1);
+      const viewEl = qs('view' + cap);
+      const tabEl = qs('tab' + cap);
+      if (viewEl) viewEl.classList.remove('hidden');
+      if (tabEl) tabEl.classList.add('active');
 
-      qs('mainWrap').classList.toggle('wide', name === 'track' || name === 'review');
+      qs('mainWrap').classList.toggle('wide', name === 'orders' || name === 'review' || name === 'literature');
 
-      if (name === 'dash') loadDashboard();
-      if (name === 'track') loadOrders();
-      if (name === 'review') refreshReviewOrderList();
+      if (name === 'dash') {
+        stopOrdersListPolling();
+        loadDashboard();
+      }
+      if (name === 'orders') {
+        showOrdersListOnly();
+        loadOrders();
+        startOrdersListPolling();
+      }
+      if (name === 'review') {
+        stopOrdersListPolling();
+        refreshReviewOrderList();
+      }
+      if (name === 'literature') {
+        stopOrdersListPolling();
+        loadLiterature();
+        loadLiteratureStats();
+      }
 
       localStorage.setItem('activeTab', name);
+    }
+
+    function toggleServiceSubmitBlocks() {
+      const svc = document.querySelector('input[name="fService"]:checked');
+      const isCarrier = svc && svc.value === 'carrier_screening';
+      const carrierBlock = qs('carrierSubmitBlock');
+      const sgniptBlock = qs('sgniptSubmitBlock');
+      const carrierParams = qs('carrierParams');
+      if (carrierBlock) carrierBlock.classList.toggle('hidden', !isCarrier);
+      if (sgniptBlock) sgniptBlock.classList.toggle('hidden', isCarrier);
+      if (carrierParams) carrierParams.style.display = isCarrier ? 'block' : 'none';
+      if (isCarrier) refreshCarrierConditionalUi();
+    }
+
+    const CARRIER_TYPES_NEED_P2 = ['ExomeDuo', 'CouplesCarrier', 'ExomeMaxDuo', 'ExomeTrio', 'ExomeMaxTrio'];
+    const CARRIER_TYPES_NEED_P3 = ['ExomeTrio', 'ExomeMaxTrio'];
+
+    function refreshCarrierConditionalUi() {
+      const wrapOther = qs('cr_other_type_wrap');
+      const catEl = qs('cr_test_category');
+      if (!wrapOther || !catEl) return;
+      const cat = catEl.value;
+      wrapOther.classList.toggle('hidden', cat !== 'other');
+      const ot = qs('cr_other_type') ? qs('cr_other_type').value : '';
+      const active = cat === 'other' && ot;
+      const need2 = active && CARRIER_TYPES_NEED_P2.includes(ot);
+      const need3 = active && CARRIER_TYPES_NEED_P3.includes(ot);
+      const b2 = qs('carrierPatient2Block');
+      const b3 = qs('carrierPatient3Block');
+      if (b2) b2.classList.toggle('hidden', !need2);
+      if (b3) b3.classList.toggle('hidden', !need3);
+      const couples = document.querySelector('input[name="cr_report_mode"]:checked');
+      const pw = qs('cr_partner_order_wrap');
+      if (pw) pw.classList.toggle('hidden', !couples || couples.value !== 'couples');
+    }
+
+    function setFormInput(id, v) {
+      const el = qs(id);
+      if (!el) return;
+      el.value = v != null && v !== '' ? String(v) : '';
+    }
+
+    function clearEditMode() {
+      editingOrderId = null;
+      const cro = qs('cr_order_id');
+      const sgo = qs('sgOrderId');
+      if (cro) cro.readOnly = false;
+      if (sgo) sgo.readOnly = false;
+      const t1 = qs('carrierSubmitBlock') && qs('carrierSubmitBlock').querySelector('.submit-page-title');
+      const t2 = qs('sgniptSubmitBlock') && qs('sgniptSubmitBlock').querySelector('.submit-page-title');
+      if (t1) t1.textContent = 'Create Carrier Order';
+      if (t2) t2.textContent = 'Create Client Order';
+      const btn = qs('btnSaveOrder');
+      if (btn) btn.textContent = 'Save order';
+    }
+
+    function populateCarrierFormFromOrder(o) {
+      const c = (o.params && o.params.carrier) || {};
+      const p = o.params || {};
+      setFormInput('cr_order_id', o.order_id);
+      setFormInput('cr_pipeline_sample', o.sample_name);
+      const cps = qs('cr_pipeline_sample');
+      if (cps) cps.dataset.locked = (o.sample_name && String(o.sample_name).trim()) ? '1' : '';
+      setFormInput('cr_work_dir', o.work_dir);
+      if (qs('cr_priority')) qs('cr_priority').value = o.priority || 'normal';
+      setFormInput('cr_callback', o.callback_url || '');
+      setFormInput('fR1Path', o.fastq_r1_path || '');
+      setFormInput('fR2Path', o.fastq_r2_path || '');
+
+      const std =
+        c.test_category === 'standard_carrier' ||
+        (!c.test_category && (!c.package_code || c.package_code === 'CarrierScreening'));
+      if (qs('cr_test_category')) qs('cr_test_category').value = std ? 'standard_carrier' : 'other';
+      const ot = std ? '' : (c.other_test_type || c.package_code || '');
+      if (qs('cr_other_type')) qs('cr_other_type').value = ot;
+
+      const rm = c.report_mode === 'couples' ? 'couples' : 'single';
+      document.querySelectorAll('input[name="cr_report_mode"]').forEach(r => {
+        r.checked = r.value === rm;
+      });
+      setFormInput('cr_partner_order_id', c.partner_order_id);
+
+      setFormInput('cr_patient_name', c.patient_name);
+      setFormInput('cr_patient_birth', c.patient_birth);
+      if (qs('cr_patient_gender')) qs('cr_patient_gender').value = c.patient_gender || '';
+      setFormInput('cr_p2_name', c.patient2_name);
+      setFormInput('cr_p2_birth', c.patient2_birth);
+      if (qs('cr_p2_gender')) qs('cr_p2_gender').value = c.patient2_gender || '';
+      if (qs('cr_p2_affected')) qs('cr_p2_affected').value = c.patient2_affected || '';
+      setFormInput('cr_p3_name', c.patient3_name);
+      setFormInput('cr_p3_birth', c.patient3_birth);
+      if (qs('cr_p3_gender')) qs('cr_p3_gender').value = c.patient3_gender || '';
+      if (qs('cr_p3_affected')) qs('cr_p3_affected').value = c.patient3_affected || '';
+
+      setFormInput('cr_hospital', c.hospital_name);
+      setFormInput('cr_doctor', c.doctor);
+      setFormInput('cr_mrn', c.medical_record_id);
+      setFormInput('cr_sample_id', c.sample_id);
+      if (qs('cr_affected')) qs('cr_affected').value = c.affected || '';
+      setFormInput('cr_clinical_info', c.clinical_information);
+      setFormInput('cr_collect_date', c.sample_collection_date);
+      setFormInput('cr_receipt_date', c.receipt_date);
+      if (qs('cr_report_lang')) qs('cr_report_lang').value = c.report_language || '';
+      if (qs('cr_report_type')) qs('cr_report_type').value = c.report_type || '';
+      if (qs('cr_specimen')) qs('cr_specimen').value = c.sample_specimen_type || 'Blood';
+      setFormInput('cr_barcode', c.sample_barcode);
+
+      setFormInput('fBackboneBed', p.backbone_bed);
+      setFormInput('fDiseaseBed', p.disease_bed);
+      setFormInput('fMaxAf', p.max_af != null ? p.max_af : '');
+      setFormInput('fHpoTerms', p.hpo_terms);
+      setFormInput('fGeneFilter', p.gene_filter);
+      refreshCarrierConditionalUi();
+    }
+
+    function populateSgniptFormFromOrder(o) {
+      const n = (o.params && o.params.nipt) || {};
+      setFormInput('sgOrderId', o.order_id);
+      setFormInput('sgPipelineSample', o.sample_name);
+      const sps = qs('sgPipelineSample');
+      if (sps) sps.dataset.locked = (o.sample_name && String(o.sample_name).trim()) ? '1' : '';
+      setFormInput('sgWorkDir', o.work_dir);
+      if (qs('sgPriority')) qs('sgPriority').value = o.priority || 'normal';
+      setFormInput('sgCallback', o.callback_url || '');
+      setFormInput('fR1Path', o.fastq_r1_path || '');
+      setFormInput('fR2Path', o.fastq_r2_path || '');
+
+      setFormInput('sg_prev_order', n.previous_order_id);
+      setFormInput('sg_patient_name', n.patient_name);
+      setFormInput('sg_patient_birth', n.patient_birth);
+      if (qs('sg_patient_gender')) qs('sg_patient_gender').value = n.patient_gender || '';
+      setFormInput('sg_ga_weeks', n.gestational_age_weeks != null ? n.gestational_age_weeks : '');
+      setFormInput('sg_ga_days', n.gestational_age_days != null ? n.gestational_age_days : '');
+      setFormInput('sg_height_cm', n.height_cm != null ? n.height_cm : '');
+      setFormInput('sg_weight_kg', n.weight_kg != null ? n.weight_kg : '');
+      if (qs('sg_pregnancy_type')) qs('sg_pregnancy_type').value = n.pregnancy_type || '';
+      setFormInput('sg_edd', n.estimated_delivery_date);
+      setFormInput('sg_hospital', n.hospital_name);
+      setFormInput('sg_doctor', n.doctor);
+      setFormInput('sg_mrn', n.medical_record_id);
+      setFormInput('sg_sample_id', n.sample_id);
+      if (qs('sg_indication')) qs('sg_indication').value = n.indication_for_testing || '';
+      setFormInput('sg_collect_date', n.sample_collection_date);
+      setFormInput('sg_receipt_date', n.receipt_date);
+      if (qs('sg_package')) qs('sg_package').value = n.package_code || '';
+      if (qs('sg_report_lang')) qs('sg_report_lang').value = n.report_language || '';
+      if (qs('sg_report_type')) qs('sg_report_type').value = n.report_type || '';
+      if (qs('sg_specimen')) qs('sg_specimen').value = n.sample_specimen_type || 'Blood';
+      if (qs('sg_measure_method')) qs('sg_measure_method').value = n.measurement_method || 'LMP';
+      setFormInput('sg_barcode', n.sample_barcode);
+      if (qs('sg_category')) qs('sg_category').value = n.category || 'Domestic';
+      setFormInput('sg_kit_id', n.nipt_kit_id);
+      setFormInput('sg_batch_id', n.sequencing_batch_id);
+      if (qs('sg_control')) qs('sg_control').value = n.control_sample || 'No';
+      if (qs('sg_trf')) qs('sg_trf').value = n.trf_consent || 'Yes';
+      if (qs('sg_fetal_gender')) qs('sg_fetal_gender').value = n.show_fetal_gender || 'Yes';
+      if (qs('sg_resample')) qs('sg_resample').value = n.resample || 'No';
+    }
+
+    function openEditOrder(o) {
+      const st = orderStatusUpper(o);
+      if (!['SAVED', 'FAILED', 'CANCELLED'].includes(st)) {
+        toast('Only saved, failed, or cancelled orders can be edited', false);
+        return;
+      }
+      const lp = qs('ordersListPanel');
+      const cp = qs('ordersCreatePanel');
+      if (lp) lp.classList.add('hidden');
+      if (cp) cp.classList.remove('hidden');
+      hideOrderDetail();
+
+      editingOrderId = o.order_id;
+      const radio = document.querySelector(`input[name="fService"][value="${o.service_code}"]`);
+      if (radio) radio.checked = true;
+      toggleServiceSubmitBlocks();
+
+      if (o.service_code === 'carrier_screening') {
+        populateCarrierFormFromOrder(o);
+        const t1 = qs('carrierSubmitBlock') && qs('carrierSubmitBlock').querySelector('.submit-page-title');
+        if (t1) t1.textContent = 'Edit Carrier Order';
+      } else if (o.service_code === 'sgnipt') {
+        populateSgniptFormFromOrder(o);
+        const t2 = qs('sgniptSubmitBlock') && qs('sgniptSubmitBlock').querySelector('.submit-page-title');
+        if (t2) t2.textContent = 'Edit sgNIPT Order';
+      } else {
+        editingOrderId = null;
+        toast('Editing is only supported for Carrier and sgNIPT orders', false);
+        showOrdersListOnly();
+        return;
+      }
+
+      const btn = qs('btnSaveOrder');
+      if (btn) btn.textContent = 'Update order';
+      const sm = qs('submitMsg');
+      if (sm) sm.textContent = 'Editing order — Update saves changes; use ⋯ → Submit to queue.';
+      closeAllMoreMenus();
+    }
+
+    function collectCarrierOrderMeta() {
+      const val = id => { const el = qs(id); return el && el.value != null ? String(el.value).trim() : ''; };
+      const cat = val('cr_test_category');
+      const otherType = cat === 'other' ? val('cr_other_type') : '';
+      const packageCode = cat === 'other' ? (otherType || '') : 'CarrierScreening';
+      const modeEl = document.querySelector('input[name="cr_report_mode"]:checked');
+      const reportMode = modeEl ? modeEl.value : 'single';
+      const meta = {
+        test_category: cat,
+        other_test_type: otherType || undefined,
+        package_code: packageCode,
+        patient_name: val('cr_patient_name'),
+        patient_birth: val('cr_patient_birth'),
+        patient_gender: val('cr_patient_gender'),
+        hospital_name: val('cr_hospital'),
+        doctor: val('cr_doctor'),
+        medical_record_id: val('cr_mrn') || undefined,
+        sample_id: val('cr_sample_id') || undefined,
+        affected: val('cr_affected'),
+        clinical_information: val('cr_clinical_info') || undefined,
+        sample_collection_date: val('cr_collect_date'),
+        receipt_date: val('cr_receipt_date') || undefined,
+        report_language: val('cr_report_lang'),
+        report_type: val('cr_report_type'),
+        sample_specimen_type: val('cr_specimen') || undefined,
+        sample_barcode: val('cr_barcode') || undefined,
+        report_mode: reportMode,
+        partner_order_id: reportMode === 'couples' ? (val('cr_partner_order_id') || undefined) : undefined,
+        patient2_name: val('cr_p2_name') || undefined,
+        patient2_birth: val('cr_p2_birth') || undefined,
+        patient2_gender: val('cr_p2_gender') || undefined,
+        patient2_affected: val('cr_p2_affected') || undefined,
+        patient3_name: val('cr_p3_name') || undefined,
+        patient3_birth: val('cr_p3_birth') || undefined,
+        patient3_gender: val('cr_p3_gender') || undefined,
+        patient3_affected: val('cr_p3_affected') || undefined,
+      };
+      return meta;
+    }
+
+    function validateCarrierSubmit() {
+      const val = id => { const el = qs(id); return el && el.value != null ? String(el.value).trim() : ''; };
+      if (!val('cr_order_id')) return 'Order ID is required';
+      const cat = val('cr_test_category');
+      if (cat === 'other' && !val('cr_other_type')) return 'Select an Other test type';
+      const ot = cat === 'other' ? val('cr_other_type') : '';
+      if (!val('cr_patient_name')) return 'Patient Name is required';
+      if (!val('cr_patient_birth')) return 'Patient Birth is required';
+      if (!val('cr_patient_gender')) return 'Patient Gender is required';
+      if (!val('cr_hospital')) return 'Hospital Name is required';
+      if (!val('cr_doctor')) return 'Doctor is required';
+      if (!val('cr_affected')) return 'Affected is required';
+      if (!val('cr_collect_date')) return 'Sample Collection Date is required';
+      if (!val('cr_report_lang')) return 'Report Language is required';
+      if (!val('cr_report_type')) return 'Report Type is required';
+      const need2 = cat === 'other' && CARRIER_TYPES_NEED_P2.includes(ot);
+      const need3 = cat === 'other' && CARRIER_TYPES_NEED_P3.includes(ot);
+      if (need2) {
+        if (!val('cr_p2_name')) return 'Patient2 Name is required for this test type';
+        if (!val('cr_p2_birth')) return 'Patient2 Birth is required';
+        if (!val('cr_p2_gender')) return 'Patient2 Gender is required';
+        if (!val('cr_p2_affected')) return 'Affected2 is required';
+      }
+      if (need3) {
+        if (!val('cr_p3_name')) return 'Patient3 Name is required for this test type';
+        if (!val('cr_p3_birth')) return 'Patient3 Birth is required';
+        if (!val('cr_p3_gender')) return 'Patient3 Gender is required';
+        if (!val('cr_p3_affected')) return 'Affected3 is required';
+      }
+      const modeEl = document.querySelector('input[name="cr_report_mode"]:checked');
+      if (modeEl && modeEl.value === 'couples' && !val('cr_partner_order_id')) return 'Partner Order ID is required for couples report';
+      return null;
+    }
+
+    function wireCarrierFormEvents() {
+      const cat = qs('cr_test_category');
+      const ot = qs('cr_other_type');
+      if (cat) cat.addEventListener('change', refreshCarrierConditionalUi);
+      if (ot) ot.addEventListener('change', refreshCarrierConditionalUi);
+      document.querySelectorAll('input[name="cr_report_mode"]').forEach(r => {
+        r.addEventListener('change', refreshCarrierConditionalUi);
+      });
+      const syncSample = () => {
+        const svc = document.querySelector('input[name="fService"]:checked');
+        if (!svc || svc.value !== 'carrier_screening') return;
+        const p = qs('cr_pipeline_sample');
+        if (!p || p.dataset.locked === '1') return;
+        const sid = qs('cr_sample_id') && qs('cr_sample_id').value.trim();
+        const bc = qs('cr_barcode') && qs('cr_barcode').value.trim();
+        if (sid || bc) p.value = sid || bc;
+      };
+      ['cr_sample_id', 'cr_barcode'].forEach(id => {
+        const el = qs(id);
+        if (el) el.addEventListener('input', syncSample);
+      });
+      const cps = qs('cr_pipeline_sample');
+      if (cps) {
+        cps.addEventListener('input', function() {
+          this.dataset.locked = this.value.trim() ? '1' : '';
+        });
+      }
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -623,10 +2088,11 @@
 
         const running = queue.running_jobs || [];
         if (running.length > 0) {
+          const svcLabel = sc => sc === 'sgnipt' ? 'sgNIPT' : (sc === 'carrier_screening' ? 'Carrier' : sc || '-');
           qs('dashRunning').innerHTML = '<div class="muted" style="font-weight:600;margin-bottom:6px">Running Jobs</div>' +
             running.map(j => `
               <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)">
-                <span class="pill inp">${j.service_code}</span>
+                <span class="pill inp">${svcLabel(j.service_code)}</span>
                 <span style="font-weight:600">${j.order_id}</span>
                 <span class="muted">${j.sample_name}</span>
                 <div style="flex:1;max-width:200px">
@@ -646,124 +2112,1019 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // Submit Order
+    // Save order (draft) — Submit runs from Orders ⋯ menu
     // ═══════════════════════════════════════════════════════════
-    qs('btnSubmitOrder').onclick = async () => {
-      const btn = qs('btnSubmitOrder');
-      if (btn.classList.contains('loading')) return;
+    document.querySelectorAll('input[name="fService"]').forEach(r => {
+      r.addEventListener('change', toggleServiceSubmitBlocks);
+    });
+    toggleServiceSubmitBlocks();
 
-      const orderId = qs('fOrderId').value.trim();
-      const sampleName = qs('fSampleName').value.trim();
-      if (!orderId || !sampleName) return toast('Order ID and Sample Name are required', false);
-
-      const body = {
-        order_id: orderId,
-        service_code: 'carrier_screening',
-        sample_name: sampleName,
-        work_dir: qs('fWorkDir').value.trim() || undefined,
-        fastq_r1_url: qs('fR1Url').value.trim() || undefined,
-        fastq_r2_url: qs('fR2Url').value.trim() || undefined,
-        fastq_r1_path: qs('fR1Path').value.trim() || undefined,
-        fastq_r2_path: qs('fR2Path').value.trim() || undefined,
-        priority: qs('fPriority').value,
-        callback_url: qs('fCallback').value.trim() || undefined,
-        params: {},
+    function collectSgniptNiptParams() {
+      const val = id => { const el = qs(id); return el && el.value != null ? String(el.value).trim() : ''; };
+      return {
+        previous_order_id: val('sg_prev_order') || undefined,
+        patient_name: val('sg_patient_name'),
+        patient_birth: val('sg_patient_birth'),
+        patient_gender: val('sg_patient_gender'),
+        gestational_age_weeks: val('sg_ga_weeks') !== '' ? parseInt(val('sg_ga_weeks'), 10) : undefined,
+        gestational_age_days: val('sg_ga_days') !== '' ? parseInt(val('sg_ga_days'), 10) : undefined,
+        height_cm: val('sg_height_cm') ? parseFloat(val('sg_height_cm')) : undefined,
+        weight_kg: val('sg_weight_kg') ? parseFloat(val('sg_weight_kg')) : undefined,
+        pregnancy_type: val('sg_pregnancy_type'),
+        estimated_delivery_date: val('sg_edd'),
+        hospital_name: val('sg_hospital'),
+        doctor: val('sg_doctor'),
+        medical_record_id: val('sg_mrn') || undefined,
+        sample_id: val('sg_sample_id') || undefined,
+        indication_for_testing: val('sg_indication') || undefined,
+        sample_collection_date: val('sg_collect_date'),
+        receipt_date: val('sg_receipt_date') || undefined,
+        package_code: val('sg_package'),
+        report_language: val('sg_report_lang'),
+        report_type: val('sg_report_type'),
+        sample_specimen_type: val('sg_specimen') || undefined,
+        measurement_method: val('sg_measure_method') || undefined,
+        sample_barcode: val('sg_barcode') || undefined,
+        category: val('sg_category') || undefined,
+        nipt_kit_id: val('sg_kit_id') || undefined,
+        sequencing_batch_id: val('sg_batch_id') || undefined,
+        control_sample: val('sg_control') || undefined,
+        trf_consent: val('sg_trf') || undefined,
+        show_fetal_gender: val('sg_fetal_gender') || undefined,
+        resample: val('sg_resample') || undefined,
       };
+    }
 
-      const bb = qs('fBackboneBed').value.trim();
-      const db = qs('fDiseaseBed').value.trim();
-      const maf = qs('fMaxAf').value.trim();
-      const hpo = qs('fHpoTerms').value.trim();
-      const gf = qs('fGeneFilter').value.trim();
-      if (bb) body.params.backbone_bed = bb;
-      if (db) body.params.disease_bed = db;
-      if (maf) body.params.max_af = parseFloat(maf);
-      if (hpo) body.params.hpo_terms = hpo;
-      if (gf) body.params.gene_filter = gf;
+    function validateSgniptClinical(nipt) {
+      const need = [
+        ['patient_name', 'Patient Name'],
+        ['patient_birth', 'Patient Birth'],
+        ['patient_gender', 'Patient Gender'],
+        ['gestational_age_weeks', 'Gestational Age Weeks'],
+        ['gestational_age_days', 'Gestational Age Days'],
+        ['pregnancy_type', 'Pregnancy Type'],
+        ['estimated_delivery_date', 'EDD'],
+        ['hospital_name', 'Hospital Name'],
+        ['doctor', 'Doctor'],
+        ['sample_collection_date', 'Sample Collection Date'],
+        ['package_code', 'Package Code'],
+        ['report_language', 'Report Language'],
+        ['report_type', 'Report Type'],
+      ];
+      for (const [k, label] of need) {
+        const v = nipt[k];
+        if (v === undefined || v === null || v === '') return label + ' is required';
+      }
+      return null;
+    }
+
+    qs('btnSaveOrder').onclick = async () => {
+      const btn = qs('btnSaveOrder');
+      if (!btn || btn.classList.contains('loading')) return;
+
+      const serviceCode = document.querySelector('input[name="fService"]:checked').value;
+      let orderId, sampleName, workDir, priority, callbackUrl, body;
+
+      if (serviceCode === 'carrier_screening') {
+        const cErr = validateCarrierSubmit();
+        if (cErr) return toast(cErr, false);
+        orderId = qs('cr_order_id').value.trim();
+        const carrier = collectCarrierOrderMeta();
+        sampleName = qs('cr_pipeline_sample').value.trim() || carrier.sample_id || carrier.sample_barcode || '';
+        if (!sampleName) return toast('Set Sample name (pipeline), or fill Sample ID / Sample Barcode', false);
+        workDir = qs('cr_work_dir').value.trim();
+        priority = qs('cr_priority').value;
+        callbackUrl = qs('cr_callback').value.trim();
+        body = {
+          order_id: orderId,
+          service_code: serviceCode,
+          sample_name: sampleName,
+          work_dir: workDir || undefined,
+          fastq_r1_path: qs('fR1Path').value.trim() || undefined,
+          fastq_r2_path: qs('fR2Path').value.trim() || undefined,
+          priority,
+          callback_url: callbackUrl || undefined,
+          params: { carrier },
+        };
+        const bb = qs('fBackboneBed').value.trim();
+        const db = qs('fDiseaseBed').value.trim();
+        const maf = qs('fMaxAf').value.trim();
+        const hpo = qs('fHpoTerms').value.trim();
+        const gf = qs('fGeneFilter').value.trim();
+        if (bb) body.params.backbone_bed = bb;
+        if (db) body.params.disease_bed = db;
+        if (maf) body.params.max_af = parseFloat(maf);
+        if (hpo) body.params.hpo_terms = hpo;
+        if (gf) body.params.gene_filter = gf;
+      } else {
+        orderId = qs('sgOrderId').value.trim();
+        if (!orderId) return toast('Order ID is required', false);
+        const nipt = collectSgniptNiptParams();
+        const vErr = validateSgniptClinical(nipt);
+        if (vErr) return toast(vErr, false);
+        sampleName = qs('sgPipelineSample').value.trim() || nipt.sample_id || nipt.sample_barcode || '';
+        if (!sampleName) return toast('Set Sample name (pipeline), or fill Sample ID / Sample Barcode', false);
+        workDir = qs('sgWorkDir').value.trim();
+        priority = qs('sgPriority').value;
+        callbackUrl = qs('sgCallback').value.trim();
+        body = {
+          order_id: orderId,
+          service_code: serviceCode,
+          sample_name: sampleName,
+          work_dir: workDir || undefined,
+          fastq_r1_path: qs('fR1Path').value.trim() || undefined,
+          fastq_r2_path: qs('fR2Path').value.trim() || undefined,
+          priority,
+          callback_url: callbackUrl || undefined,
+          params: { nipt },
+        };
+      }
 
       try {
-        btn.classList.add('loading'); btn.textContent = 'Submitting...';
-        const res = await apiPost('/order/carrier_screening/submit', body);
-        toast(`Order submitted: ${res.message}`);
-        qs('submitMsg').textContent = `Queue position: ${res.queue_position || '-'}`;
-        ['fOrderId','fSampleName','fWorkDir','fR1Url','fR2Url','fR1Path','fR2Path','fCallback','fBackboneBed','fDiseaseBed','fMaxAf','fHpoTerms','fGeneFilter'].forEach(id => qs(id).value = '');
+        btn.classList.add('loading');
+        btn.textContent = editingOrderId ? 'Updating...' : 'Saving...';
+        let res;
+        if (editingOrderId) {
+          const patchBody = {
+            order_id: body.order_id,
+            sample_name: body.sample_name,
+            work_dir: body.work_dir,
+            fastq_r1_path: body.fastq_r1_path,
+            fastq_r2_path: body.fastq_r2_path,
+            priority: body.priority,
+            callback_url: body.callback_url,
+            params: body.params,
+          };
+          res = await apiPatch(`/order/${encodeURIComponent(editingOrderId)}`, patchBody);
+        } else {
+          res = await apiPost(`/order/${serviceCode}/save`, body);
+        }
+        toast(res.message || (editingOrderId ? `Updated: ${res.order_id || editingOrderId}` : `Saved: ${res.order_id}`));
+        if (qs('submitMsg')) qs('submitMsg').textContent = res.message || (editingOrderId ? 'Updated.' : 'Saved (not queued).');
+        showOrdersListOnly();
+        loadOrders();
       } catch (e) {
-        toast(e.message || 'Submit failed', false);
+        toast(e.message || 'Save failed', false);
       } finally {
-        btn.classList.remove('loading'); btn.textContent = 'Submit Order';
+        btn.classList.remove('loading');
+        btn.textContent = editingOrderId ? 'Update order' : 'Save order';
       }
     };
 
     // ═══════════════════════════════════════════════════════════
-    // Track Orders
+    // Orders list
     // ═══════════════════════════════════════════════════════════
+    function patientDisplayName(o) {
+      const c = o.params && o.params.carrier;
+      const n = o.params && o.params.nipt;
+      if (c && c.patient_name) return String(c.patient_name);
+      if (n && n.patient_name) return String(n.patient_name);
+      return '';
+    }
+
+    function orderRowHaystack(o) {
+      try {
+        return JSON.stringify(o).toLowerCase();
+      } catch (_) {
+        return '';
+      }
+    }
+
+    function matchesClientFilters(o) {
+      const qEl = qs('trackSearch');
+      const q = (qEl && qEl.value.trim()) || '';
+      const modeOr = (document.querySelector('input[name="ordersSearchMode"]:checked') || {}).value === 'or';
+      if (q) {
+        const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+        const hay = orderRowHaystack(o);
+        if (modeOr) {
+          if (!tokens.some(t => hay.includes(t))) return false;
+        } else {
+          if (!tokens.every(t => hay.includes(t))) return false;
+        }
+      }
+      const df = qs('ordersDateFrom') && qs('ordersDateFrom').value;
+      const dt = qs('ordersDateTo') && qs('ordersDateTo').value;
+      if (df || dt) {
+        const c = o.created_at ? new Date(o.created_at) : null;
+        if (!c || isNaN(c.getTime())) return false;
+        const day = c.toLocaleDateString('en-CA', { timeZone: TZ_KST });
+        if (df && day < df) return false;
+        if (dt && day > dt) return false;
+      }
+      const pf = qs('ordersPregnancyFilter') && qs('ordersPregnancyFilter').value;
+      if (pf) {
+        const pt = o.params && o.params.nipt && o.params.nipt.pregnancy_type;
+        if (!pt || pt !== pf) return false;
+      }
+      const rf = qs('ordersResultFilter') && qs('ordersResultFilter').value;
+      const stKey = orderStatusUpper(o);
+      if (rf === 'completed_ok') {
+        if (!['COMPLETED', 'REPORT_READY'].includes(stKey)) return false;
+      } else if (rf === 'failed') {
+        if (!['FAILED', 'CANCELLED'].includes(stKey)) return false;
+      } else if (rf === 'inprogress') {
+        const active = ['SAVED', 'QUEUED', 'RUNNING', 'RECEIVED', 'DOWNLOADING', 'PROCESSING', 'UPLOADING'];
+        if (!active.includes(stKey)) return false;
+      }
+      return true;
+    }
+
+    let orderSortKey = 'created_at';
+    let orderSortAsc = false;
+
+    function cmpOrderRows(a, b) {
+      const key = orderSortKey;
+      const dir = orderSortAsc ? 1 : -1;
+      let va, vb;
+      if (key === 'sample_name') {
+        va = (patientDisplayName(a) || a.sample_name || '').toLowerCase();
+        vb = (patientDisplayName(b) || b.sample_name || '').toLowerCase();
+      } else if (key === 'created_at') {
+        va = new Date(a.created_at || 0).getTime();
+        vb = new Date(b.created_at || 0).getTime();
+      } else {
+        va = String(a[key] ?? '').toLowerCase();
+        vb = String(b[key] ?? '').toLowerCase();
+      }
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    }
+
+    function getOrdersAfterClientFilter() {
+      return allOrders.filter(matchesClientFilters).sort(cmpOrderRows);
+    }
+
+    function clearMoreDdLayout(dd) {
+      dd.style.position = '';
+      dd.style.top = '';
+      dd.style.left = '';
+      dd.style.right = '';
+      dd.style.minWidth = '';
+      dd.style.zIndex = '';
+      dd.style.maxHeight = '';
+    }
+
+    function positionMoreDdBelowButton(mbtn, dd) {
+      const r = mbtn.getBoundingClientRect();
+      const w = Math.max(168, dd.offsetWidth || 168);
+      let left = r.right - w;
+      if (left < 6) left = 6;
+      if (left + w > window.innerWidth - 6) left = Math.max(6, window.innerWidth - w - 6);
+      let top = r.bottom + 4;
+      dd.style.position = 'fixed';
+      dd.style.zIndex = '10050';
+      dd.style.minWidth = '168px';
+      dd.style.left = `${left}px`;
+      dd.style.top = `${top}px`;
+      dd.style.right = 'auto';
+      const h = dd.offsetHeight;
+      if (top + h > window.innerHeight - 8 && r.top > h + 8) {
+        dd.style.top = `${Math.max(8, r.top - h - 4)}px`;
+      }
+    }
+
+    function closeAllMoreMenus() {
+      document.querySelectorAll('.more-dd.open').forEach(el => {
+        el.classList.remove('open');
+        clearMoreDdLayout(el);
+      });
+      document.querySelectorAll('.more-btn[aria-expanded="true"]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+    }
+
+    /** 주문 행의 상태 키 (COMPLETED, REPORT_READY, …) — API/표기 차이 흡수 */
+    function orderStatusUpper(o) {
+      if (!o) return '';
+      let s = o.status;
+      if (s == null || s === '') return '';
+      if (typeof s === 'object' && s !== null && 'value' in s) s = s.value;
+      s = String(s).trim();
+      if (!s) return '';
+      return s.toUpperCase().replace(/\s+/g, '_');
+    }
+
+    async function startSavedOrder(orderId) {
+      closeAllMoreMenus();
+      try {
+        const res = await apiPost(`/order/${encodeURIComponent(orderId)}/start`, {});
+        toast(res.message || 'Queued');
+        loadOrders();
+      } catch (e) {
+        toast(e.message || 'Submit failed', false);
+      }
+    }
+
+    /** Carrier: FASTQ부터 전체 파이프라인 다시 큐 (POST /start). */
+    async function forceRunOrderRow(o) {
+      closeAllMoreMenus();
+      const oid = o && o.order_id != null ? String(o.order_id).trim() : '';
+      if (!oid) {
+        toast('Cannot force run: missing order id', false);
+        return;
+      }
+      const { ok } = await openConfirmModal({
+        title: 'Force Run (full pipeline)?',
+        message: `Queue a full analysis from FASTQ for "${oid}"?\n\nAlignment and variant calling run again; existing analysis files may be reused or overwritten depending on your pipeline settings. Post-processing runs after the pipeline finishes.`,
+        okText: 'Force Run',
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        const res = await apiPost(`/order/${encodeURIComponent(oid)}/start`, {});
+        toast(res.message || 'Queued for full run', true);
+        loadOrders();
+        loadDashboard();
+      } catch (e) {
+        toast(e.message || 'Force Run failed', false);
+      }
+    }
+
+    /** Carrier: VCF만으로 result.json·QC 갱신 (Nextflow 없음). */
+    async function reprocessOnlyOrderRow(o) {
+      closeAllMoreMenus();
+      const oid = o && o.order_id != null ? String(o.order_id).trim() : '';
+      if (!oid) {
+        toast('Cannot reprocess: missing order id', false);
+        return;
+      }
+      const { ok } = await openConfirmModal({
+        title: 'Reprocess only?',
+        message: `Re-run annotation, QC extract, and result.json for "${oid}"?\n\nNextflow is NOT run — existing VCFs are reused.`,
+        okText: 'Reprocess',
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        const res = await apiPost(`/order/${encodeURIComponent(oid)}/reprocess-results`, {});
+        toast((res && res.message) || 'Reprocess completed', true);
+        loadOrders();
+        loadDashboard();
+      } catch (e) {
+        toast(e.message || 'Reprocess failed', false);
+      }
+    }
+
+    async function stopOrderRow(orderId) {
+      closeAllMoreMenus();
+      const { ok } = await openConfirmModal({
+        title: 'Stop this order?',
+        message: `Stop or cancel order "${orderId}"?\n\nDrafts are removed; queued jobs are cancelled; running jobs receive a stop signal.`,
+        okText: 'Stop',
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        const res = await apiPost(`/order/${encodeURIComponent(orderId)}/stop`, {});
+        toast(res.message || 'OK');
+        loadOrders();
+      } catch (e) {
+        toast(e.message || 'Stop failed', false);
+      }
+    }
+
+    async function deleteOrderRow(o) {
+      closeAllMoreMenus();
+      const oid = o && o.order_id != null ? String(o.order_id).trim() : '';
+      if (!oid) {
+        toast('Cannot delete: missing order id', false);
+        return;
+      }
+      const { ok } = await openConfirmModal({
+        title: 'Delete order and run folders?',
+        message: `Remove order "${oid}" from this daemon and delete its analysis, output, and log folders?\n\nFASTQ files will not be deleted. This cannot be undone.`,
+        okText: 'Delete',
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        const res = await apiPost(`/order/${encodeURIComponent(oid)}/delete-run`, {});
+        let msg = res.message || 'Order removed';
+        if (res.fallback === 'db_only_not_in_memory') {
+          msg += '\n(Not in live memory; SQLite row was cleared.)';
+        }
+        if (res.deleted && res.deleted.length) {
+          msg += '\nDeleted: ' + res.deleted.join(', ');
+        }
+        if (res.errors && res.errors.length) {
+          msg += '\n' + res.errors.join('\n');
+        }
+        toast(msg, !(res.errors && res.errors.length));
+        loadOrders();
+        loadDashboard();
+      } catch (e) {
+        toast(e.message || 'Delete failed', false);
+      }
+    }
+
+    async function purgeDbOrderRow(o) {
+      closeAllMoreMenus();
+      const oid = o && o.order_id != null ? String(o.order_id).trim() : '';
+      if (!oid) {
+        toast('Cannot purge: missing order id', false);
+        return;
+      }
+      const { ok, force } = await openConfirmModal({
+        title: 'Purge database record only?',
+        message: `Remove order "${oid}" from the daemon database and memory only?\n\nAnalysis / output / log folders on disk are NOT deleted. Use for stuck or test orders.\n\nIf purge is blocked while the job looks active, check Force (pipeline process is not auto-killed).`,
+        okText: 'Purge DB',
+        danger: true,
+        showForceOption: true,
+      });
+      if (!ok) return;
+      try {
+        const q = force ? '?force=true' : '';
+        const res = await apiPost(`/order/${encodeURIComponent(oid)}/purge-db${q}`, {});
+        let msg = res.message || 'Purge OK';
+        if (res.sqlite_rows_deleted !== undefined) {
+          msg += `\nSQLite rows deleted: ${res.sqlite_rows_deleted}`;
+        }
+        toast(msg, true);
+        loadOrders();
+        loadDashboard();
+      } catch (e) {
+        toast(e.message || 'Purge failed', false);
+      }
+    }
+
+    function exportOrdersTsv() {
+      const rows = getOrdersAfterClientFilter();
+      const headers = ['order_id', 'service_code', 'patient_or_sample', 'status', 'progress', 'created_at', 'priority', 'message'];
+      const lines = [headers.join('\t')];
+      rows.forEach(o => {
+        const pat = patientDisplayName(o) || o.sample_name || '';
+        lines.push([
+          o.order_id,
+          o.service_code,
+          pat,
+          o.status,
+          String(o.progress ?? ''),
+          o.created_at || '',
+          o.priority || '',
+          (o.message || '').replace(/\t/g, ' '),
+        ].map(cell => String(cell).replace(/\r?\n/g, ' ')).join('\t'));
+      });
+      const blob = new Blob([lines.join('\n')], { type: 'text/tab-separated-values;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `orders_${new Date().toLocaleDateString('en-CA', { timeZone: TZ_KST })}.tsv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast(`Exported ${rows.length} row(s)`);
+    }
+
     async function loadOrders() {
       try {
         const statusFilter = qs('trackFilter').value;
-        let path = '/orders?service_code=carrier_screening';
-        if (statusFilter) path += `&status=${statusFilter}`;
+        const serviceFilter = qs('trackServiceFilter').value;
+        let path = '/orders';
+        if (serviceFilter) path += `?service_code=${serviceFilter}`;
+        if (statusFilter) path += (path.includes('?') ? '&' : '?') + `status=${statusFilter}`;
         const data = await apiGet(path);
         allOrders = data.orders || [];
         renderOrders();
-        qs('trackMsg').textContent = `${allOrders.length} order(s)`;
       } catch (e) {
         toast('Failed to load orders: ' + e.message, false);
       }
     }
 
+    function escapeHtml(s) {
+      if (s == null) return '';
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    /** pipeline.log 등: ANSI SGR(예: [1;33m … [0m) → 터미널과 비슷한 span 색상 */
+    function ansiToHtml(raw) {
+      if (raw == null || raw === '') return '';
+      let s = String(raw);
+      s = s.replace(/\u001b\[[\d;?]*[A-Za-z]/g, seq => (seq.endsWith('m') ? seq : ''));
+      const ansiBasic = ['#484f58', '#f85149', '#3fb950', '#d29922', '#58a6ff', '#db61a2', '#39d5e3', '#c9d1d9'];
+      const ansiBright = ['#6e7681', '#ff7b72', '#56d364', '#e3b341', '#79c0ff', '#ff9bce', '#56d4dd', '#ffffff'];
+      const re = /\u001b\[([\d;]*)m/g;
+      let last = 0;
+      let out = '';
+      let bold = false;
+      let fg = null;
+      let m;
+      while ((m = re.exec(s)) !== null) {
+        const slice = s.slice(last, m.index);
+        out += wrapAnsiHtmlChunk(escapeHtml(slice), bold, fg);
+        const codes = m[1] ? m[1].split(';').map(x => parseInt(x, 10)).filter(x => !Number.isNaN(x)) : [];
+        if (codes.length === 0) {
+          bold = false;
+          fg = null;
+        } else {
+          for (const c of codes) {
+            if (c === 0) {
+              bold = false;
+              fg = null;
+            } else if (c === 1) bold = true;
+            else if (c === 2 || c === 22) bold = false;
+            else if (c === 39) fg = null;
+            else if (c >= 30 && c <= 37) fg = ansiBasic[c - 30];
+            else if (c >= 90 && c <= 97) fg = ansiBright[c - 90];
+          }
+        }
+        last = m.index + m[0].length;
+      }
+      out += wrapAnsiHtmlChunk(escapeHtml(s.slice(last)), bold, fg);
+      return out;
+    }
+
+    function wrapAnsiHtmlChunk(escaped, bold, fg) {
+      if (!escaped) return '';
+      const st = [];
+      if (bold) st.push('font-weight:700');
+      if (fg) st.push('color:' + fg);
+      if (!st.length) return escaped;
+      return '<span style="' + st.join(';') + '">' + escaped + '</span>';
+    }
+
+    function fmtDateDetail(s) {
+      if (!s) return '—';
+      const d = new Date(s);
+      if (isNaN(d)) return escapeHtml(String(s));
+      return d.toLocaleDateString(undefined, { timeZone: TZ_KST, year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    function fmtDateTimeDetail(s) {
+      if (!s) return '—';
+      const d = new Date(s);
+      if (isNaN(d)) return escapeHtml(String(s));
+      return d.toLocaleString(undefined, { timeZone: TZ_KST, year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    const NIPT_FIELD_LABELS = {
+      previous_order_id: 'Previous Order',
+      patient_name: 'Patient Name',
+      patient_birth: 'Patient Birth',
+      patient_gender: 'Patient Gender',
+      gestational_age_weeks: 'Gestational Age (Weeks)',
+      gestational_age_days: 'Gestational Age (Days)',
+      height_cm: 'Height (cm)',
+      weight_kg: 'Weight (kg)',
+      pregnancy_type: 'Pregnancy Type',
+      estimated_delivery_date: 'Estimated Delivery Date (EDD)',
+      hospital_name: 'Hospital Name',
+      doctor: 'Doctor',
+      medical_record_id: 'Medical Record ID',
+      sample_id: 'Sample ID',
+      indication_for_testing: 'Indication for Testing',
+      sample_collection_date: 'Sample Collection Date',
+      receipt_date: 'Receipt Date',
+      package_code: 'Package Code',
+      report_language: 'Report Language',
+      report_type: 'Report Type',
+      sample_specimen_type: 'Sample Specimen Type',
+      measurement_method: 'Measurement Method',
+      sample_barcode: 'Sample Barcode',
+      category: 'Category',
+      nipt_kit_id: 'NIPT Kit ID',
+      sequencing_batch_id: 'Sequencing Batch ID',
+      control_sample: 'Control Sample',
+      trf_consent: 'TRF Consent',
+      show_fetal_gender: 'Show Fetal Gender',
+      resample: 'Resample',
+    };
+
+    function kvSection(title, pairs) {
+      const inner = pairs.map(([lab, val]) =>
+        `<div class="kv-item"><div class="kv-label">${escapeHtml(lab)}</div><div class="kv-value">${val === '' || val == null ? '—' : escapeHtml(String(val))}</div></div>`
+      ).join('');
+      return `<div class="detail-section"><h4>${escapeHtml(title)}</h4><div class="detail-kv">${inner}</div></div>`;
+    }
+
+    function niptDisplayValue(key, raw) {
+      if (raw === undefined || raw === null || raw === '') return '—';
+      if (['patient_birth', 'estimated_delivery_date', 'sample_collection_date', 'receipt_date'].includes(key)) return fmtDateDetail(raw);
+      return raw;
+    }
+
+    function niptKvRows(nipt, keys) {
+      return keys.map(k => {
+        const lab = NIPT_FIELD_LABELS[k] || k;
+        const v = niptDisplayValue(k, nipt[k]);
+        return `<div class="kv-item"><div class="kv-label">${escapeHtml(lab)}</div><div class="kv-value">${v === '—' ? '—' : escapeHtml(String(v))}</div></div>`;
+      }).join('');
+    }
+
+    function hideOrderDetail() {
+      stopPipelineLogPoll();
+      const host = qs('orderPipelineLogHost');
+      if (host) {
+        host.innerHTML = '';
+        host.classList.add('hidden');
+      }
+      const chrome = qs('ordersBrowseChrome');
+      if (chrome) chrome.classList.remove('hidden');
+      const p = qs('orderDetailPanel');
+      if (p) p.classList.add('hidden');
+    }
+
+    function showOrderDetail(o) {
+      const chrome = qs('ordersBrowseChrome');
+      if (chrome) chrome.classList.add('hidden');
+      const p = qs('orderDetailPanel');
+      if (p) p.classList.remove('hidden');
+      const svcTag = o.service_code === 'sgnipt' ? 'sgNIPT' : (o.service_code === 'carrier_screening' ? 'Carrier' : o.service_code || '');
+      qs('orderDetailTitle').textContent = `Order Detail ${o.order_id}` + (svcTag ? ` (${svcTag})` : '');
+      qs('orderDetailSub').textContent = 'Detail info of order';
+
+      const pipelinePairs = [
+        ['Order ID', o.order_id],
+        ['Service', svcTag],
+        ['Sample name (pipeline)', o.sample_name],
+        ['Work directory', o.work_dir || '—'],
+        ['Status', (() => {
+          const k = orderStatusUpper(o);
+          if (k === 'REPORT_READY') return 'Report Ready';
+          return o.status != null ? String(o.status) : '—';
+        })()],
+        ['Progress', `${o.progress ?? 0}%`],
+        ['Priority', o.priority || '—'],
+        ['Message', o.message || '—'],
+        ['Created', fmtDateTimeDetail(o.created_at)],
+        ['Started', fmtDateTimeDetail(o.started_at)],
+        ['Last updated', fmtDateTimeDetail(o.updated_at)],
+        ['Completed', fmtDateTimeDetail(o.completed_at)],
+        ['R1 path', o.fastq_r1_path || '—'],
+        ['R2 path', o.fastq_r2_path || '—'],
+        ['Callback URL', o.callback_url || '—'],
+      ];
+
+      let html = '';
+      html += `<div class="detail-section"><h4>Order logistics &amp; pipeline</h4><div class="detail-kv">` +
+        pipelinePairs.map(([l, v]) =>
+          `<div class="kv-item"><div class="kv-label">${escapeHtml(l)}</div><div class="kv-value">${v === '—' ? '—' : escapeHtml(String(v))}</div></div>`
+        ).join('') + `</div></div>`;
+
+      const nipt = o.params && o.params.nipt;
+      if (nipt && typeof nipt === 'object') {
+        const keysPatient = ['previous_order_id', 'patient_name', 'patient_birth', 'patient_gender', 'gestational_age_weeks', 'gestational_age_days', 'height_cm', 'weight_kg', 'pregnancy_type', 'estimated_delivery_date'];
+        const keysHospital = ['hospital_name', 'doctor', 'medical_record_id', 'sample_id', 'indication_for_testing'];
+        const keysSample = ['sample_collection_date', 'receipt_date', 'package_code', 'report_language', 'report_type', 'sample_specimen_type', 'measurement_method', 'sample_barcode', 'category', 'nipt_kit_id', 'sequencing_batch_id', 'control_sample', 'trf_consent', 'show_fetal_gender', 'resample'];
+        html += `<div class="detail-section"><h4>Patient and Pregnancy Information</h4><div class="detail-kv">${niptKvRows(nipt, keysPatient)}</div></div>`;
+        html += `<div class="detail-section"><h4>Hospital and Identifier Information</h4><div class="detail-kv">${niptKvRows(nipt, keysHospital)}</div></div>`;
+        html += `<div class="detail-section"><h4>Sample and Test Details</h4><div class="detail-kv">${niptKvRows(nipt, keysSample)}</div></div>`;
+        const pipeN = Object.fromEntries(Object.entries(o.params).filter(([k]) => k !== 'nipt'));
+        if (Object.keys(pipeN).length) {
+          const pairs = Object.entries(pipeN).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : v]);
+          html += kvSection('Pipeline / other parameters', pairs);
+        }
+      } else if (o.params && o.params.carrier && typeof o.params.carrier === 'object') {
+        const c = o.params.carrier;
+        const CARRIER_LABELS = {
+          test_category: 'Test category',
+          other_test_type: 'Other test type',
+          package_code: 'Package code (test type)',
+          report_mode: 'Report mode',
+          partner_order_id: 'Partner Order ID (couples)',
+          patient_name: 'Patient Name',
+          patient_birth: 'Patient Birth',
+          patient_gender: 'Patient Gender',
+          patient2_name: 'Patient2 Name',
+          patient2_birth: 'Patient2 Birth',
+          patient2_gender: 'Patient2 Gender',
+          patient2_affected: 'Affected2',
+          patient3_name: 'Patient3 Name',
+          patient3_birth: 'Patient3 Birth',
+          patient3_gender: 'Patient3 Gender',
+          patient3_affected: 'Affected3',
+          hospital_name: 'Hospital Name',
+          doctor: 'Doctor',
+          medical_record_id: 'Medical Record ID',
+          sample_id: 'Sample ID',
+          affected: 'Affected',
+          clinical_information: 'Clinical information',
+          sample_collection_date: 'Sample Collection Date',
+          receipt_date: 'Receipt Date',
+          report_language: 'Report Language',
+          report_type: 'Report Type',
+          sample_specimen_type: 'Sample Specimen Type',
+          sample_barcode: 'Sample Barcode',
+        };
+        const dateKeys = new Set(['patient_birth', 'patient2_birth', 'patient3_birth', 'sample_collection_date', 'receipt_date']);
+        function carrierVal(k) {
+          let v = c[k];
+          if (v === undefined || v === null || v === '') return '—';
+          if (dateKeys.has(k)) return fmtDateDetail(v);
+          if (k === 'test_category' && v === 'standard_carrier') return 'Carrier screening (standard)';
+          return v;
+        }
+        function carrierRows(keys) {
+          return keys.map(k => {
+            const lab = CARRIER_LABELS[k] || k;
+            const v = carrierVal(k);
+            return `<div class="kv-item"><div class="kv-label">${escapeHtml(lab)}</div><div class="kv-value">${v === '—' ? '—' : escapeHtml(String(v))}</div></div>`;
+          }).join('');
+        }
+        const keysTest = ['test_category', 'other_test_type', 'package_code', 'report_mode', 'partner_order_id'];
+        const keysP1 = ['patient_name', 'patient_birth', 'patient_gender'];
+        const keysP2 = ['patient2_name', 'patient2_birth', 'patient2_gender', 'patient2_affected'];
+        const keysP3 = ['patient3_name', 'patient3_birth', 'patient3_gender', 'patient3_affected'];
+        const keysHosp = ['hospital_name', 'doctor', 'medical_record_id', 'sample_id', 'affected', 'clinical_information'];
+        const keysSamp = ['sample_collection_date', 'receipt_date', 'report_language', 'report_type', 'sample_specimen_type', 'sample_barcode'];
+        html += `<div class="detail-section"><h4>Test type &amp; report pairing</h4><div class="detail-kv">${carrierRows(keysTest)}</div></div>`;
+        html += `<div class="detail-section"><h4>Patient</h4><div class="detail-kv">${carrierRows(keysP1)}</div></div>`;
+        if (keysP2.some(k => c[k])) {
+          html += `<div class="detail-section"><h4>Patient 2</h4><div class="detail-kv">${carrierRows(keysP2)}</div></div>`;
+        }
+        if (keysP3.some(k => c[k])) {
+          html += `<div class="detail-section"><h4>Patient 3</h4><div class="detail-kv">${carrierRows(keysP3)}</div></div>`;
+        }
+        html += `<div class="detail-section"><h4>Hospital and identifiers</h4><div class="detail-kv">${carrierRows(keysHosp)}</div></div>`;
+        html += `<div class="detail-section"><h4>Sample and report details</h4><div class="detail-kv">${carrierRows(keysSamp)}</div></div>`;
+        const pipeC = Object.fromEntries(Object.entries(o.params).filter(([k]) => k !== 'carrier'));
+        if (Object.keys(pipeC).length) {
+          const pairs = Object.entries(pipeC).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : v]);
+          html += kvSection('Pipeline / other parameters', pairs);
+        }
+      } else if (o.params && Object.keys(o.params).length > 0) {
+        const pairs = Object.entries(o.params).filter(([k]) => k !== 'nipt' && k !== 'carrier').map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : v]);
+        if (pairs.length) html += kvSection('Service parameters', pairs);
+      }
+
+      qs('orderDetailBody').innerHTML = html;
+      setupOrderPipelineLogPanel(o);
+    }
+
+    /** 주문 상세 하단: log_dir/pipeline.log 터미널 (기본 접힘). */
+    function setupOrderPipelineLogPanel(o) {
+      stopPipelineLogPoll();
+      const host = qs('orderPipelineLogHost');
+      if (!host || !o || !o.order_id) return;
+      host.classList.remove('hidden');
+      const oid = o.order_id;
+      const st = orderStatusUpper(o);
+      const activeForPoll = new Set(['QUEUED', 'RUNNING', 'RECEIVED', 'DOWNLOADING', 'PROCESSING', 'UPLOADING']);
+
+      host.innerHTML = `
+        <div class="pipeline-terminal collapsed" id="pipelineTerminalRoot" data-order-id="${escapeHtml(oid)}">
+          <div class="pipeline-terminal-head" id="pipelineTerminalHead" role="button" tabindex="0" aria-expanded="false" aria-controls="pipelineLogPre" title="Show or hide pipeline.log">
+            <span class="pipeline-terminal-title">pipeline.log</span>
+            <span class="pipeline-terminal-meta">
+              <button type="button" class="pipeline-log-refresh" id="pipelineLogRefreshBtn" title="Reload log">Refresh</button>
+              <span class="pipeline-terminal-chev" id="pipelineTerminalChev" aria-hidden="true">▸</span>
+            </span>
+          </div>
+          <pre class="pipeline-terminal-body" id="pipelineLogPre">Expand to load log…</pre>
+        </div>`;
+
+      const root = qs('pipelineTerminalRoot');
+      const head = qs('pipelineTerminalHead');
+      const pre = qs('pipelineLogPre');
+      const chev = qs('pipelineTerminalChev');
+      const refreshBtn = qs('pipelineLogRefreshBtn');
+
+      function schedulePollIfNeeded() {
+        stopPipelineLogPoll();
+        if (root.classList.contains('collapsed')) return;
+        if (!activeForPoll.has(st)) return;
+        pipelineLogPollTimer = setInterval(() => {
+          apiGetPlainText(`/order/${encodeURIComponent(oid)}/pipeline-log`)
+            .then(t => {
+              if (!t) pre.textContent = '(empty)';
+              else pre.innerHTML = ansiToHtml(t);
+            })
+            .catch(() => {});
+        }, 4000);
+      }
+
+      function setExpanded(exp) {
+        if (exp) {
+          root.classList.remove('collapsed');
+          head.setAttribute('aria-expanded', 'true');
+          if (chev) chev.textContent = '▾';
+        } else {
+          root.classList.add('collapsed');
+          head.setAttribute('aria-expanded', 'false');
+          if (chev) chev.textContent = '▸';
+          stopPipelineLogPoll();
+        }
+      }
+
+      function loadLog() {
+        pre.textContent = 'Loading…';
+        apiGetPlainText(`/order/${encodeURIComponent(oid)}/pipeline-log`)
+          .then(t => {
+            if (!t) pre.textContent = '(empty)';
+            else pre.innerHTML = ansiToHtml(t);
+            schedulePollIfNeeded();
+          })
+          .catch(e => {
+            pre.textContent = (e && e.message) ? e.message : String(e);
+          });
+      }
+
+      head.addEventListener('click', ev => {
+        if (ev.target.closest('#pipelineLogRefreshBtn')) return;
+        const willExpand = root.classList.contains('collapsed');
+        if (willExpand) {
+          setExpanded(true);
+          loadLog();
+        } else {
+          setExpanded(false);
+        }
+      });
+      head.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          head.click();
+        }
+      });
+      refreshBtn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        if (root.classList.contains('collapsed')) return;
+        loadLog();
+      });
+    }
+
+    if (qs('btnOrderDetailBack')) {
+      qs('btnOrderDetailBack').onclick = () => hideOrderDetail();
+    }
+
     function renderOrders() {
-      const q = qs('trackSearch').value.trim().toLowerCase();
-      let filtered = allOrders;
-      if (q) {
-        filtered = filtered.filter(o =>
-          (o.order_id || '').toLowerCase().includes(q) ||
-          (o.sample_name || '').toLowerCase().includes(q) ||
-          (o.status || '').toLowerCase().includes(q)
-        );
+      const filtered = getOrdersAfterClientFilter();
+      const msg = qs('trackMsg');
+      if (msg) {
+        msg.textContent = filtered.length === allOrders.length
+          ? `${allOrders.length} order(s)`
+          : `${filtered.length} of ${allOrders.length} order(s) shown`;
       }
 
       const tb = qs('tblOrdersBody');
+      if (!tb) return;
       tb.innerHTML = '';
       filtered.forEach(o => {
         const tr = document.createElement('tr');
+        tr.className = 'order-row-click';
+        const svcLabel = o.service_code === 'sgnipt' ? 'sgNIPT' : (o.service_code === 'carrier_screening' ? 'Carrier' : o.service_code || '-');
+        const pat = patientDisplayName(o) || o.sample_name || '—';
+        const st = orderStatusUpper(o);
+        const items = [];
+        const terminalMenu = ['SAVED', 'FAILED', 'CANCELLED', 'COMPLETED', 'REPORT_READY'].includes(st);
+        if (terminalMenu) {
+          items.push('<button type="button" data-act="edit">Edit</button>');
+        }
+        if ((st === 'COMPLETED' || st === 'REPORT_READY') && o.service_code === 'carrier_screening') {
+          items.push('<button type="button" data-act="review">Review</button>');
+        }
+        if (
+          o.service_code === 'carrier_screening'
+          && ['COMPLETED', 'REPORT_READY', 'FAILED', 'CANCELLED'].includes(st)
+        ) {
+          items.push('<button type="button" data-act="force-run" title="Full pipeline from FASTQ (alignment + calling + post-process)">Force Run</button>');
+        }
+        if (
+          o.service_code === 'carrier_screening'
+          && ['COMPLETED', 'REPORT_READY', 'FAILED'].includes(st)
+        ) {
+          items.push('<button type="button" data-act="reprocess-only" title="Refresh result.json and QC from existing VCFs; skip Nextflow">Reprocess only</button>');
+        }
+        if (terminalMenu) {
+          const skipSubmit = o.service_code === 'carrier_screening'
+            && ['COMPLETED', 'REPORT_READY', 'FAILED', 'CANCELLED'].includes(st);
+          if (!skipSubmit) {
+            items.push('<button type="button" data-act="submit">Submit</button>');
+          }
+        }
+        const stoppable = ['SAVED', 'QUEUED', 'RUNNING', 'DOWNLOADING', 'PROCESSING', 'UPLOADING', 'RECEIVED'];
+        if (stoppable.includes(st)) {
+          items.push('<button type="button" class="danger" data-act="stop">Stop</button>');
+        }
+        const deleteBlocked = ['RUNNING', 'DOWNLOADING', 'PROCESSING', 'UPLOADING', 'RECEIVED'];
+        const canDelete = !deleteBlocked.includes(st);
+        if (canDelete) {
+          items.push('<button type="button" class="danger" data-act="delete">Delete</button>');
+          items.push('<button type="button" class="danger" data-act="purge-db" title="Remove SQLite row only; leaves analysis/output/log on disk">Purge DB</button>');
+        }
+        if (!items.length) items.push('<button type="button" disabled style="opacity:.5;cursor:default">—</button>');
+        /* SVG 대신 문자: 일부 브라우저에서 table>tr innerHTML 파싱 이슈 방지 */
+        const dlBtn = st === 'REPORT_READY'
+          ? `<button type="button" class="btn-icon-dl btn-dl-report" data-order-id="${escapeHtml(o.order_id)}" title="Download report" aria-label="Download report"><span class="dl-glyph" aria-hidden="true">⬇</span></button>`
+          : '';
         tr.innerHTML = `
-          <td style="font-weight:600">${o.order_id}</td>
-          <td>${o.sample_name}</td>
-          <td>${statusPill(o.status)}</td>
+          <td style="font-weight:600">${escapeHtml(o.order_id)}</td>
+          <td><span class="pill inp">${escapeHtml(svcLabel)}</span></td>
+          <td>${escapeHtml(pat)}</td>
+          <td>${statusPill(st)}</td>
           <td>
-            <div class="progress-bar" style="min-width:80px"><div class="progress-fill" style="width:${o.progress}%"></div></div>
-            <span class="muted">${o.progress}%</span>
+            <div class="progress-bar" style="min-width:80px"><div class="progress-fill" style="width:${o.progress ?? 0}%"></div></div>
+            <span class="muted">${o.progress ?? 0}%</span>
           </td>
           <td>${fmtDate(o.created_at)}</td>
-          <td><span class="pill ${o.priority === 'urgent' ? 'warn' : 'new'}">${o.priority}</span></td>
-          <td class="muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${o.message || ''}</td>
-          <td>
-            ${o.status === 'COMPLETED' ? `<button class="btn" style="padding:4px 12px;font-size:11px" onclick="openReview('${o.order_id}')">Review</button>` : ''}
-            ${o.status === 'RUNNING' ? `<button class="btn danger-btn" style="padding:4px 12px;font-size:11px" onclick="cancelOrder('${o.order_id}')">Cancel</button>` : ''}
-          </td>
+          <td><span class="pill ${o.priority === 'urgent' ? 'warn' : 'new'}">${escapeHtml(o.priority || '')}</span></td>
+          <td class="muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(o.message || '')}</td>
+          <td class="order-dl">${dlBtn}</td>
+          <td class="order-more"><div class="more-wrap">
+            <button type="button" class="more-btn" aria-haspopup="true" aria-expanded="false">⋯</button>
+            <div class="more-dd">${items.join('')}</div>
+          </div></td>
         `;
+        const wrap = tr.querySelector('.more-wrap');
+        const dd = tr.querySelector('.more-dd');
+        const mbtn = tr.querySelector('.more-btn');
+        if (wrap && dd && mbtn) {
+          mbtn.onclick = e => {
+            e.preventDefault();
+            const open = dd.classList.contains('open');
+            closeAllMoreMenus();
+            if (!open) {
+              dd.classList.add('open');
+              requestAnimationFrame(() => {
+                positionMoreDdBelowButton(mbtn, dd);
+              });
+            }
+            mbtn.setAttribute('aria-expanded', (!open).toString());
+          };
+          dd.querySelectorAll('button[data-act]').forEach(b => {
+            b.onclick = e => {
+              e.preventDefault();
+              e.stopPropagation();
+              dd.classList.remove('open');
+              clearMoreDdLayout(dd);
+              mbtn.setAttribute('aria-expanded', 'false');
+              const act = b.getAttribute('data-act');
+              if (act === 'edit') openEditOrder(o);
+              else if (act === 'submit') startSavedOrder(o.order_id);
+              else if (act === 'force-run') forceRunOrderRow(o);
+              else if (act === 'reprocess-only') reprocessOnlyOrderRow(o);
+              else if (act === 'stop') stopOrderRow(o.order_id);
+              else if (act === 'delete') deleteOrderRow(o);
+              else if (act === 'purge-db') purgeDbOrderRow(o);
+              else if (act === 'review') openReview(o.order_id);
+            };
+          });
+        }
+        tr.addEventListener('click', ev => {
+          if (ev.target.closest('.more-wrap')) return;
+          if (ev.target.closest('.btn-dl-report')) return;
+          if (ev.target.closest('button')) return;
+          showOrderDetail(o);
+        });
         tb.appendChild(tr);
       });
     }
 
-    async function cancelOrder(orderId) {
-      try {
-        await apiPost(`/order/${orderId}/cancel`, {});
-        toast('Order cancelled');
-        loadOrders();
-      } catch (e) {
-        toast(e.message, false);
-      }
+    const _tblOrdersBody = qs('tblOrdersBody');
+    if (_tblOrdersBody && !_tblOrdersBody.dataset.dlDelegate) {
+      _tblOrdersBody.dataset.dlDelegate = '1';
+      _tblOrdersBody.addEventListener('click', e => {
+        const b = e.target.closest('.btn-dl-report');
+        if (!b) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const oid = b.getAttribute('data-order-id');
+        if (oid) downloadOrderReportPdf(oid);
+      });
     }
 
     function openReview(orderId) {
-      qs('reviewOrderSelect').value = orderId;
-      showView('review');
-      loadReviewData();
+      showView('review');        // triggers refreshReviewOrderList() async
+      loadReviewData(orderId);   // pass id directly — don't rely on select having the option yet
     }
 
     qs('trackSearch').oninput = renderOrders;
     qs('trackFilter').onchange = loadOrders;
+    qs('trackServiceFilter').onchange = loadOrders;
+    ['ordersDateFrom', 'ordersDateTo', 'ordersPregnancyFilter', 'ordersResultFilter'].forEach(id => {
+      const el = qs(id);
+      if (el) el.addEventListener('change', renderOrders);
+    });
+    document.querySelectorAll('input[name="ordersSearchMode"]').forEach(r => {
+      r.addEventListener('change', renderOrders);
+    });
+    const btnExport = qs('btnExportOrdersTsv');
+    if (btnExport) btnExport.onclick = exportOrdersTsv;
+    if (qs('btnGotoCreateOrder')) qs('btnGotoCreateOrder').onclick = () => { clearEditMode(); showCreateOrderPanel(); };
+    if (qs('btnBackFromCreate')) qs('btnBackFromCreate').onclick = () => showOrdersListOnly();
+    if (qs('btnCancelCreate')) qs('btnCancelCreate').onclick = () => showOrdersListOnly();
+
+    document.addEventListener('click', e => {
+      if (e.target.closest('.more-wrap')) return;
+      closeAllMoreMenus();
+    });
+
+    const ordersTableWrap = qs('ordersTableWrap');
+    if (ordersTableWrap) {
+      ordersTableWrap.addEventListener('scroll', () => closeAllMoreMenus(), { passive: true });
+    }
+    window.addEventListener('resize', () => closeAllMoreMenus());
+
+    document.querySelectorAll('#tblOrders thead th.sortable').forEach(th => {
+      if (!th.hasAttribute('data-key')) return;
+      th.onclick = e => {
+        e.stopPropagation();
+        const key = th.getAttribute('data-key');
+        if (orderSortKey === key) orderSortAsc = !orderSortAsc;
+        else { orderSortKey = key; orderSortAsc = true; }
+        document.querySelectorAll('#tblOrders thead th').forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+        th.classList.add(orderSortAsc ? 'sort-asc' : 'sort-desc');
+        renderOrders();
+      };
+    });
 
     // ═══════════════════════════════════════════════════════════
     // Variant Review
@@ -777,16 +3138,20 @@
         (data.orders || []).forEach(o => {
           const opt = document.createElement('option');
           opt.value = o.order_id;
-          opt.textContent = `${o.order_id} (${o.sample_name}) - ${o.status}`;
+          const sk = orderStatusUpper(o);
+          const stLabel = sk === 'REPORT_READY' ? 'Report Ready' : String(o.status ?? '');
+          opt.textContent = `${o.order_id} (${o.sample_name}) - ${stLabel}`;
           sel.appendChild(opt);
         });
         if (current) sel.value = current;
       } catch (e) { /* ignore */ }
     }
 
-    async function loadReviewData() {
-      const orderId = qs('reviewOrderSelect').value;
+    async function loadReviewData(overrideOrderId) {
+      const orderId = overrideOrderId || qs('reviewOrderSelect').value;
       if (!orderId) return toast('Select an order first', false);
+      // Keep select in sync so subsequent actions (generate report, etc.) see the right id
+      qs('reviewOrderSelect').value = orderId;
 
       try {
         reviewData = await apiGet(`/order/${orderId}/result`);
@@ -962,7 +3327,7 @@
                     <span style="font-weight:600">${v.gene || '-'}</span>
                     <span class="muted">${v.hgvsp || v.hgvsc || v.variant_id}</span>
                     <span class="${acmgClass(v.acmg_classification)}">${v.acmg_classification || '-'}</span>
-                    <input type="checkbox" ${selectedVariants.has(v.variant_id) ? 'checked' : ''} onclick="event.stopPropagation();toggleVariant('${v.variant_id}', this.checked)" style="width:auto" />
+                    <input type="checkbox" ${selectedVariants.has(v.variant_id) ? 'checked' : ''} onclick="event.stopPropagation();toggleVariant('${v.variant_id}', this.checked)" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent);vertical-align:middle;flex-shrink:0" />
                   </div>
                 `).join('')}
               </div>
@@ -978,8 +3343,22 @@
       const cov = qc.coverage || {};
       const aln = qc.alignment || {};
 
+      // Dynamic depth-threshold cards from pct_bases_Nx keys (e.g. pct_bases_20x)
+      const depthCards = Object.keys(cov)
+        .filter(k => /^pct_bases_\d+x$/.test(k))
+        .sort((a, b) => {
+          const na = parseInt(a.match(/\d+/)[0]);
+          const nb = parseInt(b.match(/\d+/)[0]);
+          return na - nb;
+        })
+        .map(k => {
+          const threshold = k.match(/\d+/)[0];
+          return { label: `≥${threshold}x`, value: cov[k], fmt: v => v.toFixed(1) + '%', key: null };
+        });
+
       const metrics = [
         { label: 'Mean Coverage', value: cov.mean_coverage, fmt: v => v.toFixed(1) + 'x', key: 'mean_coverage' },
+        ...depthCards,
         { label: 'Total Reads', value: aln.total_reads || aln.raw_total_sequences, fmt: v => (v / 1e6).toFixed(1) + 'M', key: null },
         { label: 'Mapping Rate', value: aln.mapping_rate, fmt: v => v.toFixed(1) + '%', key: 'mapping_rate' },
         { label: 'Properly Paired', value: aln.properly_paired_rate, fmt: v => v.toFixed(1) + '%', key: 'properly_paired_rate' },
@@ -987,6 +3366,7 @@
         { label: 'Avg Quality', value: aln.average_quality, fmt: v => v.toFixed(1), key: 'average_quality' },
       ];
 
+      const hasAnyMetric = metrics.some(m => m.value !== null && m.value !== undefined);
       qs('qcStats').innerHTML = metrics.map(m => {
         const val = m.value;
         const display = val !== null && val !== undefined ? m.fmt(val) : '-';
@@ -997,32 +3377,62 @@
           <div class="stat-label">${m.label}</div>
           ${status ? `<div style="margin-top:4px">${status}</div>` : ''}
         </div>`;
-      }).join('');
+      }).join('') + (!hasAnyMetric
+        ? `<p class="muted" style="grid-column:1/-1;margin-top:8px">No QC metrics in <code>result.json</code> yet. Re-run analysis after updating the daemon, or confirm the pipeline analysis folder is mounted at the expected path.</p>`
+        : '');
 
-      // Detailed QC table
+      // Detailed QC table (metric_images: backend maps metric key → qc/foo.png paths)
       const allQcEntries = [];
-      Object.entries(cov).forEach(([k, v]) => allQcEntries.push({ category: 'Coverage', metric: k, value: v }));
-      Object.entries(aln).forEach(([k, v]) => allQcEntries.push({ category: 'Alignment', metric: k, value: v }));
-      if (qc.variant_calling) Object.entries(qc.variant_calling).forEach(([k, v]) => allQcEntries.push({ category: 'Variant Calling', metric: k, value: v }));
+      Object.entries(cov).forEach(([k, v]) => allQcEntries.push({ metric: k, value: v }));
+      Object.entries(aln).forEach(([k, v]) => allQcEntries.push({ metric: k, value: v }));
+      if (qc.variant_calling) {
+        Object.entries(qc.variant_calling).forEach(([k, v]) => allQcEntries.push({ metric: k, value: v }));
+      }
+
+      const metricImages = qc.metric_images && typeof qc.metric_images === 'object' ? qc.metric_images : {};
 
       if (allQcEntries.length > 0) {
-        qs('qcDetailTable').innerHTML = `
+        const wrap = qs('qcDetailTable');
+        wrap.innerHTML = `
           <div class="card" style="margin:0">
             <h3 style="font-size:14px">Detailed QC Metrics</h3>
             <div class="table-wrap" style="max-height:40vh">
               <table>
-                <thead><tr><th>Category</th><th>Metric</th><th>Value</th></tr></thead>
+                <thead><tr><th>Metric</th><th>Value</th><th style="width:44px;text-align:center" title="Chart / image when available"> </th></tr></thead>
                 <tbody>
-                  ${allQcEntries.map(e => `<tr>
-                    <td>${e.category}</td>
+                  ${allQcEntries.map(e => {
+                    const paths = metricImages[e.metric];
+                    const hasImg = Array.isArray(paths) && paths.length > 0;
+                    const imgCell = hasImg
+                      ? `<button type="button" class="btn-icon-qc" title="View chart" aria-label="View chart" data-qc-paths="${encodeURIComponent(JSON.stringify(paths))}" style="padding:4px 8px;font-size:16px;line-height:1;background:transparent;border:1px solid var(--line);border-radius:8px;cursor:pointer">🖼</button>`
+                      : '<span class="muted">—</span>';
+                    const valStr = typeof e.value === 'number'
+                      ? (Number.isInteger(e.value) ? e.value.toLocaleString() : e.value.toFixed(4))
+                      : e.value;
+                    return `<tr>
                     <td>${e.metric.replace(/_/g, ' ')}</td>
-                    <td>${typeof e.value === 'number' ? (Number.isInteger(e.value) ? e.value.toLocaleString() : e.value.toFixed(4)) : e.value}</td>
-                  </tr>`).join('')}
+                    <td>${valStr}</td>
+                    <td style="text-align:center">${imgCell}</td>
+                  </tr>`;
+                  }).join('')}
                 </tbody>
               </table>
             </div>
           </div>
         `;
+        if (wrap && !wrap.dataset.qcImgDelegation) {
+          wrap.dataset.qcImgDelegation = '1';
+          wrap.addEventListener('click', ev => {
+            const btn = ev.target.closest('button[data-qc-paths]');
+            if (!btn) return;
+            try {
+              const paths = JSON.parse(decodeURIComponent(btn.getAttribute('data-qc-paths') || '%5B%5D'));
+              openQcMetricImages(paths);
+            } catch (err) {
+              console.warn('QC paths parse', err);
+            }
+          });
+        }
       }
     }
 
@@ -1229,9 +3639,26 @@
           <div class="detail-item"><div class="detail-label">HGMD</div><div class="detail-value">${v.hgmd_class || '-'} ${v.hgmd_disease ? '(' + v.hgmd_disease + ')' : ''}</div></div>
           <div class="detail-item"><div class="detail-label">Curated DB</div><div class="detail-value">${v.curated_classification || '-'} ${v.curated_source ? '(' + v.curated_source + ')' : ''}</div></div>
           <div class="detail-item"><div class="detail-label">Inheritance</div><div class="detail-value">${v.inheritance || '-'}</div></div>
-          <div class="detail-item"><div class="detail-label">ACMG Classification</div><div class="detail-value"><span class="${acmgClass(v.acmg_classification)}">${v.acmg_classification || '-'}</span></div></div>
+          <div class="detail-item"><div class="detail-label">ACMG Classification</div><div class="detail-value"><span class="${acmgClass(v.acmg_classification)}">${v.acmg_classification || '-'}</span>${v.acmg_literature_enhanced ? ' <span style="font-size:11px;color:var(--ok);font-weight:600">[+Literature]</span>' : ''}</div></div>
           <div class="detail-item"><div class="detail-label">ACMG Criteria</div><div class="detail-value">${(v.acmg_criteria || []).join(', ') || '-'}</div></div>
+          ${v.acmg_reasoning ? `<div class="detail-item" style="grid-column:1/-1"><div class="detail-label">ACMG Reasoning</div><div class="detail-value" style="font-size:12px;line-height:1.6;color:var(--muted)">${escHtmlInline(v.acmg_reasoning)}</div></div>` : ''}
+          ${v.acmg_ai ? `<div class="detail-item" style="grid-column:1/-1"><div class="detail-label">AI Classification <span style="font-size:10px;font-weight:400;color:var(--muted)">(${v.acmg_ai.source || 'AI'})</span></div><div class="detail-value" style="font-size:12px"><span class="${acmgClass(v.acmg_ai.classification)}">${v.acmg_ai.classification}</span> &nbsp;<span style="color:var(--muted)">${v.acmg_ai.confidence || ''} confidence</span><br><span style="color:var(--muted);font-size:11px;line-height:1.6">${escHtmlInline(v.acmg_ai.reasoning || '')}</span></div></div>` : ''}
         </div>
+        ${v.literature && v.literature.total_found > 0 ? `
+          <div style="margin-top:12px;padding:10px 14px;background:var(--chip);border-radius:10px;border:1px solid var(--chip-line)">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="font-size:13px;font-weight:600;color:var(--brand)">📚 Literature</span>
+              <span style="font-size:12px;color:var(--muted)">${v.literature.total_found} papers${v.literature.from_cache ? ' (cached)' : ' (new)'}</span>
+              <a href="#" onclick="event.preventDefault(); showLiteratureForVariant('${v.gene}', '${v.hgvsc || ''}', '${v.hgvsp || ''}')" style="font-size:12px;color:var(--brand);margin-left:auto">View all ↗</a>
+            </div>
+            ${(v.literature.top_titles || []).map((t, i) => `
+              <div style="font-size:12px;color:var(--muted);padding:3px 0;display:flex;gap:6px;align-items:baseline">
+                <span style="color:var(--brand);min-width:20px;font-size:11px">${(v.literature.pmids || [])[i] ? `<a href="https://pubmed.ncbi.nlm.nih.gov/${v.literature.pmids[i]}/" target="_blank" style="color:var(--brand)">${v.literature.pmids[i]}</a>` : ''}</span>
+                <span>${escHtmlInline(t)}</span>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
         ${v.diseases && v.diseases.length > 0 ? `
           <div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--line)">
             <div class="detail-label" style="margin-bottom:6px">ASSOCIATED DISEASES</div>
@@ -1388,6 +3815,7 @@
         const res = await apiPost(`/order/${orderId}/report`, body);
         toast(`Report generated: ${res.message}`);
         qs('reportMsg').innerHTML = `Generated files: ${(res.report_files || []).join(', ')}`;
+        loadOrders();
       } catch (e) {
         toast('Report generation failed: ' + e.message, false);
       } finally {
@@ -1409,8 +3837,216 @@
     // ═══════════════════════════════════════════════════════════
     // Init
     // ═══════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════
+    // Literature Cache UI
+    // ─────────────────────────────────────────────────────
+    // 이 블록은 포털 독립적입니다.
+    // 다른 포털 이식 시: API_BASE를 service-daemon URL로 변경하면 됩니다.
+    // API 계약: GET /api/literature/articles, /api/literature/search, etc.
+    // ═══════════════════════════════════════════════════════
+
+    const LIT_PAGE_SIZE = 50;
+    let _litCursor = 0;
+    let _litTotal = 0;
+
+    // 간단한 debounce 유틸
+    function debounce(fn, ms) {
+      let t;
+      return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+    }
+    const _debouncedLoadLit = debounce(() => { _litCursor = 0; _doLoadLiterature(); }, 400);
+
+    async function loadLiteratureStats() {
+      try {
+        const s = await apiGet('/api/literature/articles/stats');
+        qs('litStats').innerHTML = s.enabled === false
+          ? '<span class="badge" style="background:var(--pill-warn-bg);border-color:var(--pill-warn-bd);color:var(--pill-warn-tx)">Literature disabled</span>'
+          : `<span class="badge" style="background:var(--pill-done-bg);border-color:var(--pill-done-bd);color:var(--pill-done-tx)">${s.total_articles ?? 0} articles</span>
+             <span class="badge" style="background:var(--pill-inp-bg);border-color:var(--pill-inp-bd);color:var(--pill-inp-tx)">${s.unique_genes ?? 0} genes</span>
+             <span class="badge" style="background:var(--chip);border-color:var(--chip-line);color:var(--muted)">${s.total_searches ?? 0} searches</span>`;
+      } catch (e) {
+        qs('litStats').innerHTML = '<span style="color:var(--muted);font-size:13px">Stats unavailable</span>';
+      }
+    }
+
+    function loadLiterature() {
+      _litCursor = 0;
+      _doLoadLiterature();
+    }
+
+    async function _doLoadLiterature() {
+      const search = qs('litSearchInput') ? qs('litSearchInput').value.trim() : '';
+      const sort = qs('litSortSelect') ? qs('litSortSelect').value : 'cached_at';
+      const params = new URLSearchParams({ cursor: _litCursor, count: LIT_PAGE_SIZE, sort_by: sort });
+      if (search) params.set('search', search);
+
+      qs('litTableBody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--muted)">Loading…</td></tr>';
+      try {
+        const data = await apiGet('/api/literature/articles?' + params.toString());
+        _litTotal = data.total ?? 0;
+        _renderLitTable(data.articles || []);
+        _updateLitPager();
+      } catch (e) {
+        qs('litTableBody').innerHTML = `<tr><td colspan="6" style="color:var(--err);padding:20px;text-align:center">${e.message}</td></tr>`;
+      }
+    }
+
+    function _renderLitTable(articles) {
+      if (!articles.length) {
+        qs('litTableBody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted)">No articles cached yet.</td></tr>';
+        return;
+      }
+      qs('litTableBody').innerHTML = articles.map((a, i) => {
+        const bg = i % 2 === 0 ? '' : 'background:var(--row-alt)';
+        const pmidLink = `<a href="https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/" target="_blank" style="color:var(--brand)">${a.pmid}</a>`;
+        const title = (a.title || '').length > 100 ? a.title.slice(0,100) + '…' : (a.title || '-');
+        const cachedDate = a.cached_at ? a.cached_at.slice(0,10) : '-';
+        return `<tr style="color:var(--row-text);${bg};cursor:pointer" onclick="showLitDetail('${a.pmid}')">
+          <td style="padding:9px 12px;white-space:nowrap">${pmidLink}</td>
+          <td style="padding:9px 12px">${escHtml(title)}</td>
+          <td style="padding:9px 12px;white-space:nowrap;color:var(--muted)">${escHtml(a.journal || '-')}</td>
+          <td style="padding:9px 12px;white-space:nowrap;color:var(--muted)">${escHtml(a.pub_date || '-')}</td>
+          <td style="padding:9px 12px;white-space:nowrap;color:var(--muted)">${cachedDate}</td>
+          <td style="padding:9px 12px;text-align:center" onclick="event.stopPropagation()">
+            <button class="btn danger-btn" style="padding:4px 10px;font-size:12px" onclick="deleteLitArticle('${a.pmid}')">✕</button>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    function _updateLitPager() {
+      const from = _litTotal === 0 ? 0 : _litCursor + 1;
+      const to = Math.min(_litCursor + LIT_PAGE_SIZE, _litTotal);
+      qs('litPageInfo').textContent = `${from}–${to} of ${_litTotal}`;
+      qs('litPrevBtn').disabled = _litCursor <= 0;
+      qs('litNextBtn').disabled = _litCursor + LIT_PAGE_SIZE >= _litTotal;
+    }
+
+    function litPage(dir) {
+      _litCursor = Math.max(0, _litCursor + dir * LIT_PAGE_SIZE);
+      _doLoadLiterature();
+    }
+
+    async function showLitDetail(pmid) {
+      const modal = qs('litDetailModal');
+      qs('litDetailTitle').textContent = `PMID ${pmid}`;
+      qs('litDetailBody').innerHTML = '<div style="color:var(--muted)">Loading…</div>';
+      modal.classList.remove('hidden');
+      try {
+        const a = await apiGet('/api/literature/articles/' + pmid);
+        const authors = Array.isArray(a.authors) ? a.authors.slice(0,5).join(', ') : (a.authors || '');
+        const doiLink = a.doi ? `<a href="https://doi.org/${a.doi}" target="_blank" style="color:var(--brand)">${a.doi}</a>` : '-';
+        qs('litDetailBody').innerHTML = `
+          <p style="margin:0 0 8px"><strong>${escHtml(a.title || '')}</strong></p>
+          <p style="margin:0 0 4px;color:var(--muted);font-size:13px">${escHtml(authors)}</p>
+          <p style="margin:0 0 12px;color:var(--muted);font-size:13px">${escHtml(a.journal || '')} &bull; ${escHtml(a.pub_date || '')} &bull; DOI: ${doiLink}</p>
+          <hr style="border:none;border-top:1px solid var(--line);margin:12px 0">
+          <p style="line-height:1.75;font-size:14px">${escHtml(a.abstract || 'No abstract available.')}</p>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <a href="https://pubmed.ncbi.nlm.nih.gov/${pmid}/" target="_blank" class="btn primary">Open in PubMed ↗</a>
+          </div>`;
+      } catch (e) {
+        qs('litDetailBody').innerHTML = `<span style="color:var(--err)">${e.message}</span>`;
+      }
+    }
+
+    async function deleteLitArticle(pmid) {
+      const { ok } = await openConfirmModal({
+        title: 'Remove cached article?',
+        message: `Remove PMID ${pmid} from the literature cache?`,
+        okText: 'Remove',
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        await fetch(API_BASE + '/api/literature/articles/' + pmid, {
+          method: 'DELETE',
+          headers: apiFetchHeaders(),
+        });
+        loadLiterature();
+        loadLiteratureStats();
+      } catch (e) { alert('Delete failed: ' + e.message); }
+    }
+
+    async function clearLiteratureCache() {
+      const { ok } = await openConfirmModal({
+        title: 'Clear literature cache?',
+        message: 'Delete ALL cached articles? This cannot be undone.',
+        okText: 'Clear all',
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        const btn = qs('btnClearLitCache');
+        btn.classList.add('loading');
+        await fetch(API_BASE + '/api/literature/cache', {
+          method: 'DELETE',
+          headers: apiFetchHeaders(),
+        });
+        btn.classList.remove('loading');
+        loadLiterature();
+        loadLiteratureStats();
+      } catch (e) { alert('Clear failed: ' + e.message); }
+    }
+
+    async function searchVariantLiterature() {
+      const gene = (qs('litGeneInput') ? qs('litGeneInput').value.trim() : '');
+      if (!gene) { qs('litSearchMsg').textContent = 'Gene is required'; return; }
+      const hgvsc = qs('litHgvscInput') ? qs('litHgvscInput').value.trim() : '';
+      const hgvsp = qs('litHgvspInput') ? qs('litHgvspInput').value.trim() : '';
+      const forceRefresh = qs('litForceRefresh') ? qs('litForceRefresh').checked : false;
+
+      const btn = qs('btnLitSearch');
+      btn.classList.add('loading');
+      qs('litSearchMsg').textContent = 'Searching PubMed…';
+      qs('litSearchResult').innerHTML = '';
+
+      try {
+        const params = new URLSearchParams({ gene });
+        if (hgvsc) params.set('hgvsc', hgvsc);
+        if (hgvsp) params.set('hgvsp', hgvsp);
+        if (forceRefresh) params.set('force_refresh', 'true');
+        const data = await apiGet('/api/literature/search?' + params.toString());
+        const fromCache = data.from_cache ? ' (from cache)' : ' (new)';
+        qs('litSearchMsg').textContent = `Found ${data.total_found} articles${fromCache}`;
+        qs('litSearchResult').innerHTML = (data.articles || []).slice(0,5).map(a =>
+          `<div style="margin:6px 0;padding:8px 12px;background:var(--card-2);border-radius:10px;border:1px solid var(--line)">
+            <a href="https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/" target="_blank" style="color:var(--brand);font-weight:600">${a.pmid}</a>
+            <span style="color:var(--muted);margin:0 6px">·</span>
+            <span style="font-size:13px">${escHtml((a.title||'').slice(0,120))}${(a.title||'').length>120?'…':''}</span>
+          </div>`
+        ).join('');
+        loadLiterature();
+        loadLiteratureStats();
+      } catch (e) {
+        qs('litSearchMsg').textContent = 'Error: ' + e.message;
+      } finally {
+        btn.classList.remove('loading');
+      }
+    }
+
+    function escHtml(s) {
+      return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    // inline 버전 (Review detail panel 등 template literal 내부에서 사용)
+    const escHtmlInline = escHtml;
+
+    // Review에서 변이의 문헌 검색 결과를 Literature 탭에서 바로 열기
+    function showLiteratureForVariant(gene, hgvsc, hgvsp) {
+      if (!gene) return;
+      showView('literature');
+      if (qs('litGeneInput')) qs('litGeneInput').value = gene;
+      if (qs('litHgvscInput')) qs('litHgvscInput').value = hgvsc || '';
+      if (qs('litHgvspInput')) qs('litHgvspInput').value = hgvsp || '';
+      searchVariantLiterature();
+    }
+
     (async function init() {
-      const lastTab = localStorage.getItem('activeTab') || 'dash';
+      wireGlobalConfirmModal();
+      wireCarrierFormEvents();
+      wireFastqBrowseUi();
+      let lastTab = localStorage.getItem('activeTab') || 'dash';
+      if (lastTab === 'submit' || lastTab === 'track') lastTab = 'orders';
       showView(lastTab);
       try {
         const health = await apiGet('/health');

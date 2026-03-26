@@ -1168,7 +1168,7 @@ class CarrierScreeningPlugin(ServicePlugin):
 
     # ─── Step 6: 리포트 생성 (리뷰어 확정 후) ──────────────
 
-    async def generate_report(
+    def _generate_report_sync(
         self,
         job: Job,
         confirmed_variants: List[Dict],
@@ -1177,20 +1177,15 @@ class CarrierScreeningPlugin(ServicePlugin):
         partner_info: Optional[Dict] = None,
         languages: Optional[List[str]] = None,
     ) -> bool:
-        """
-        리뷰어 확정 후 최종 리포트를 생성합니다.
-        service-daemon의 /order/{order_id}/report 엔드포인트에서 호출됩니다.
-
-        Args:
-            job: 작업 정보
-            confirmed_variants: 리뷰어가 확정한 변이 목록
-            reviewer_info: 리뷰어 정보
-            patient_info: 환자 정보 (선택)
-            partner_info: 파트너 정보 (couple 검사 시, 선택)
-            languages: 리포트 생성 언어 목록 (기본: config의 report_language_list)
-        """
+        """WeasyPrint 등 동기 작업 — asyncio.to_thread 에서 실행."""
         try:
-            from .report import generate_report_json, generate_report_pdf
+            from .report import (
+                generate_report_json,
+                generate_report_pdf,
+                carrier_report_template_kind,
+                report_languages_from_order,
+                _carrier_order_flat,
+            )
             from .review import extract_qc_summary
 
             dirs = self._get_dirs(job)
@@ -1204,9 +1199,50 @@ class CarrierScreeningPlugin(ServicePlugin):
                 analysis_dir, job.sample_name, qc_extras, qc_more
             )
 
-            # 리포트 언어 결정
-            if languages is None:
-                languages = settings.report_language_list
+            raw_params = job.params or {}
+            kind = carrier_report_template_kind(raw_params)
+            langs = report_languages_from_order(raw_params)
+            params = _carrier_order_flat(raw_params)
+            if kind is None or langs is None:
+                logger.warning(
+                    f"[generate_report] Unsupported carrier PDF order: {job.order_id} "
+                    f"kind={kind} langs={langs} params_keys={list(params.keys())}"
+                )
+                return False
+
+            languages = langs
+
+            # 표준 캐리어: carrier_<lang>.html — 파트너 섹션 없음
+            # CouplesCarrier: carrier_couples_<lang>.html — patient2_* 또는 폼 partner
+            if kind == "standard":
+                partner_info = None
+            else:
+                merged: Dict[str, Any] = {}
+                if partner_info and (partner_info.get("name") or "").strip():
+                    merged = dict(partner_info)
+                else:
+                    p2n = (params.get("patient2_name") or "").strip()
+                    if p2n:
+                        merged["name"] = p2n
+                    if params.get("patient2_birth"):
+                        merged["dob"] = params["patient2_birth"]
+                    if params.get("patient2_gender"):
+                        merged["gender"] = params["patient2_gender"]
+                if not (merged.get("name") or "").strip():
+                    logger.warning(
+                        f"[generate_report] Couples report missing partner name: {job.order_id}"
+                    )
+                    return False
+                partner_info = merged
+
+            pi = dict(patient_info) if patient_info else {}
+            if not (pi.get("name") or "").strip():
+                pi["name"] = (params.get("patient_name") or "").strip() or job.sample_name
+            if not pi.get("dob") and params.get("patient_birth"):
+                pi["dob"] = params["patient_birth"]
+            if not pi.get("gender") and params.get("patient_gender"):
+                pi["gender"] = params["patient_gender"]
+            patient_info = pi
 
             # 템플릿 디렉토리 결정
             template_dir = settings.report_template_dir
@@ -1256,6 +1292,31 @@ class CarrierScreeningPlugin(ServicePlugin):
         except Exception as e:
             logger.error(f"Report generation failed: {e}", exc_info=True)
             return False
+
+    async def generate_report(
+        self,
+        job: Job,
+        confirmed_variants: List[Dict],
+        reviewer_info: Dict,
+        patient_info: Optional[Dict] = None,
+        partner_info: Optional[Dict] = None,
+        languages: Optional[List[str]] = None,
+    ) -> bool:
+        """
+        리뷰어 확정 후 최종 리포트를 생성합니다.
+        service-daemon의 /order/{order_id}/report 엔드포인트에서 호출됩니다.
+
+        WeasyPrint PDF 생성은 이벤트 루프를 막지 않도록 스레드에서 실행합니다.
+        """
+        return await asyncio.to_thread(
+            self._generate_report_sync,
+            job,
+            confirmed_variants,
+            reviewer_info,
+            patient_info,
+            partner_info,
+            languages,
+        )
 
     # ─── Lifecycle Hooks ───────────────────────────────────
 

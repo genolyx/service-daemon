@@ -34,6 +34,68 @@ logger = logging.getLogger(__name__)
 
 
 # ══════════════════════════════════════════════════════════════
+# Template selection (order params → carrier_{lang}.html vs carrier_couples_{lang}.html)
+# ══════════════════════════════════════════════════════════════
+
+def _carrier_order_flat(params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    포털은 임상 메타를 params.carrier 에 저장한다.
+    템플릿 판별은 carrier 키를 최상위와 병합해 읽는다.
+    """
+    if not params:
+        return {}
+    c = params.get("carrier")
+    if isinstance(c, dict) and c:
+        merged = dict(params)
+        merged.update(c)
+        return merged
+    return dict(params)
+
+
+def carrier_report_template_kind(params: Dict[str, Any]) -> Optional[str]:
+    """
+    PDF 템플릿 종류.
+    - 'standard' → carrier_<lang>.html (Primary: Carrier screening standard)
+    - 'couples'  → carrier_couples_<lang>.html (Other + CouplesCarrier)
+    - None       → 위 둘 외 (Exome 등) — PDF 템플릿 미지원
+    """
+    if not params:
+        return None
+    params = _carrier_order_flat(params)
+    tc = str(params.get("test_category") or "").strip()
+    ot = str(params.get("other_test_type") or "").strip()
+    pc = str(params.get("package_code") or "").strip()
+
+    if tc == "standard_carrier":
+        return "standard"
+    if tc == "other" and ot == "CouplesCarrier":
+        return "couples"
+    if pc == "CouplesCarrier":
+        return "couples"
+    if pc == "CarrierScreening" and tc != "other":
+        return "standard"
+    if tc == "other":
+        return None
+    if pc == "CarrierScreening":
+        return "standard"
+    return None
+
+
+def report_languages_from_order(params: Dict[str, Any]) -> Optional[List[str]]:
+    """
+    order.params.report_language → 템플릿에 있는 EN/CN/KO 만 허용.
+    ID / Other 등은 템플릿이 없으므로 None.
+    """
+    if not params:
+        return None
+    params = _carrier_order_flat(params)
+    rl = str(params.get("report_language") or "").strip().upper()
+    if rl in ("EN", "CN", "KO"):
+        return [rl]
+    return None
+
+
+# ══════════════════════════════════════════════════════════════
 # Report JSON Generation
 # ══════════════════════════════════════════════════════════════
 
@@ -120,7 +182,9 @@ def generate_report_json(
     if patient_info is None:
         patient_info = {"name": sample_name}
 
-    is_couple = partner_info is not None
+    is_couple = bool(
+        partner_info and (partner_info.get("name") or partner_info.get("dob"))
+    )
 
     report = {
         "version": "2.0",

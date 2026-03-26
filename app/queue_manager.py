@@ -328,7 +328,8 @@ class QueueManager:
         previous_order_id: Optional[str] = None,
     ) -> None:
         """
-        Portal에서 SAVED / FAILED / CANCELLED 주문 내용을 교체할 때 사용.
+        Portal에서 저장·종료·완료 주문 내용을 교체할 때 사용.
+        (SAVED 또는 _completed_jobs 의 FAILED / CANCELLED / COMPLETED / REPORT_READY)
         previous_order_id: PATCH URL 등에서 온 기존 키(order_id 변경 시 필수).
         """
         old_id = previous_order_id if previous_order_id is not None else new_job.order_id
@@ -364,7 +365,12 @@ class QueueManager:
                 self._saved_jobs[new_id] = new_job
             else:
                 st = self._completed_jobs[old_id].status
-                if st not in (OrderStatus.FAILED, OrderStatus.CANCELLED):
+                if st not in (
+                    OrderStatus.FAILED,
+                    OrderStatus.CANCELLED,
+                    OrderStatus.COMPLETED,
+                    OrderStatus.REPORT_READY,
+                ):
                     raise ValueError(
                         f"Order {old_id} cannot be edited in status {st.value}"
                     )

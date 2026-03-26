@@ -54,6 +54,8 @@
     .btn.danger-btn{background:var(--pill-err-bg);border-color:var(--pill-err-bd);color:var(--pill-err-tx)}
     .btn.danger-btn:hover{filter:brightness(1.1)}
     .btn.disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
+    /* Report tab: blocked state must still receive clicks so onclick can show a toast */
+    .btn.primary.report-gen-blocked{opacity:.55;cursor:not-allowed;filter:saturate(0.75)}
     .btn.loading{pointer-events:none;opacity:.7;position:relative}
     .btn.loading::after{content:'';position:absolute;right:10px;top:50%;width:14px;height:14px;border:2px solid rgba(255,255,255,.7);border-top-color:transparent;border-radius:50%;transform:translateY(-50%);animation:spin .8s linear infinite}
     @keyframes spin{to{transform:translateY(-50%) rotate(360deg)}}
@@ -109,7 +111,28 @@
     .btn-icon-dl{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer;padding:0;flex-shrink:0}
     .btn-icon-dl:hover{border-color:var(--accent);color:var(--accent);background:var(--input-bg)}
     .btn-icon-dl .dl-glyph{font-size:16px;line-height:1;font-weight:700}
-    td.order-dl{text-align:center;vertical-align:middle}
+    th.td-report-col,td.order-dl{text-align:center!important;vertical-align:middle}
+    td.order-dl{padding-left:8px;padding-right:8px}
+    .order-dl-icons{display:flex;align-items:center;justify-content:center;gap:5px;flex-wrap:nowrap;width:100%;margin:0 auto;box-sizing:border-box}
+    .btn-dl-report{width:auto;min-width:36px;height:34px;padding:0 7px;border-radius:10px;border:1px solid;font-size:10px;font-weight:800;letter-spacing:.04em;cursor:pointer;flex-shrink:0;line-height:1}
+    .btn-dl-report-pdf{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.5);color:#fca5a5}
+    .btn-dl-report-pdf:hover{background:rgba(239,68,68,.22);border-color:#ef4444;color:#fff}
+    body.light .btn-dl-report-pdf{background:rgba(220,38,38,.1);border-color:rgba(220,38,38,.45);color:#b91c1c}
+    body.light .btn-dl-report-pdf:hover{background:#fecaca;border-color:#dc2626;color:#7f1d1d}
+    .btn-dl-report-html{background:rgba(59,130,246,.14);border-color:rgba(59,130,246,.5);color:#93c5fd}
+    .btn-dl-report-html:hover{background:rgba(59,130,246,.28);border-color:#3b82f6;color:#fff}
+    body.light .btn-dl-report-html{background:rgba(37,99,235,.1);border-color:rgba(37,99,235,.45);color:#1d4ed8}
+    body.light .btn-dl-report-html:hover{background:#bfdbfe;border-color:#2563eb;color:#1e3a8a}
+    .pill.type-carrier{background:rgba(59,130,246,.14);border-color:rgba(59,130,246,.45);color:#93c5fd}
+    .pill.type-couples{background:rgba(139,92,246,.18);border-color:rgba(139,92,246,.5);color:#ddd6fe}
+    .pill.type-other-test{background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.5);color:var(--pill-warn-tx)}
+    .pill.type-sgnipt{background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.45);color:var(--pill-done-tx)}
+    .pill.type-nipt{background:rgba(99,102,241,.15);border-color:rgba(99,102,241,.45);color:var(--pill-new-tx)}
+    body.light .pill.type-carrier{background:rgba(37,99,235,.1);border-color:rgba(37,99,235,.4);color:#1d4ed8}
+    body.light .pill.type-couples{background:rgba(139,92,246,.12);border-color:rgba(139,92,246,.4);color:#6d28d9}
+    body.light .pill.type-other-test{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.45);color:#b45309}
+    body.light .pill.type-sgnipt{background:rgba(22,163,74,.12);border-color:rgba(22,163,74,.4);color:#15803d}
+    body.light .pill.type-nipt{background:rgba(99,102,241,.12);border-color:rgba(99,102,241,.4);color:#4338ca}
     .pill.warn{background:var(--pill-warn-bg);border-color:var(--pill-warn-bd);color:var(--pill-warn-tx)}
     .pill.err{background:var(--pill-err-bg);border-color:var(--pill-err-bd);color:var(--pill-err-tx)}
 
@@ -414,20 +437,21 @@
           </div>
         </div>
         <div id="trackListArea">
-          <p class="muted orders-table-hint">Click a row for detail. Open <strong>⋯</strong> for Submit, Force Run (carrier full re-run), Stop / Review. <strong>Report ready</strong> orders show a download button for the PDF.</p>
+          <p class="muted orders-table-hint">Click a row for detail. Open <strong>⋯</strong> for Submit, Force Run (carrier full re-run), Stop / Review. <strong>Report ready</strong> orders show <strong>PDF</strong> (red) and <strong>HTML</strong> (blue); each opens the file in a <strong>new browser tab</strong>.</p>
           <div class="table-wrap" id="ordersTableWrap">
             <table id="tblOrders">
               <thead>
                 <tr>
                   <th class="sortable" data-key="order_id">Order ID</th>
                   <th class="sortable" data-key="service_code">Service</th>
+                  <th class="sortable" data-key="order_type">Type</th>
                   <th class="sortable" data-key="sample_name">Patient / Sample</th>
                   <th class="sortable" data-key="status">Status</th>
                   <th>Progress</th>
                   <th class="sortable" data-key="created_at">Order created</th>
                   <th class="sortable" data-key="priority">Priority</th>
                   <th>Message</th>
-                  <th style="width:76px" title="Download generated report">Report</th>
+                  <th class="td-report-col" style="min-width:104px" title="Open PDF or HTML report in a new tab">Report</th>
                   <th style="width:52px">More</th>
                 </tr>
               </thead>
@@ -980,16 +1004,21 @@
             <div class="card" style="margin:0">
               <h3 style="font-size:14px">Report Options</h3>
               <div class="row">
-                <div class="col-4">
-                  <label>Languages</label>
-                  <div style="display:flex;gap:12px;margin-top:4px">
-                    <label class="checkbox-label"><input type="checkbox" id="langEN" checked /> EN</label>
-                    <label class="checkbox-label"><input type="checkbox" id="langCN" /> CN</label>
-                    <label class="checkbox-label"><input type="checkbox" id="langKO" /> KO</label>
+                <div class="col-12">
+                  <label>Report language (from order)</label>
+                  <div id="reportOrderLangDisplay" class="muted" style="margin-top:4px">Load an order to check PDF eligibility.</div>
+                  <div id="reportPdfDisabledMsg" style="display:none;margin-top:8px;color:var(--err);font-size:13px"></div>
+                  <div id="reportLangCheckboxesWrap" class="hidden" aria-hidden="true">
+                    <label>Languages</label>
+                    <div style="display:flex;gap:12px;margin-top:4px">
+                      <label class="checkbox-label"><input type="checkbox" id="langEN" checked disabled /> EN</label>
+                      <label class="checkbox-label"><input type="checkbox" id="langCN" disabled /> CN</label>
+                      <label class="checkbox-label"><input type="checkbox" id="langKO" disabled /> KO</label>
+                    </div>
                   </div>
                 </div>
-                <div class="col-8" style="display:flex;align-items:flex-end;gap:10px">
-                  <button class="btn primary" id="btnGenReport" onclick="generateReport()">Generate Report</button>
+                <div class="col-12" style="display:flex;align-items:flex-end;gap:10px;margin-top:12px;flex-wrap:wrap">
+                  <button type="button" class="btn primary" id="btnGenReport" onclick="generateReport()">Generate Report</button>
                   <span id="reportMsg" class="muted"></span>
                 </div>
               </div>
@@ -1228,6 +1257,8 @@
     let pipelineLogPollTimer = null;
 
     let reviewData = null;
+    /** loadReviewData 성공 후 유지 — 드롭다운이 아직 비어 있어도 Generate Report 등에서 주문 ID 사용 */
+    let reviewLoadedOrderId = null;
     let selectedVariants = new Set();
     let variantComments = {};
     let variantSortKey = null, variantSortAsc = true;
@@ -1437,19 +1468,22 @@
       }
     }
 
-    /** Report Ready 주문: PDF 우선, 없으면 HTML / report.json */
-    async function downloadOrderReportPdf(orderId) {
+    /** Report Ready 주문: kind = pdf | html — 새 탭에서 열기 (팝업 차단 시 다운로드 폴백) */
+    async function downloadOrderReportAsset(orderId, kind) {
+      const k = kind === 'html' ? 'html' : 'pdf';
       try {
         const res = await apiGet(`/order/${encodeURIComponent(orderId)}/files`);
         const files = res.files || [];
         const pdfs = files.filter(f => /^Report_.*\.pdf$/i.test(f.name)).sort((a, b) => a.name.localeCompare(b.name));
         const htmls = files.filter(f => /^Report_.*\.html$/i.test(f.name)).sort((a, b) => a.name.localeCompare(b.name));
-        const target = pdfs[0]
-          || files.find(f => f.name === 'report.pdf')
-          || htmls[0]
-          || files.find(f => f.name === 'report.json');
+        let target = null;
+        if (k === 'pdf') {
+          target = pdfs[0] || files.find(f => f.name === 'report.pdf');
+        } else {
+          target = htmls[0] || files.find(f => f.name === 'report.html');
+        }
         if (!target) {
-          toast('No report files found in output folder', false);
+          toast(k === 'pdf' ? 'No PDF report in output folder' : 'No HTML report in output folder', false);
           return;
         }
         const url = `${API_BASE}/order/${encodeURIComponent(orderId)}/file/${encodeURIComponent(target.name)}`;
@@ -1459,17 +1493,24 @@
           throw new Error(errorDetailFromResponseBody(body) || `${r.status} ${r.statusText}`);
         }
         const blob = await r.blob();
-        const u = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = u;
-        a.download = target.name;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(u);
-        toast(`Download: ${target.name}`);
+        const mime = k === 'pdf' ? 'application/pdf' : 'text/html';
+        const blobForUrl = new Blob([blob], { type: mime });
+        const u = URL.createObjectURL(blobForUrl);
+        const w = window.open(u, '_blank', 'noopener,noreferrer');
+        if (!w) {
+          const a = document.createElement('a');
+          a.href = u;
+          a.download = target.name;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          toast('Popup blocked — file downloaded instead', false);
+        } else {
+          toast(`${k.toUpperCase()} opened in new tab: ${target.name}`);
+        }
+        setTimeout(() => { try { URL.revokeObjectURL(u); } catch (e) { /* ignore */ } }, 180000);
       } catch (e) {
-        toast((e && e.message) || 'Download failed', false);
+        toast((e && e.message) || 'Open failed', false);
       }
     }
 
@@ -1732,7 +1773,8 @@
       toggleServiceSubmitBlocks();
     }
 
-    function showView(name) {
+    function showView(name, opts) {
+      const opt = opts || {};
       ['Dash', 'Orders', 'Review', 'Literature'].forEach(v => {
         const ve = qs('view' + v);
         const te = qs('tab' + v);
@@ -1758,7 +1800,7 @@
       }
       if (name === 'review') {
         stopOrdersListPolling();
-        refreshReviewOrderList();
+        if (!opt.skipReviewRefresh) refreshReviewOrderList();
       }
       if (name === 'literature') {
         stopOrdersListPolling();
@@ -1927,11 +1969,6 @@
     }
 
     function openEditOrder(o) {
-      const st = orderStatusUpper(o);
-      if (!['SAVED', 'FAILED', 'CANCELLED'].includes(st)) {
-        toast('Only saved, failed, or cancelled orders can be edited', false);
-        return;
-      }
       const lp = qs('ordersListPanel');
       const cp = qs('ordersCreatePanel');
       if (lp) lp.classList.add('hidden');
@@ -2340,6 +2377,9 @@
       if (key === 'sample_name') {
         va = (patientDisplayName(a) || a.sample_name || '').toLowerCase();
         vb = (patientDisplayName(b) || b.sample_name || '').toLowerCase();
+      } else if (key === 'order_type') {
+        va = orderTypeSortKey(a).toLowerCase();
+        vb = orderTypeSortKey(b).toLowerCase();
       } else if (key === 'created_at') {
         va = new Date(a.created_at || 0).getTime();
         vb = new Date(b.created_at || 0).getTime();
@@ -2402,6 +2442,52 @@
       s = String(s).trim();
       if (!s) return '';
       return s.toUpperCase().replace(/\s+/g, '_');
+    }
+
+    /** 주문 행 Type 태그 (params.carrier 기준) — carrierOrderMetaFlat 은 아래 Review 섹션과 동일 정의(호이스트) */
+    function orderTypeSortKey(o) {
+      const sc = o.service_code || '';
+      if (sc === 'carrier_screening') {
+        const flat = carrierOrderMetaFlat(o.params || {});
+        if (!flat) return '';
+        const tc = String(flat.test_category || '').trim();
+        const ot = String(flat.other_test_type || '').trim();
+        const pc = String(flat.package_code || '').trim();
+        if (pc === 'CouplesCarrier' || (tc === 'other' && ot === 'CouplesCarrier')) return 'couples carrier';
+        if (tc === 'other' && ot) return `other ${ot}`;
+        return 'standard';
+      }
+      if (sc === 'sgnipt') return 'sgnipt';
+      if (sc === 'nipt') return 'nipt';
+      return sc;
+    }
+
+    function orderTypePillHtml(o) {
+      const sc = o.service_code || '';
+      if (sc === 'carrier_screening') {
+        const flat = carrierOrderMetaFlat(o.params || {});
+        if (!flat) return '<span class="pill muted">—</span>';
+        const tc = String(flat.test_category || '').trim();
+        const ot = String(flat.other_test_type || '').trim();
+        const pc = String(flat.package_code || '').trim();
+        if (pc === 'CouplesCarrier' || (tc === 'other' && ot === 'CouplesCarrier')) {
+          return '<span class="pill type-couples">Couples Carrier</span>';
+        }
+        if (tc === 'other' && ot) {
+          return `<span class="pill type-other-test">${escapeHtml(ot)}</span>`;
+        }
+        if (tc === 'standard_carrier' || (pc === 'CarrierScreening' && tc !== 'other') || pc === 'CarrierScreening') {
+          return '<span class="pill type-carrier">Standard</span>';
+        }
+        return '<span class="pill type-carrier">Standard</span>';
+      }
+      if (sc === 'sgnipt') {
+        return '<span class="pill type-sgnipt">sgNIPT</span>';
+      }
+      if (sc === 'nipt') {
+        return '<span class="pill type-nipt">NIPT</span>';
+      }
+      return `<span class="pill muted">${escapeHtml(sc || '—')}</span>`;
     }
 
     async function startSavedOrder(orderId) {
@@ -2549,13 +2635,15 @@
 
     function exportOrdersTsv() {
       const rows = getOrdersAfterClientFilter();
-      const headers = ['order_id', 'service_code', 'patient_or_sample', 'status', 'progress', 'created_at', 'priority', 'message'];
+      const headers = ['order_id', 'service_code', 'type', 'patient_or_sample', 'status', 'progress', 'created_at', 'priority', 'message'];
       const lines = [headers.join('\t')];
       rows.forEach(o => {
         const pat = patientDisplayName(o) || o.sample_name || '';
+        const typeTxt = orderTypeSortKey(o) || '';
         lines.push([
           o.order_id,
           o.service_code,
+          typeTxt,
           pat,
           o.status,
           String(o.progress ?? ''),
@@ -2964,10 +3052,8 @@
         const pat = patientDisplayName(o) || o.sample_name || '—';
         const st = orderStatusUpper(o);
         const items = [];
+        items.push('<button type="button" data-act="edit">Edit</button>');
         const terminalMenu = ['SAVED', 'FAILED', 'CANCELLED', 'COMPLETED', 'REPORT_READY'].includes(st);
-        if (terminalMenu) {
-          items.push('<button type="button" data-act="edit">Edit</button>');
-        }
         if ((st === 'COMPLETED' || st === 'REPORT_READY') && o.service_code === 'carrier_screening') {
           items.push('<button type="button" data-act="review">Review</button>');
         }
@@ -3003,11 +3089,15 @@
         if (!items.length) items.push('<button type="button" disabled style="opacity:.5;cursor:default">—</button>');
         /* SVG 대신 문자: 일부 브라우저에서 table>tr innerHTML 파싱 이슈 방지 */
         const dlBtn = st === 'REPORT_READY'
-          ? `<button type="button" class="btn-icon-dl btn-dl-report" data-order-id="${escapeHtml(o.order_id)}" title="Download report" aria-label="Download report"><span class="dl-glyph" aria-hidden="true">⬇</span></button>`
+          ? `<div class="order-dl-icons" role="group" aria-label="Download report files">
+            <button type="button" class="btn-dl-report btn-dl-report-pdf" data-order-id="${escapeHtml(o.order_id)}" data-report-kind="pdf" title="Open PDF in new tab" aria-label="Open PDF report in new tab">PDF</button>
+            <button type="button" class="btn-dl-report btn-dl-report-html" data-order-id="${escapeHtml(o.order_id)}" data-report-kind="html" title="Open HTML in new tab" aria-label="Open HTML report in new tab">HTML</button>
+          </div>`
           : '';
         tr.innerHTML = `
           <td style="font-weight:600">${escapeHtml(o.order_id)}</td>
           <td><span class="pill inp">${escapeHtml(svcLabel)}</span></td>
+          <td style="white-space:nowrap">${orderTypePillHtml(o)}</td>
           <td>${escapeHtml(pat)}</td>
           <td>${statusPill(st)}</td>
           <td>
@@ -3077,13 +3167,14 @@
         e.preventDefault();
         e.stopPropagation();
         const oid = b.getAttribute('data-order-id');
-        if (oid) downloadOrderReportPdf(oid);
+        const kind = b.getAttribute('data-report-kind') || 'pdf';
+        if (oid) downloadOrderReportAsset(oid, kind);
       });
     }
 
     function openReview(orderId) {
-      showView('review');        // triggers refreshReviewOrderList() async
-      loadReviewData(orderId);   // pass id directly — don't rely on select having the option yet
+      showView('review', { skipReviewRefresh: true });
+      refreshReviewOrderList().then(() => loadReviewData(orderId));
     }
 
     qs('trackSearch').oninput = renderOrders;
@@ -3129,6 +3220,28 @@
     // ═══════════════════════════════════════════════════════════
     // Variant Review
     // ═══════════════════════════════════════════════════════════
+    function ensureReviewOrderOption(orderId, sampleLabel) {
+      const sel = qs('reviewOrderSelect');
+      if (!sel || !orderId) return;
+      const lab = (sampleLabel != null && String(sampleLabel).trim()) ? String(sampleLabel).trim() : null;
+      const existing = Array.from(sel.options).find(o => o.value === orderId);
+      if (existing) {
+        if (lab !== null) existing.textContent = `${orderId} (${lab})`;
+        return;
+      }
+      const opt = document.createElement('option');
+      opt.value = orderId;
+      opt.textContent = lab !== null ? `${orderId} (${lab})` : `${orderId} (—)`;
+      sel.appendChild(opt);
+    }
+
+    function getActiveReviewOrderId() {
+      const sel = qs('reviewOrderSelect');
+      const v = sel && sel.value ? String(sel.value).trim() : '';
+      if (v) return v;
+      return reviewLoadedOrderId ? String(reviewLoadedOrderId).trim() : '';
+    }
+
     async function refreshReviewOrderList() {
       try {
         const data = await apiGet('/orders?service_code=carrier_screening');
@@ -3144,17 +3257,35 @@
           sel.appendChild(opt);
         });
         if (current) sel.value = current;
+        if (reviewLoadedOrderId && sel) {
+          ensureReviewOrderOption(reviewLoadedOrderId);
+          sel.value = reviewLoadedOrderId;
+        }
       } catch (e) { /* ignore */ }
     }
 
     async function loadReviewData(overrideOrderId) {
-      const orderId = overrideOrderId || qs('reviewOrderSelect').value;
+      const orderId = (overrideOrderId || qs('reviewOrderSelect').value || reviewLoadedOrderId || '').trim();
       if (!orderId) return toast('Select an order first', false);
       // Keep select in sync so subsequent actions (generate report, etc.) see the right id
+      ensureReviewOrderOption(orderId);
       qs('reviewOrderSelect').value = orderId;
 
       try {
         reviewData = await apiGet(`/order/${orderId}/result`);
+        if (!reviewData.order_params || Object.keys(reviewData.order_params).length === 0) {
+          try {
+            const list = await apiGet('/orders?service_code=carrier_screening');
+            const row = (list.orders || []).find(o => o.order_id === orderId);
+            if (row && row.params && typeof row.params === 'object') {
+              reviewData.order_params = row.params;
+            }
+          } catch (e) { /* ignore */ }
+        }
+        reviewLoadedOrderId = orderId;
+        ensureReviewOrderOption(orderId, reviewData.sample_name);
+        qs('reviewOrderSelect').value = orderId;
+
         selectedVariants = new Set();
         variantComments = {};
 
@@ -3169,8 +3300,76 @@
         renderDiseaseSummary();
         showReviewTab('variants');
         toast(`Loaded ${(reviewData.variants || []).length} variants`);
+        updateReportGenerateUi();
       } catch (e) {
         toast('Failed to load result: ' + e.message, false);
+      }
+    }
+
+    /** Carrier 임상 메타는 API에서 params.carrier 에 저장됨 — 리포트 UI는 평탄화해 읽음 */
+    function carrierOrderMetaFlat(op) {
+      if (!op || typeof op !== 'object') return null;
+      const c = op.carrier;
+      if (c && typeof c === 'object' && Object.keys(c).length) {
+        return Object.assign({}, op, c);
+      }
+      return op;
+    }
+
+    function carrierReportEligible(orderParams) {
+      const flat = carrierOrderMetaFlat(orderParams);
+      if (!flat || typeof flat !== 'object') {
+        return { ok: false, reason: 'Order parameters were not returned (save/load order with metadata).' };
+      }
+      const tc = String(flat.test_category || '').trim();
+      const ot = String(flat.other_test_type || '').trim();
+      const pc = String(flat.package_code || '').trim();
+      const rl = String(flat.report_language || '').trim().toUpperCase();
+      let kind = null;
+      if (tc === 'standard_carrier') kind = 'standard';
+      else if (tc === 'other' && ot === 'CouplesCarrier') kind = 'couples';
+      else if (pc === 'CouplesCarrier') kind = 'couples';
+      else if (pc === 'CarrierScreening' && tc !== 'other') kind = 'standard';
+      else if (tc === 'other') kind = null;
+      else if (pc === 'CarrierScreening') kind = 'standard';
+      const langOk = ['EN', 'CN', 'KO'].includes(rl);
+      if (!kind) {
+        return {
+          ok: false,
+          reason: 'PDF is only generated for Carrier screening (standard) or CouplesCarrier (Other test type).',
+        };
+      }
+      if (!langOk) {
+        return {
+          ok: false,
+          reason: 'Report language must be EN, CN, or KO on the order to match carrier_*.html templates.',
+        };
+      }
+      return { ok: true, kind, reportLang: rl };
+    }
+
+    function updateReportGenerateUi() {
+      const btn = qs('btnGenReport');
+      const msg = qs('reportPdfDisabledMsg');
+      const langDisp = qs('reportOrderLangDisplay');
+      if (!btn || !langDisp) return;
+      const op = reviewData && reviewData.order_params;
+      const flat = carrierOrderMetaFlat(op);
+      const el = carrierReportEligible(op);
+      if (msg) {
+        msg.style.display = el.ok ? 'none' : 'block';
+        msg.textContent = el.ok ? '' : el.reason;
+      }
+      btn.classList.toggle('report-gen-blocked', !el.ok);
+      if (el.ok) {
+        langDisp.textContent = `${el.reportLang} (from order) — template: ${el.kind === 'couples' ? 'carrier_couples' : 'carrier'}_${el.reportLang.toLowerCase()}.html`;
+      } else {
+        const rlRaw = flat && flat.report_language != null && String(flat.report_language).trim() !== ''
+          ? String(flat.report_language).trim()
+          : '';
+        langDisp.textContent = rlRaw
+          ? `Report language on order: ${rlRaw}`
+          : '—';
       }
     }
 
@@ -3198,7 +3397,10 @@
         el.classList.toggle('active', el.getAttribute('data-tab') === tab);
       });
 
-      if (tab === 'report') updateSelectedVariantsList();
+      if (tab === 'report') {
+        updateSelectedVariantsList();
+        updateReportGenerateUi();
+      }
       if (tab !== 'variants') qs('variantDetail').classList.add('hidden');
     }
 
@@ -3765,8 +3967,12 @@
     }
 
     async function generateReport() {
-      const orderId = qs('reviewOrderSelect').value;
-      if (!orderId) return toast('Select an order first', false);
+      const orderId = getActiveReviewOrderId();
+      if (!orderId) return toast('Load an order first (Review → Load), or open Review from the order list.', false);
+      const elig = carrierReportEligible(reviewData?.order_params);
+      if (!elig.ok) {
+        return toast(elig.reason || 'Report PDF is not available for this order type or report language.', false);
+      }
       if (selectedVariants.size === 0) return toast('Select at least one variant', false);
 
       const revName = qs('rRevName').value.trim();
@@ -3785,12 +3991,6 @@
           };
         });
 
-      const languages = [];
-      if (qs('langEN').checked) languages.push('EN');
-      if (qs('langCN').checked) languages.push('CN');
-      if (qs('langKO').checked) languages.push('KO');
-      if (languages.length === 0) languages.push('EN');
-
       const body = {
         confirmed_variants: confirmed,
         reviewer_info: {
@@ -3806,7 +4006,6 @@
         partner_info: qs('rPartnerName').value.trim() ? {
           name: qs('rPartnerName').value.trim(),
         } : undefined,
-        languages: languages,
       };
 
       const btn = qs('btnGenReport');

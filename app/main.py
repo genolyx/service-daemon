@@ -342,7 +342,8 @@ def _order_merge_submit(job: Job, patch: OrderUpdateRequest) -> OrderSubmitReque
 @app.patch("/order/{order_id}", response_model=OrderUpdateResponse)
 async def update_order(order_id: str, request: OrderUpdateRequest):
     """
-    SAVED / FAILED / CANCELLED 주문 필드 수정 (큐·실행 중 주문은 불가).
+    SAVED / FAILED / CANCELLED / COMPLETED / REPORT_READY 주문 필드 수정.
+    (QUEUED·실행 중 등은 불가 — 완료 후 메타 수정·재실행 전에 변경 가능)
     """
     queue_manager = get_queue_manager()
     job = queue_manager.get_job(order_id)
@@ -352,10 +353,15 @@ async def update_order(order_id: str, request: OrderUpdateRequest):
         OrderStatus.SAVED,
         OrderStatus.FAILED,
         OrderStatus.CANCELLED,
+        OrderStatus.COMPLETED,
+        OrderStatus.REPORT_READY,
     ):
         raise HTTPException(
             status_code=400,
-            detail=f"Order {order_id} is {job.status.value}; only SAVED, FAILED, or CANCELLED can be edited",
+            detail=(
+                f"Order {order_id} is {job.status.value}; "
+                "only SAVED, FAILED, CANCELLED, COMPLETED, or REPORT_READY can be edited"
+            ),
         )
     submit = _order_merge_submit(job, request)
     plugin = get_plugin(submit.service_code)
@@ -380,6 +386,15 @@ async def update_order(order_id: str, request: OrderUpdateRequest):
     elif job.status == OrderStatus.SAVED:
         new_job.progress = 0
         new_job.message = ""
+    elif job.status in (OrderStatus.COMPLETED, OrderStatus.REPORT_READY):
+        new_job.progress = job.progress
+        new_job.message = job.message
+        new_job.completed_at = job.completed_at
+        new_job.started_at = job.started_at
+        new_job.error_log = job.error_log
+        new_job.pid = job.pid
+        new_job.exit_code = job.exit_code
+        new_job.duration = job.duration
     try:
         await queue_manager.replace_edited_job(new_job, previous_order_id=order_id)
     except KeyError:
@@ -880,7 +895,45 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
             detail=f"Service {job.service_code} does not support report generation"
         )
 
-    # 리포트 생성 (patient_info, partner_info, languages 전달)
+    if job.service_code == "carrier_screening":
+        from .services.carrier_screening.report import (
+            carrier_report_template_kind,
+            report_languages_from_order,
+            _carrier_order_flat,
+        )
+
+        p_raw = job.params or {}
+        kind = carrier_report_template_kind(p_raw)
+        if kind is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "PDF report is only supported for standard carrier screening "
+                    "or CouplesCarrier (Other test type)."
+                ),
+            )
+        if report_languages_from_order(p_raw) is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Report language must be EN, CN, or KO for PDF generation.",
+            )
+        p = _carrier_order_flat(p_raw)
+        if kind == "couples":
+            p2 = (p.get("patient2_name") or "").strip()
+            req_name = (
+                (request.partner_info or {}).get("name") if request.partner_info else None
+            )
+            req_name = (str(req_name).strip() if req_name else "")
+            if not p2 and not req_name:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Couples report requires partner name "
+                        "(order patient2_name or partner name in the form)."
+                    ),
+                )
+
+    # 리포트 생성 (patient_info, partner_info; carrier_screening은 languages는 주문 Report Language로 결정)
     success = await plugin.generate_report(
         job=job,
         confirmed_variants=request.confirmed_variants,
@@ -903,11 +956,16 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
 
     store = queue_manager.store
     if store:
+        review_langs = request.languages or []
+        if job.service_code == "carrier_screening":
+            from .services.carrier_screening.report import report_languages_from_order
+
+            review_langs = report_languages_from_order(job.params or {}) or []
         review_blob = {
             "reviewer_info": request.reviewer_info,
             "patient_info": request.patient_info or {},
             "partner_info": request.partner_info,
-            "languages": request.languages or [],
+            "languages": review_langs,
             "confirmed_variants": request.confirmed_variants,
             "saved_at": now_kst_iso(),
         }
@@ -957,24 +1015,43 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
             content_type="text/html",
         ))
 
-    # Platform에 업로드
-    platform_client = get_platform_client()
-    uploaded_count = 0
-    if report_files:
-        upload_results = await platform_client.upload_all_outputs(
-            order_id, job.service_code, report_files
-        )
-        uploaded_count = sum(
-            1 for r in upload_results.values()
-            if r.status.value == "SUCCESS"
-        )
-
     if store and job.output_dir:
         await asyncio.to_thread(ingest_report_json_from_disk, store, job)
 
+    # 플랫폼 업로드는 파일당 긴 타임아웃·순차 요청이라 포털이 멈춘 것처럼 보일 수 있음 → 백그라운드
+    uploaded_count = 0
+    platform_client = get_platform_client()
+    if report_files and settings.platform_api_enabled:
+
+        async def _upload_reports_background() -> None:
+            try:
+                upload_results = await platform_client.upload_all_outputs(
+                    order_id, job.service_code, report_files
+                )
+                ok = sum(
+                    1 for r in upload_results.values()
+                    if r.status.value == "SUCCESS"
+                )
+                logger.info(
+                    f"Background platform upload finished for {order_id}: "
+                    f"{ok}/{len(report_files)} file(s)"
+                )
+            except Exception as e:
+                logger.exception(
+                    f"Background platform upload failed for {order_id}: {e}"
+                )
+
+        asyncio.create_task(_upload_reports_background())
+        upload_msg = (
+            f"Report generated: {len(report_files)} file(s). "
+            "Platform upload is running in the background."
+        )
+    else:
+        upload_msg = f"Report generated: {len(report_files)} file(s)."
+
     logger.info(
         f"Report generation complete for {order_id}: "
-        f"{len(report_files)} files generated, {uploaded_count} uploaded"
+        f"{len(report_files)} files on disk (platform upload deferred={bool(report_files and settings.platform_api_enabled)})"
     )
 
     return ReportGenerateResponse(
@@ -983,7 +1060,7 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
         service_code=job.service_code,
         report_files=[os.path.basename(f.file_path) for f in report_files],
         uploaded_count=uploaded_count,
-        message=f"Report generated: {len(report_files)} file(s), {uploaded_count} uploaded",
+        message=upload_msg,
     )
 
 
@@ -1082,12 +1159,20 @@ async def get_order_result(order_id: str):
             result_data = json.load(f)
         if store and isinstance(result_data, dict):
             await asyncio.to_thread(store.set_result_json, order_id, result_data)
-        return result_data
+        if isinstance(result_data, dict):
+            result_data = dict(result_data)
+            result_data["order_params"] = job.params or {}
+            return result_data
+        return {"data": result_data, "order_params": job.params or {}}
 
     if store:
         cached = await asyncio.to_thread(store.get_result_json, order_id)
         if cached is not None:
-            return cached
+            if isinstance(cached, dict):
+                out = dict(cached)
+                out["order_params"] = job.params or {}
+                return out
+            return {"data": cached, "order_params": job.params or {}}
 
     raise HTTPException(
         status_code=404,

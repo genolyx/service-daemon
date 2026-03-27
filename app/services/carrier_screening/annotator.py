@@ -1119,3 +1119,185 @@ class VariantAnnotator:
         }
 
         return result
+
+    def annotate_with_vep(
+        self,
+        chrom: str, pos: int, ref: str, alt: str,
+        vep_data: Dict[str, Any],
+        sample_metrics: Dict[str, Any] = None,
+    ) -> Dict[str, Any]:
+        """
+        VEP CSQ 파싱 결과를 기반으로 annotation을 수행합니다.
+
+        Nextflow 파이프라인에서 VEP annotation이 완료된 VCF를 처리할 때 사용합니다.
+        gnomAD, dbSNP, Gene, Transcript, HGVSc/p, Effect, SIFT, PolyPhen 정보는
+        VEP 결과에서 가져오며 (로컬 gnomAD VCF 조회 불필요),
+        ClinVar, ClinGen, HGMD, Curated DB, Disease-Gene, HPO 등 임상/비즈니스 정보는
+        기존과 동일하게 로컬 DB에서 조회합니다.
+
+        Args:
+            chrom:          염색체 (예: 'chr1')
+            pos:            위치 (1-based)
+            ref:            REF allele
+            alt:            ALT allele
+            vep_data:       vep_parser.parse_csq_record() 반환값
+            sample_metrics: BAM 기반 샘플 메트릭스 (DP, VAF, GT 등)
+
+        Returns:
+            annotate()와 동일한 키 구조의 딕셔너리
+        """
+        # VEP에서 제공하는 기본 정보 추출
+        gene = vep_data.get("gene", "")
+        transcript = vep_data.get("transcript", "")
+        hgvsc = vep_data.get("hgvsc", "")
+        hgvsp = vep_data.get("hgvsp", "")
+        effect = vep_data.get("effect", "")
+
+        # gnomAD: VEP에서 제공 (로컬 gnomAD VCF 조회 불필요)
+        gnomad_af = vep_data.get("gnomad_af")
+        gnomad_exomes_af = vep_data.get("gnomad_exomes_af")
+        gnomad_genomes_af = vep_data.get("gnomad_genomes_af")
+        gnomad_source = "vep_csq" if gnomad_af is not None else ""
+
+        # dbSNP rsID: VEP에서 제공
+        dbsnp_rsid_vep = vep_data.get("dbsnp_rsid", "")
+
+        # MANE: VEP MANE_SELECT 필드 우선, 없으면 로컬 MANE GFF 조회
+        mane_select_from_vep = vep_data.get("mane_select", "")
+        if mane_select_from_vep:
+            mane = {"enst": transcript, "nm": mane_select_from_vep}
+        else:
+            mane = self.mane.lookup(gene) if gene else {}
+
+        # ClinGen (로컬 DB)
+        clingen = self.clingen.lookup(gene) if gene else {}
+        hgnc_id = clingen.get("hgnc_id", "")
+        clingen_url = ""
+        if hgnc_id:
+            clingen_url = f"https://search.clinicalgenome.org/kb/genes/{hgnc_id.replace(':', '%3A')}"
+        elif clingen.get("url"):
+            clingen_url = clingen["url"]
+
+        # ClinVar (로컬 DB — 정밀 매칭)
+        clinvar = self.clinvar.lookup(chrom, pos, ref, alt)
+        cv_primary = (clinvar or {}).get("clnsig_primary", "")
+
+        # dbSNP rsID: ClinVar rsID 우선, 없으면 VEP 제공값 사용
+        dbsnp_rsid = (clinvar or {}).get("rsid", "") or dbsnp_rsid_vep
+        if not dbsnp_rsid:
+            rsid_from_rec = (sample_metrics or {}).get("rec_id", "")
+            if rsid_from_rec:
+                m = re.search(r"\brs(\d+)\b", str(rsid_from_rec), re.IGNORECASE)
+                if m:
+                    dbsnp_rsid = f"rs{m.group(1)}"
+        dbsnp_url = make_dbsnp_url(dbsnp_rsid)
+
+        # HGMD (로컬 DB)
+        hgmd = self.hgmd.lookup(chrom, pos, ref, alt)
+
+        # Curated Variant DB (로컬 DB)
+        curated = self.curated_db.lookup(gene, hgvsc, hgvsp)
+
+        # Disease-Gene Mapping (로컬 DB)
+        disease_info = self.disease_gene.lookup(gene) if gene else {}
+        diseases = disease_info.get("diseases", [])
+        inheritance = diseases[0].get("inheritance", "") if diseases else ""
+
+        # HPO Phenotypes (로컬 DB)
+        hpo_phenotypes = self.hpo.get_phenotypes_for_gene(gene) if gene else []
+
+        # 샘플 메트릭스
+        sm = sample_metrics or {}
+
+        result = {
+            # 위치
+            "chrom": chrom,
+            "pos": pos,
+            "ref": ref,
+            "alt": alt,
+
+            # 유전자/전사체 (VEP 제공)
+            "gene": gene,
+            "transcript": transcript,
+            "canonical_enst": mane.get("enst", ""),
+            "clinical_nm": mane.get("nm", ""),
+            "hgvsc": hgvsc,
+            "hgvsp": hgvsp,
+            "effect": effect,
+            "impact": vep_data.get("impact", ""),
+            "biotype": vep_data.get("biotype", ""),
+            "exon": vep_data.get("exon", ""),
+            "intron": vep_data.get("intron", ""),
+            "mane_select": mane_select_from_vep,
+            "is_canonical": vep_data.get("is_canonical", False),
+
+            # 샘플 메트릭스
+            "dp": sm.get("dp"),
+            "ref_depth": sm.get("ref_depth"),
+            "alt_depth": sm.get("alt_depth"),
+            "vaf": sm.get("vaf"),
+            "gt": sm.get("gt", ""),
+            "zygosity": sm.get("zygosity", ""),
+
+            # gnomAD (VEP 제공 — 로컬 VCF 조회 불필요)
+            "gnomad_af": gnomad_af,
+            "gnomad_exomes_af": gnomad_exomes_af,
+            "gnomad_genomes_af": gnomad_genomes_af,
+            "gnomad_source": gnomad_source,
+
+            # ClinVar (로컬 DB 정밀 매칭)
+            "clinvar_sig": (clinvar or {}).get("clnsig", ""),
+            "clinvar_sig_primary": cv_primary,
+            "clinvar_conflicting": bool((clinvar or {}).get("conflicting", False)),
+            "clinvar_conflict_detail": (clinvar or {}).get("conflict_summary", ""),
+            "clinvar_revstat": (clinvar or {}).get("revstat", ""),
+            "clinvar_stars": int((clinvar or {}).get("stars", 0) or 0),
+            "clinvar_dn": (clinvar or {}).get("clndn", ""),
+            "clinvar_variation_id": (clinvar or {}).get("variation_id", ""),
+            # VEP CLIN_SIG (cross-reference; 로컬 ClinVar 없을 때 참고용)
+            "vep_clin_sig": vep_data.get("vep_clin_sig", ""),
+
+            # dbSNP
+            "dbsnp_rsid": dbsnp_rsid,
+            "dbsnp_url": dbsnp_url,
+
+            # ClinGen (로컬 DB)
+            "clingen_hi_score": clingen.get("hi_score"),
+            "clingen_ts_score": clingen.get("ts_score"),
+            "clingen_hi_desc": clingen.get("hi_desc", ""),
+            "clingen_ts_desc": clingen.get("ts_desc", ""),
+            "clingen_last_eval": clingen.get("last_eval", ""),
+            "clingen_hi_disease_id": clingen.get("hi_disease_id", ""),
+            "clingen_ts_disease_id": clingen.get("ts_disease_id", ""),
+            "clingen_hgnc_id": hgnc_id,
+            "clingen_url": clingen_url,
+
+            # HGMD (로컬 DB, 라이선스 필요)
+            "hgmd_class": (hgmd or {}).get("hgmd_class", ""),
+            "hgmd_disease": (hgmd or {}).get("hgmd_disease", ""),
+            "hgmd_pmid": (hgmd or {}).get("hgmd_pmid", ""),
+            "hgmd_id": (hgmd or {}).get("hgmd_id", ""),
+
+            # Curated Variant DB (로컬 DB)
+            "curated_classification": (curated or {}).get("classification", ""),
+            "curated_source": (curated or {}).get("source", ""),
+            "curated_notes": (curated or {}).get("notes", ""),
+
+            # Disease-Gene Mapping (로컬 DB)
+            "diseases": diseases,
+            "inheritance": inheritance,
+
+            # HPO Phenotypes (로컬 DB)
+            "hpo_phenotypes": hpo_phenotypes[:10],
+
+            # 기능 예측 점수 (VEP 제공)
+            "sift_score": vep_data.get("sift_score"),
+            "sift_pred": vep_data.get("sift_pred", ""),
+            "polyphen_score": vep_data.get("polyphen_score"),
+            "polyphen_pred": vep_data.get("polyphen_pred", ""),
+
+            # Annotation 출처 메타데이터
+            "annotation_source": "vep",
+        }
+
+        return result

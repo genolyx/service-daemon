@@ -721,6 +721,7 @@ class CarrierScreeningPlugin(ServicePlugin):
             )
             from .annotator import VariantAnnotator
             from .review import extract_qc_summary, generate_result_json, generate_variants_tsv
+            from .vep_parser import is_vep_annotated_vcf, extract_vep_annotations_from_vcf
 
             dirs = self._get_dirs(job)
             analysis_dir = dirs["analysis"]
@@ -738,6 +739,23 @@ class CarrierScreeningPlugin(ServicePlugin):
             if _job_stop_requested(job.order_id):
                 logger.info("[process_results] User stop requested before cleaning VCF")
                 return False
+
+            # ── 1b. VEP annotation 여부 감지 ──
+            # Nextflow 파이프라인에서 VEP annotation이 완료된 경우
+            # (pipeline_complete.json의 vep_annotation == 'enabled' 또는 VCF 헤더 직접 확인)
+            pipeline_complete_path = os.path.join(output_dir, "pipeline_complete.json")
+            vep_enabled_from_pipeline = False
+            if os.path.exists(pipeline_complete_path):
+                try:
+                    import json as _json
+                    with open(pipeline_complete_path) as _f:
+                        _pc = _json.load(_f)
+                    vep_enabled_from_pipeline = _pc.get("vep_annotation", "") == "enabled"
+                except Exception:
+                    pass
+
+            is_vep_vcf = vep_enabled_from_pipeline or is_vep_annotated_vcf(main_vcf)
+            logger.info(f"  VEP annotation detected: {is_vep_vcf}")
 
             # ── 2. FORMAT 문제 필드 정리 (동기 I/O → to_thread) ──
             cleaned_vcf = os.path.join(analysis_dir, f"{job.sample_name}.cleaned.vcf")
@@ -760,10 +778,13 @@ class CarrierScreeningPlugin(ServicePlugin):
 
             cleaned_mtime = os.path.getmtime(cleaned_vcf)
 
-            # ── 3. snpEff annotation (선택적 – async subprocess) ──
+            # ── 3. snpEff annotation (선택적 – VEP VCF이면 건너뜀) ──
             annotated_vcf = cleaned_vcf
             snp_jar = settings.snpeff_jar
-            if snp_jar and os.path.exists(snp_jar):
+            if is_vep_vcf:
+                # VEP annotation이 이미 완료된 경우 snpEff 실행 불필요
+                logger.info("  VEP-annotated VCF detected: skipping snpEff step")
+            elif snp_jar and os.path.exists(snp_jar):
                 snpeff_vcf = os.path.join(analysis_dir, f"{job.sample_name}.snpeff.vcf")
                 try:
                     if (
@@ -789,9 +810,9 @@ class CarrierScreeningPlugin(ServicePlugin):
                         logger.info(f"  snpEff annotation complete: {snpeff_vcf}")
                 except Exception as e:
                     logger.warning(f"  snpEff failed, continuing without: {e}")
-            elif not snp_jar:
+            elif not is_vep_vcf and not snp_jar:
                 logger.info("  snpEff not configured, skipping")
-            else:
+            elif not is_vep_vcf:
                 logger.info("  snpEff JAR missing at %s, skipping", snp_jar)
 
             if _job_stop_requested(job.order_id):
@@ -883,6 +904,19 @@ class CarrierScreeningPlugin(ServicePlugin):
                 logger.info("[process_results] User stop requested before VCF parse")
                 return False
 
+            # ── 6b. VEP CSQ 사전 파싱 (VEP VCF인 경우) ──
+            vep_annotations = None
+            if is_vep_vcf:
+                logger.info("  Pre-parsing VEP CSQ annotations from VCF...")
+                try:
+                    vep_annotations = await asyncio.to_thread(
+                        extract_vep_annotations_from_vcf, annotated_vcf
+                    )
+                    logger.info(f"  VEP CSQ pre-parsing complete: {len(vep_annotations)} variants")
+                except Exception as e:
+                    logger.warning(f"  VEP CSQ pre-parsing failed, falling back to snpEff path: {e}")
+                    vep_annotations = None
+
             # ── 7. 통합 VCF 파싱 파이프라인 실행 (CPU+I/O 블로킹 → to_thread) ──
             logger.info(f"  Starting integrated VCF parsing pipeline...")
             annotated_variants, acmg_results, parse_stats = await asyncio.to_thread(
@@ -891,6 +925,7 @@ class CarrierScreeningPlugin(ServicePlugin):
                 annotator=annotator,
                 filter_config=filter_config,
                 acmg_classifier=None,
+                vep_annotations=vep_annotations,
             )
 
             logger.info(

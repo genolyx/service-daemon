@@ -573,6 +573,7 @@ def parse_vcf_variants(
     annotator,
     filter_config: Optional[VariantFilterConfig] = None,
     acmg_classifier=None,
+    vep_annotations: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
     """
     VCF 파일을 파싱하고 필터링/annotation을 수행하는 통합 파이프라인.
@@ -618,9 +619,17 @@ def parse_vcf_variants(
         stats["warnings"].append(f"Failed to open VCF: {e}")
         return annotated_variants, acmg_results, stats
 
-    tag, gi, ti, ci, pi, ei = get_annotation_layout(vcf)
-    if tag is None:
-        stats["warnings"].append("No ANN/CSQ detected; c./p. may be missing.")
+    # VEP annotation 모드 감지
+    # vep_annotations가 제공된 경우 VEP CSQ 기반 annotation 경로를 사용합니다.
+    # 제공되지 않은 경우 기존 snpEff ANN/CSQ 파싱 경로를 사용합니다.
+    use_vep_path = bool(vep_annotations)
+    if use_vep_path:
+        logger.info("VEP annotation mode: using pre-parsed CSQ data (%d variants)", len(vep_annotations))
+        tag, gi, ti, ci, pi, ei = None, None, None, None, None, None
+    else:
+        tag, gi, ti, ci, pi, ei = get_annotation_layout(vcf)
+        if tag is None:
+            stats["warnings"].append("No ANN/CSQ detected; c./p. may be missing.")
 
     gene_interval_lookup = None
     if annotator and hasattr(annotator, 'gene_intervals') and annotator.gene_intervals:
@@ -679,12 +688,25 @@ def parse_vcf_variants(
                     sample_metrics["rec_id"] = rec_id
 
                 # 통합 annotation
-                ann = annotator.annotate(
-                    chrom=rec.chrom, pos=rec.pos, ref=rec.ref, alt=alt_str,
-                    gene=gene, transcript=transcript,
-                    hgvsc=hgvsc, hgvsp=hgvsp, effect=effect,
-                    sample_metrics=sample_metrics,
-                )
+                # VEP annotation이 제공된 경우 VEP 기반 경로 사용
+                vep_key = f"{rec.chrom}:{rec.pos}:{rec.ref}:{alt_str}"
+                vep_data = (vep_annotations or {}).get(vep_key)
+                if vep_data and hasattr(annotator, 'annotate_with_vep'):
+                    ann = annotator.annotate_with_vep(
+                        chrom=rec.chrom, pos=rec.pos, ref=rec.ref, alt=alt_str,
+                        vep_data=vep_data,
+                        sample_metrics=sample_metrics,
+                    )
+                    # VEP에서 유전자/전사체 정보 보완 (BED 필터용)
+                    if not gene and ann.get("gene"):
+                        gene = ann["gene"]
+                else:
+                    ann = annotator.annotate(
+                        chrom=rec.chrom, pos=rec.pos, ref=rec.ref, alt=alt_str,
+                        gene=gene, transcript=transcript,
+                        hgvsc=hgvsc, hgvsp=hgvsp, effect=effect,
+                        sample_metrics=sample_metrics,
+                    )
 
                 # 7. gnomAD max AF 필터
                 gnomad_af = ann.get("gnomad_af")

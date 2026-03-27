@@ -41,7 +41,11 @@ services:
       - ${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}:/data/carrier_screening
       # run_analysis.sh → docker -v 는 호스트 경로 문자열을 씀. HOST 와 같은 경로를 컨테이너에도 만들어 -d 와 일치시킴
       - ${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}:${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}
-      - ${SGNIPT_FASTQ_HOST:-/home/ken/sgNIPT/fastq}:/data/sgnipt/fastq:ro
+      # sgNIPT: run_sgnipt.sh 가 직접 docker run을 실행 (carrier 패턴과 동일).
+      # 스크립트(src/), 데이터(data/config/) — HOST:HOST 마운트로 docker -v 호스트 경로 일치.
+      - ${SGNIPT_SRC_HOST:-/home/ken/sgnipt}:${SGNIPT_SRC_HOST:-/home/ken/sgnipt}:ro
+      - ${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}:${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}
+      # sgNIPT 작업 트리는 BASE_DIR 아래에 생성 (별도 마운트 불필요 — /data 가 이미 rw 마운트됨)
       - ${BASE_DIR:-/data}/reference:/data/reference:ro
       - ${CARRIER_SCREENING_PIPELINE_DIR:-/opt/pipelines/carrier-screening}:/opt/pipelines/carrier-screening:ro
       - ${NIPT_PIPELINE_DIR:-/opt/pipelines/nipt}:/opt/pipelines/nipt:ro

@@ -49,7 +49,7 @@ def _fastq_root_for_service(service_code: Optional[str]) -> str:
     """포털 browse / FASTQ 경로 검증용 루트 (서비스별)."""
     sc = (service_code or "").strip().lower().replace("-", "_")
     if sc == "sgnipt":
-        return os.path.realpath(settings.sgnipt_fastq_dir)
+        return os.path.realpath(settings.sgnipt_fastq_root)
     if sc == "carrier_screening":
         return os.path.realpath(settings.carrier_screening_fastq_dir)
     return _fastq_root_real()
@@ -261,6 +261,26 @@ async def health(
 def _build_job_from_submit_request(service_code: str, request: OrderSubmitRequest) -> Job:
     """Submit/Save 공통 Job 생성."""
     work_dir = request.work_dir or now_kst_date_compact()
+    if service_code == "sgnipt":
+        root = settings.sgnipt_job_root
+        oid = (request.order_id or "").strip()
+        return Job(
+            order_id=request.order_id,
+            service_code=service_code,
+            sample_name=request.sample_name,
+            work_dir=work_dir,
+            fastq_r1_url=request.fastq_r1_url,
+            fastq_r2_url=request.fastq_r2_url,
+            fastq_r1_path=request.fastq_r1_path,
+            fastq_r2_path=request.fastq_r2_path,
+            params=request.params or {},
+            priority=request.priority,
+            callback_url=request.callback_url,
+            fastq_dir=os.path.join(root, "fastq", work_dir, oid),
+            analysis_dir=os.path.join(root, "analysis", work_dir, oid),
+            output_dir=os.path.join(root, "output", work_dir, oid),
+            log_dir=os.path.join(root, "log", work_dir, oid),
+        )
     if service_code == "carrier_screening":
         layout_base = settings.carrier_screening_layout_base
         work_root = settings.carrier_screening_work_root

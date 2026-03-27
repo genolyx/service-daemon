@@ -74,7 +74,40 @@ class Settings(BaseSettings):
     )
     sgnipt_fastq_dir: str = Field(
         default="/home/ken/sgNIPT/fastq",
-        description="sgNIPT: 포털 FASTQ browse 및 경로 검증용 루트"
+        description="sgNIPT: 포털 FASTQ browse 루트 (비우면 sgnipt_job_root/fastq)"
+    )
+    sgnipt_layout_root: str = Field(
+        default="/home/ken/sgNIPT",
+        description=(
+            "sgNIPT 논리 루트(참조). 실제 주문 경로는 sgnipt_work_root 가 있으면 그쪽을 사용."
+        ),
+    )
+    sgnipt_work_root: Optional[str] = Field(
+        default=None,
+        description=(
+            "sgNIPT 쓰기 가능 루트: fastq|analysis|output|log/<work_dir>/<order_id>/ "
+            "미설정 시 sgnipt_layout_root 사용(해당 경로가 데몬 UID에 쓰기 가능해야 함)."
+        ),
+    )
+    sgnipt_docker_image: str = Field(
+        default="sgnipt",
+        description="sgNIPT Docker 이미지명 (docker run)",
+    )
+    sgnipt_run_script_path: str = Field(
+        default="/home/ken/sgnipt/src/run_sgnipt.sh",
+        description="컨테이너 내 run_sgnipt.sh 경로",
+    )
+    sgnipt_container_mount_root: str = Field(
+        default="/Work/SgNIPT",
+        description="docker run -v <job_root>:<이 경로> (sgnipt 이미지의 /Work/SgNIPT)",
+    )
+    sgnipt_use_docker: bool = Field(
+        default=True,
+        description="True면 docker run, False면 호스트에서 bash 직접 실행",
+    )
+    sgnipt_docker_extra_args: str = Field(
+        default="",
+        description="docker run --rm 뒤 이미지 앞에 넣는 추가 인자(공백 구분)",
     )
     carrier_screening_fastq_dir: str = Field(
         default="/home/ken/carrier_screening/fastq",
@@ -323,6 +356,23 @@ class Settings(BaseSettings):
         if self.literature_db_path and str(self.literature_db_path).strip():
             return os.path.abspath(str(self.literature_db_path).strip())
         return os.path.join(self.base_dir, "service-daemon", "literature.db")
+
+    @property
+    def sgnipt_job_root(self) -> str:
+        """주문별 fastq|analysis|output|log 의 상위 루트 (쓰기 가능 경로 권장)."""
+        wr = (self.sgnipt_work_root or "").strip()
+        if wr:
+            return os.path.abspath(wr)
+        lr = (self.sgnipt_layout_root or "").strip() or "/home/ken/sgNIPT"
+        return os.path.abspath(lr)
+
+    @property
+    def sgnipt_fastq_root(self) -> str:
+        """FASTQ browse/검증 루트 (명시 fastq_dir 또는 job_root/fastq)."""
+        fq = (self.sgnipt_fastq_dir or "").strip()
+        if fq:
+            return os.path.abspath(fq)
+        return os.path.abspath(os.path.join(self.sgnipt_job_root, "fastq"))
 
     @property
     def carrier_screening_layout_base(self) -> str:

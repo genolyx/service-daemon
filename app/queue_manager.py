@@ -20,6 +20,7 @@ from .order_store import (
 )
 from .order_cleanup import delete_run_artifacts
 from .services.carrier_screening.layout_norm import apply_carrier_layout_directories
+from .services.sgnipt import apply_sgnipt_layout_directories
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,12 @@ class QueueManager:
                 job.service_code == "carrier_screening"
                 and st not in (OrderStatus.COMPLETED, OrderStatus.REPORT_READY)
                 and apply_carrier_layout_directories(job)
+            ):
+                self._store.upsert_job(job)
+            if (
+                job.service_code == "sgnipt"
+                and st not in (OrderStatus.COMPLETED, OrderStatus.REPORT_READY)
+                and apply_sgnipt_layout_directories(job)
             ):
                 self._store.upsert_job(job)
             if st in ACTIVE_BEFORE_RESTART:
@@ -155,6 +162,8 @@ class QueueManager:
         """
         if job.service_code == "carrier_screening":
             apply_carrier_layout_directories(job)
+        elif job.service_code == "sgnipt":
+            apply_sgnipt_layout_directories(job)
         async with self._lock:
             job.status = OrderStatus.QUEUED
             self._jobs[job.order_id] = job
@@ -318,6 +327,8 @@ class QueueManager:
             self._saved_jobs[job.order_id] = job
         if job.service_code == "carrier_screening":
             apply_carrier_layout_directories(job)
+        elif job.service_code == "sgnipt":
+            apply_sgnipt_layout_directories(job)
         logger.info(f"[{job.service_code}] Saved order {job.order_id} (not queued)")
         await self.persist_job(job)
 
@@ -379,6 +390,8 @@ class QueueManager:
 
         if new_job.service_code == "carrier_screening":
             apply_carrier_layout_directories(new_job)
+        elif new_job.service_code == "sgnipt":
+            apply_sgnipt_layout_directories(new_job)
         logger.info(
             "[%s] Updated order %s -> %s (status=%s)",
             new_job.service_code,
@@ -554,6 +567,8 @@ class QueueManager:
 
         if job.service_code == "carrier_screening":
             apply_carrier_layout_directories(job)
+        elif job.service_code == "sgnipt":
+            apply_sgnipt_layout_directories(job)
 
         if job.status == OrderStatus.QUEUED:
             pj = await self.purge_queued_order(order_id)
@@ -680,6 +695,8 @@ class QueueManager:
             job.updated_at = now_kst_iso()
         if job.service_code == "carrier_screening":
             apply_carrier_layout_directories(job)
+        elif job.service_code == "sgnipt":
+            apply_sgnipt_layout_directories(job)
         await self.persist_job(job)
         return True, ""
 

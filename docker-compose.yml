@@ -32,7 +32,9 @@ services:
       - ${BASE_DIR:-/data}:/data
       - ${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}:/data/carrier_screening
       - ${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}:${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}
-      - ${SGNIPT_FASTQ_HOST:-/home/ken/sgNIPT/fastq}:/data/sgnipt/fastq:ro
+      - ${SGNIPT_SRC_HOST:-/home/ken/sgnipt}:${SGNIPT_SRC_HOST:-/home/ken/sgnipt}:ro
+      - ${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}:${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}
+      # sgNIPT 작업 트리: BASE_DIR(/data) 아래에 생성되므로 별도 마운트 불필요
       - ${BASE_DIR:-/data}/reference:/data/reference:ro
       - ${CARRIER_SCREENING_PIPELINE_DIR:-/opt/pipelines/carrier-screening}:/opt/pipelines/carrier-screening:ro
       - ${NIPT_PIPELINE_DIR:-/opt/pipelines/nipt}:/opt/pipelines/nipt:ro

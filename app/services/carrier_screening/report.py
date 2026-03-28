@@ -20,10 +20,11 @@ report.json 구조:
 """
 
 import os
+import re
 import json
 import logging
 from datetime import datetime
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 from ...datetime_kst import now_kst_date_iso, now_kst_iso
@@ -103,22 +104,256 @@ def _report_date_human_kst() -> str:
     return datetime.now(ZoneInfo("Asia/Seoul")).strftime("%b %d, %Y")
 
 
+# ClinVar CLNDN often lists multiple names joined by |; also contains not_specified / not_provided.
+_CLINVAR_DISORDER_SKIP = frozenset(
+    {
+        ".",
+        "not_provided",
+        "not_specified",
+        "not_available",
+        "see_cases",
+        "inborn_genetic_diseases",
+        "inborn_genetic_disease",
+        "no_classification_for_the_single_variant",
+        "notspecified",
+        "notprovided",
+    }
+)
+
+
+def _normalize_disorder_display(name: str) -> str:
+    """Underscores → spaces for titles like Retinitis_pigmentosa_39."""
+    s = (name or "").strip().replace("_", " ")
+    s = re.sub(r"\s+", " ", s)
+    return s.strip()
+
+
+def _best_disorder_from_clinvar_field(raw: str) -> str:
+    """
+    Pick a single human-readable condition from ClinVar/HGMD disease text.
+    Splits on | and ;, drops placeholder tokens, returns the first substantive label.
+    """
+    if not raw or not str(raw).strip():
+        return ""
+    parts = re.split(r"[|;]", str(raw))
+    candidates: List[str] = []
+    for p in parts:
+        t = p.strip()
+        if not t:
+            continue
+        tl = t.lower().replace("_", "")
+        if tl in _CLINVAR_DISORDER_SKIP:
+            continue
+        if tl.startswith("not_") and ("specified" in tl or "provided" in tl):
+            continue
+        if len(tl) < 2:
+            continue
+        candidates.append(t)
+
+    if not candidates:
+        return ""
+
+    # Longest token often matches the specific syndrome vs a shorter alias in the same field
+    pick = max(candidates, key=len)
+    return _normalize_disorder_display(pick)
+
+
+def _finalize_disorder_label(label: str) -> str:
+    """
+    One line for the CONDITION column. If the source stuffed a full ClinVar CLNDN
+    (pipe-joined) into a disease name, split and pick a single label.
+    """
+    label = (label or "").strip()
+    if not label:
+        return ""
+    if "|" in label or ";" in label:
+        one = _best_disorder_from_clinvar_field(label)
+        if one:
+            return one
+    return _normalize_disorder_display(label)
+
+
+def _coalesce_inheritance_for_report_variant(v: Dict[str, Any]) -> str:
+    """Same logic as review result.json: top-level or first diseases[].inheritance."""
+    inh = (v.get("inheritance") or "").strip()
+    if inh:
+        return inh
+    for d in v.get("diseases") or []:
+        if isinstance(d, dict):
+            x = (d.get("inheritance") or "").strip()
+            if x:
+                return x
+    return ""
+
+
+def _normalize_inheritance_lookup_key(label: str) -> str:
+    s = (label or "").strip().lower().replace("_", " ")
+    s = re.sub(r"\s+", " ", s)
+    return s.strip()
+
+
+def _load_panel_disease_inheritance_by_name(panel_json_path: str) -> Dict[str, str]:
+    """
+    disease_gene_mapping.json diseases[].disease_name → inheritance (AR/AD/…).
+    Used when variant has a clean disorder title but no inheritance on the object.
+    """
+    out: Dict[str, str] = {}
+    try:
+        with open(panel_json_path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except OSError:
+        return out
+    for row in raw.get("diseases") or []:
+        if not isinstance(row, dict):
+            continue
+        inh = (row.get("inheritance") or "").strip()
+        if not inh:
+            continue
+        for key in (
+            row.get("disease_name"),
+            row.get("name"),
+            row.get("disease_name_ko"),
+            row.get("disease_name_cn"),
+        ):
+            if not key or not str(key).strip():
+                continue
+            k = _normalize_inheritance_lookup_key(str(key))
+            if k:
+                out[k] = inh
+    return out
+
+
+def _inheritance_from_gene_panel_mapper(gene: str, mapper: Any) -> str:
+    if not mapper or not (gene or "").strip():
+        return ""
+    info = mapper.lookup((gene or "").strip().upper())
+    diseases = info.get("diseases") or []
+    if diseases and isinstance(diseases[0], dict):
+        return (diseases[0].get("inheritance") or "").strip()
+    return ""
+
+
+def _inheritance_from_panel_disease_name_map(
+    disorder_label: str, name_map: Dict[str, str]
+) -> str:
+    """Exact match, then longest panel disease_name substring contained in disorder_label."""
+    if not disorder_label or disorder_label == "Unknown disorder" or not name_map:
+        return ""
+    k = _normalize_inheritance_lookup_key(disorder_label)
+    if k in name_map:
+        return name_map[k]
+    best_len = 0
+    best_inh = ""
+    for dk, inh in name_map.items():
+        if len(dk) < 8:
+            continue
+        if dk in k and len(dk) > best_len:
+            best_len = len(dk)
+            best_inh = inh
+    return best_inh
+
+
+def _resolve_inheritance_for_report(
+    v: Dict[str, Any],
+    panel_mapper: Any,
+    disease_name_to_inh: Dict[str, str],
+) -> str:
+    """Variant fields → gene-based panel → disease-name table from disease_gene_mapping.json."""
+    inh = _coalesce_inheritance_for_report_variant(v)
+    if inh:
+        return inh
+    inh = _inheritance_from_gene_panel_mapper(v.get("gene", ""), panel_mapper)
+    if inh:
+        return inh
+    lbl = _disorder_label_for_template(v)
+    inh = _inheritance_from_panel_disease_name_map(lbl, disease_name_to_inh)
+    return inh
+
+
+def _sanitize_diseases_for_report(
+    v: Dict[str, Any], resolved_inheritance: str = ""
+) -> List[Dict[str, Any]]:
+    """Clean disease names in JSON; fills missing inheritance from resolved panel value."""
+    out: List[Dict[str, Any]] = []
+    for d in v.get("diseases") or []:
+        if not isinstance(d, dict):
+            continue
+        raw = (d.get("name") or d.get("disease_name") or "").strip()
+        if not raw:
+            continue
+        clean = _finalize_disorder_label(raw)
+        if not clean:
+            continue
+        nd = dict(d)
+        nd["name"] = clean
+        nd["disease_name"] = clean
+        if not (nd.get("inheritance") or "").strip() and resolved_inheritance:
+            nd["inheritance"] = resolved_inheritance
+        out.append(nd)
+    return out
+
+
+def _inheritance_display_for_report(v: Dict[str, Any]) -> str:
+    """
+    English phrase for PDF summary table (CN template maps these strings to Chinese).
+    Codes from panel JSON: AR, AD, XL, etc.
+    """
+    code = _coalesce_inheritance_for_report_variant(v)
+    if not code or code == "—":
+        return "—"
+
+    c0 = code.strip()
+    cl = c0.lower()
+
+    # Already a full phrase (e.g. localized text, or "Autosomal recessive")
+    if len(c0) > 5 and (" " in c0 or not c0.isascii()):
+        return c0
+
+    mapping = {
+        "ar": "Autosomal recessive",
+        "ad": "Autosomal dominant",
+        "xl": "X-linked",
+        "x-linked": "X-linked",
+        "xlinked": "X-linked",
+        "xr": "X-linked recessive",
+        "xd": "X-linked dominant",
+        "mt": "Mitochondrial",
+        "mitochondrial": "Mitochondrial",
+        "pd": "Pseudoautosomal dominant",
+        "pr": "Pseudoautosomal recessive",
+        "ic": "Isolated cases",
+        "mu": "Unknown",
+        "somatic": "Somatic",
+        "ol": "Oligogenic",
+    }
+    if cl in mapping:
+        return mapping[cl]
+    u = c0.upper()
+    if u in ("AR", "AD", "XL", "XR", "XD", "MT"):
+        return mapping.get(u.lower(), c0)
+    return c0
+
+
 def _disorder_label_for_template(v: Dict[str, Any]) -> str:
     diseases = v.get("diseases") or []
     if isinstance(diseases, list):
         for d in diseases:
             if isinstance(d, dict):
-                name = (d.get("name") or "").strip()
+                name = (d.get("name") or d.get("disease_name") or "").strip()
                 if name:
-                    return name
+                    return _finalize_disorder_label(name)
             elif isinstance(d, str) and d.strip():
-                return d.strip()
-    cd = (v.get("clinvar_disease") or "").strip()
-    if cd and cd not in (".", "not_provided", "not_specified"):
-        return cd
+                return _finalize_disorder_label(d.strip())
+    cd = (v.get("clinvar_disease") or v.get("clinvar_dn") or "").strip()
+    if cd and cd not in (".",):
+        one = _best_disorder_from_clinvar_field(cd)
+        if one:
+            return one
     hd = (v.get("hgmd_disease") or "").strip()
     if hd:
-        return hd
+        one = _best_disorder_from_clinvar_field(hd) if ("|" in hd or ";" in hd) else _normalize_disorder_display(hd)
+        if one:
+            return one
     return "Unknown disorder"
 
 
@@ -147,7 +382,7 @@ def _variant_to_template_finding(v: Dict[str, Any]) -> Dict[str, Any]:
         "gene": v.get("gene") or "",
         "mutation": mutation,
         "disorder": disorder,
-        "inheritance": (v.get("inheritance") or "").strip() or "—",
+        "inheritance": _inheritance_display_for_report(v),
         "classification": v.get("classification") or "VUS",
         "gene_description": og if og else auto_gene_desc,
         "variant_summary": osum if osum else auto_summary,
@@ -199,6 +434,12 @@ def generate_report_json(
     partner_info: Optional[Dict[str, Any]] = None,
     order_params: Optional[Dict[str, Any]] = None,
     report_language: str = "EN",
+    disease_gene_json: Optional[str] = None,
+    gene_knowledge_db: Optional[str] = None,
+    gene_knowledge_enrich_on_report: bool = True,
+    gene_knowledge_gemini_on_report: bool = True,
+    gemini_api_key: Optional[str] = None,
+    gene_knowledge_gemini_model: str = "gemini-2.5-flash",
 ) -> str:
     """
     리뷰어 확정 결과를 바탕으로 report.json을 생성합니다.
@@ -216,14 +457,46 @@ def generate_report_json(
 
     Returns:
         생성된 report.json 파일 경로
+
+    disease_gene_json:
+        Path to disease_gene_mapping.json — used to fill inheritance when missing on variants.
+
+    gene_knowledge_db / Gemini:
+        Optional SQLite + Gemini merge for **confirmed variants only** (review → Generate Report).
     """
     os.makedirs(output_dir, exist_ok=True)
+
+    gk_db = (gene_knowledge_db or "").strip()
+    if gk_db and gene_knowledge_enrich_on_report:
+        from .gene_knowledge_db import enrich_confirmed_variants_for_report
+
+        confirmed_variants = enrich_confirmed_variants_for_report(
+            confirmed_variants,
+            gene_knowledge_db=gk_db,
+            gemini_api_key=(gemini_api_key or "").strip(),
+            model=gene_knowledge_gemini_model,
+            allow_gemini=bool(
+                gene_knowledge_gemini_on_report and (gemini_api_key or "").strip()
+            ),
+        )
+
+    panel_mapper: Any = None
+    disease_name_to_inh: Dict[str, str] = {}
+    if disease_gene_json and os.path.isfile(disease_gene_json):
+        from .annotator import DiseaseGeneMapper
+
+        panel_mapper = DiseaseGeneMapper(disease_gene_json)
+        disease_name_to_inh = _load_panel_disease_inheritance_by_name(disease_gene_json)
 
     # 확정된 변이만 필터링
     final_variants = []
     for v in confirmed_variants:
         if not v.get("reviewer_confirmed", False):
             continue
+
+        _clin = (v.get("clinvar_dn") or v.get("clinvar_disease") or "").strip()
+        _inh = _resolve_inheritance_for_report(v, panel_mapper, disease_name_to_inh)
+        _diseases = _sanitize_diseases_for_report(v, _inh)
 
         final_variant = {
             "variant_id": v.get("variant_id", ""),
@@ -246,13 +519,14 @@ def generate_report_json(
             # gnomAD
             "gnomad_af": v.get("gnomad_af"),
 
-            # ClinVar
+            # ClinVar (portal may send clinvar_dn or clinvar_disease)
             "clinvar_sig": v.get("clinvar_sig_primary", ""),
-            "clinvar_disease": v.get("clinvar_dn", ""),
+            "clinvar_dn": _clin,
+            "clinvar_disease": _clin,
 
-            # Disease-Gene Mapping
-            "diseases": v.get("diseases", []),
-            "inheritance": v.get("inheritance", ""),
+            # Disease-Gene Mapping (sanitized labels + coalesced inheritance for PDF / JSON)
+            "diseases": _diseases,
+            "inheritance": _inh,
 
             # HGMD
             "hgmd_class": v.get("hgmd_class", ""),
@@ -407,7 +681,7 @@ def _group_by_disease(variants: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         disease_names = set()
         if diseases:
             for d in diseases:
-                name = d.get("name", "")
+                name = (d.get("name") or d.get("disease_name") or "") if isinstance(d, dict) else str(d)
                 if name:
                     disease_names.add(name)
         if clinvar_disease and clinvar_disease not in (".", "not_provided", "not_specified"):
@@ -464,7 +738,7 @@ def _determine_carrier_status(variants: List[Dict[str, Any]]) -> Dict[str, Any]:
             clinvar_disease = v.get("clinvar_disease", "")
             if diseases:
                 for d in diseases:
-                    name = d.get("name", "")
+                    name = (d.get("name") or d.get("disease_name") or "") if isinstance(d, dict) else str(d)
                     if name:
                         carrier_diseases.add(name)
             elif clinvar_disease and clinvar_disease not in (".", "not_provided", "not_specified"):
@@ -672,7 +946,11 @@ def _render_builtin_html(report_data: Dict[str, Any], lang: str) -> str:
         disease_str = ""
         diseases = v.get("diseases", [])
         if diseases:
-            disease_str = "; ".join(d.get("name", "") for d in diseases if d.get("name"))
+            disease_str = "; ".join(
+                (d.get("name") or d.get("disease_name") or "")
+                for d in diseases
+                if isinstance(d, dict) and (d.get("name") or d.get("disease_name"))
+            )
         if not disease_str:
             disease_str = v.get("clinvar_disease", "")
 

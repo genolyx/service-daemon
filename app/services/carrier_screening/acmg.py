@@ -276,7 +276,7 @@ async def classify_acmg_ai(
             from ...config import settings
             model = settings.acmg_ai_model
         except Exception:
-            model = "gemini-2.0-flash"
+            model = "gemini-2.5-flash"
 
     if not api_key:
         try:
@@ -459,7 +459,7 @@ async def classify_acmg_with_literature(
             from ...config import settings
             model = settings.acmg_ai_model
         except Exception:
-            model = "gemini-2.0-flash"
+            model = "gemini-2.5-flash"
 
     if not api_key:
         try:

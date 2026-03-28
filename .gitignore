@@ -58,6 +58,9 @@ tools/snpEff/*.jar
 tools/snpEff/snpEff.config
 tools/snpEff/data/
 
+# Local copy of gene_knowledge SQLite (copy from genetic_reporter_lookup or populate at runtime)
+data/gene_knowledge.db
+
 # Data: 대용량 BED/참조 파일 제외 (볼륨 마운트로 제공)
 data/bed/Twist_*.bed
 data/bed/*.bed.gz

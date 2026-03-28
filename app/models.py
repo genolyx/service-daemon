@@ -228,6 +228,24 @@ class ReportGenerateResponse(BaseModel):
     message: str = ""
 
 
+class GeneKnowledgeSaveRequest(BaseModel):
+    """Portal: persist edited gene_knowledge SQLite row (gene must appear in the order's variants)."""
+
+    gene: str = Field(..., description="Gene symbol")
+    function_summary: str = Field(default="", description="gene_data.function_summary")
+    disease_association: str = Field(default="", description="gene_data.disease_association")
+    disorder: str = Field(default="", description="gene_data.disorder")
+    omim_number: str = Field(default="", description="gene_data.omim_number")
+    inheritance: str = Field(default="", description="gene_data.inheritance")
+
+
+class VariantKnowledgeSaveRequest(BaseModel):
+    """Portal: per-variant row in ``variant_knowledge`` (stable key gene|HGVS; shared gene text stays in ``gene_data``)."""
+
+    variant_key: str = Field(..., description="Same key as server make_variant_key(gene, hgvsc, hgvsp)")
+    variant_notes: str = Field(default="", description="Variant-specific cache; repeats same key across orders")
+
+
 class QueueSummary(BaseModel):
     """큐 상태 요약"""
     total_queued: int = 0

@@ -9,7 +9,7 @@ acmg.py, 미래의 report 생성 등 모든 AI 호출이 이 모듈을 통합니
 
     result = await call_ai_json(
         provider="gemini",           # "gemini" | "openai"
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         api_key="AIza...",
         system_prompt="You are...",
         user_content="Classify...",

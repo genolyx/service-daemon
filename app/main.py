@@ -27,6 +27,8 @@ from .models import (
     OrderUpdateRequest, OrderUpdateResponse,
     OrderStatus, Job, QueueSummary, OutputFile,
     ReportGenerateRequest, ReportGenerateResponse,
+    GeneKnowledgeSaveRequest,
+    VariantKnowledgeSaveRequest,
     UpdateFastqPathsRequest,
 )
 from .queue_manager import get_queue_manager
@@ -1213,6 +1215,358 @@ async def get_order_result(order_id: str):
             f"result.json not found for order: {order_id} "
             f"(no file under output_dir and no DB snapshot)."
         ),
+    )
+
+
+def _load_result_dict_for_gene_knowledge(order_id: str, job) -> Optional[Dict[str, Any]]:
+    """Read result.json-like dict (variants list) without order_params merge."""
+    result_json_path = None
+    if job.output_dir:
+        result_json_path = os.path.join(job.output_dir, "result.json")
+    if result_json_path and os.path.isfile(result_json_path):
+        with open(result_json_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    store = get_queue_manager().store
+    if store:
+        return store.get_result_json(order_id)
+    return None
+
+
+def _compute_order_gene_knowledge(
+    order_id: str,
+    job,
+    enrich: bool,
+    gene_filter: Optional[str] = None,
+    force_refresh: bool = False,
+    genes_csv: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    SQLite ``gene_data`` rows (Gemini cache) for each gene in the order's variant list.
+    If ``enrich`` is True and ``GEMINI_API_KEY`` is set, call Gemini when narrative fields are
+    missing (same extraction as report-time enrichment, including refresh when only disorder was cached).
+    If ``gene_filter`` is set, only that symbol (must appear in the order's variants).
+    If ``force_refresh`` is True, always re-run Gemini for the selected gene(s) (portal per-variant write-up).
+    If ``genes_csv`` is not None, only genes in that comma-separated list (intersected with order variants);
+    use ``""`` for an empty list (portal: no variants selected). If None, include all genes from the order.
+    """
+    from app.services.carrier_screening.gene_knowledge_db import (
+        ensure_gene_knowledge_full_text,
+        init_gene_knowledge_database,
+        load_variant_knowledge_for_keys,
+        make_variant_key,
+        read_gene_knowledge_full_row,
+        refresh_gene_knowledge_from_gemini,
+    )
+
+    db_path = (settings.gene_knowledge_db or "").strip()
+    if not db_path:
+        msg = "gene_knowledge_db is not configured on the daemon"
+        return {
+            "gene_knowledge_db_configured": False,
+            "genes": {},
+            "variants": {},
+            "message": msg,
+            "error": msg,
+        }
+
+    init_gene_knowledge_database(db_path)
+    result_data = _load_result_dict_for_gene_knowledge(order_id, job)
+    if not isinstance(result_data, dict):
+        msg = "result.json not available for this order"
+        return {
+            "gene_knowledge_db_configured": True,
+            "genes": {},
+            "variants": {},
+            "message": msg,
+            "error": msg,
+        }
+
+    variants = result_data.get("variants") or []
+    order_genes = {
+        (v.get("gene") or "").strip().upper() for v in variants if (v.get("gene") or "").strip()
+    }
+    genes = sorted(order_genes)
+    gf = (gene_filter or "").strip().upper() or None
+    if gf:
+        if gf not in order_genes:
+            return {
+                "gene_knowledge_db_configured": True,
+                "genes": {},
+                "variants": {},
+                "error": f"Gene {gf} is not among this order's variants",
+                "enrich_requested": enrich,
+                "force_refresh": force_refresh,
+                "gemini_available": bool((settings.gemini_api_key or "").strip()),
+            }
+        genes = [gf]
+    elif genes_csv is not None:
+        raw = (genes_csv or "").strip()
+        if not raw:
+            genes = []
+        else:
+            requested = {x.strip().upper() for x in raw.split(",") if x.strip()}
+            genes = sorted(order_genes & requested)
+
+    gemini_key = (settings.gemini_api_key or "").strip()
+    model = getattr(settings, "gene_knowledge_gemini_model", "gemini-2.5-flash")
+    allow_gemini = bool(enrich and gemini_key)
+
+    gene_set = set(genes)
+    variant_keys_set: set = set()
+    for v in variants:
+        g = (v.get("gene") or "").strip().upper()
+        if not g or g not in gene_set:
+            continue
+        variant_keys_set.add(
+            make_variant_key(g, str(v.get("hgvsc") or ""), str(v.get("hgvsp") or ""))
+        )
+    variants_out = load_variant_knowledge_for_keys(db_path, list(variant_keys_set))
+
+    if force_refresh and not gemini_key:
+        return {
+            "gene_knowledge_db_configured": True,
+            "genes": {},
+            "variants": variants_out,
+            "error": "GEMINI_API_KEY not configured on the daemon",
+            "enrich_requested": enrich,
+            "force_refresh": True,
+            "gemini_available": False,
+        }
+
+    out: Dict[str, Any] = {}
+    gemini_fetch_error: Optional[str] = None
+    for gene in genes:
+        if force_refresh and gemini_key:
+            row, gerr = refresh_gene_knowledge_from_gemini(gene, db_path, gemini_key, model=model)
+            if gerr:
+                gemini_fetch_error = gerr
+        elif allow_gemini:
+            row = ensure_gene_knowledge_full_text(
+                gene, db_path, gemini_key, model=model, allow_gemini=True
+            )
+        else:
+            row = read_gene_knowledge_full_row(gene, db_path)
+        out[gene] = row if row else {}
+
+    ret: Dict[str, Any] = {
+        "gene_knowledge_db_configured": True,
+        "genes": out,
+        "variants": variants_out,
+        "enrich_requested": enrich,
+        "force_refresh": force_refresh,
+        "gemini_available": bool(gemini_key),
+    }
+    if force_refresh and gemini_fetch_error:
+        ret["gemini_fetch_error"] = gemini_fetch_error
+    return ret
+
+
+def _put_order_gene_knowledge(
+    order_id: str,
+    job,
+    body: GeneKnowledgeSaveRequest,
+    genes_csv: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Write one ``gene_data`` row; gene must be in this order's variant list (and in ``genes_csv`` if given)."""
+    from app.services.carrier_screening.gene_knowledge_db import (
+        init_gene_knowledge_database,
+        read_gene_knowledge_full_row,
+        upsert_gene_data,
+    )
+
+    db_path = (settings.gene_knowledge_db or "").strip()
+    if not db_path:
+        raise HTTPException(
+            status_code=503,
+            detail="gene_knowledge_db is not configured on the daemon",
+        )
+
+    gene = (body.gene or "").strip().upper()
+    if not gene:
+        raise HTTPException(status_code=400, detail="gene is required")
+
+    result_data = _load_result_dict_for_gene_knowledge(order_id, job)
+    if not isinstance(result_data, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="result.json not available for this order",
+        )
+
+    variants = result_data.get("variants") or []
+    order_genes = {
+        (v.get("gene") or "").strip().upper()
+        for v in variants
+        if (v.get("gene") or "").strip()
+    }
+    if gene not in order_genes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Gene {gene} is not among this order's variants",
+        )
+
+    if genes_csv is not None:
+        raw = (genes_csv or "").strip()
+        allowed = {x.strip().upper() for x in raw.split(",") if x.strip()} if raw else set()
+        if gene not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail="Gene is not in the current selection (genes query does not include this symbol)",
+            )
+
+    init_gene_knowledge_database(db_path)
+    upsert_gene_data(
+        db_path,
+        {
+            "gene_symbol": gene,
+            "function_summary": body.function_summary or "",
+            "disease_association": body.disease_association or "",
+            "disorder": body.disorder or "",
+            "omim_number": body.omim_number or "",
+            "inheritance": body.inheritance or "",
+        },
+    )
+    row = read_gene_knowledge_full_row(gene, db_path)
+    return {"ok": True, "gene": gene, "row": row or {}}
+
+
+def _put_order_variant_knowledge(
+    order_id: str,
+    job,
+    body: VariantKnowledgeSaveRequest,
+    genes_csv: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Upsert ``variant_knowledge`` for one variant (stable key across orders)."""
+    from app.services.carrier_screening.gene_knowledge_db import (
+        init_gene_knowledge_database,
+        make_variant_key,
+        read_variant_knowledge_row,
+        upsert_variant_knowledge,
+    )
+
+    db_path = (settings.gene_knowledge_db or "").strip()
+    if not db_path:
+        raise HTTPException(
+            status_code=503,
+            detail="gene_knowledge_db is not configured on the daemon",
+        )
+
+    vk = (body.variant_key or "").strip()
+    if not vk:
+        raise HTTPException(status_code=400, detail="variant_key is required")
+
+    result_data = _load_result_dict_for_gene_knowledge(order_id, job)
+    if not isinstance(result_data, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="result.json not available for this order",
+        )
+
+    variants = result_data.get("variants") or []
+    matched: Optional[Dict[str, Any]] = None
+    for v in variants:
+        g = (v.get("gene") or "").strip().upper()
+        if not g:
+            continue
+        if make_variant_key(g, str(v.get("hgvsc") or ""), str(v.get("hgvsp") or "")) == vk:
+            matched = v
+            break
+    if not matched:
+        raise HTTPException(
+            status_code=400,
+            detail="variant_key does not match any variant in this order",
+        )
+
+    gene = (matched.get("gene") or "").strip().upper()
+    if genes_csv is not None:
+        raw = (genes_csv or "").strip()
+        allowed = {x.strip().upper() for x in raw.split(",") if x.strip()} if raw else set()
+        if gene not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail="Gene is not in the current selection (genes query does not include this symbol)",
+            )
+
+    init_gene_knowledge_database(db_path)
+    upsert_variant_knowledge(
+        db_path,
+        {
+            "variant_key": vk,
+            "gene_symbol": gene,
+            "hgvsc": str(matched.get("hgvsc") or ""),
+            "hgvsp": str(matched.get("hgvsp") or ""),
+            "variant_notes": body.variant_notes or "",
+        },
+    )
+    row = read_variant_knowledge_row(vk, db_path)
+    return {"ok": True, "variant_key": vk, "row": row or {}}
+
+
+@app.put("/order/{order_id}/variant-knowledge")
+async def put_order_variant_knowledge(
+    order_id: str,
+    body: VariantKnowledgeSaveRequest,
+    genes: Optional[str] = Query(
+        None,
+        description="Comma-separated gene symbols allowed (portal: selected variants)",
+    ),
+):
+    """Save per-variant notes to ``variant_knowledge`` (gene-level text remains in ``gene_data``)."""
+    queue_manager = get_queue_manager()
+    job = queue_manager.get_job(order_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
+    return await asyncio.to_thread(_put_order_variant_knowledge, order_id, job, body, genes)
+
+
+@app.put("/order/{order_id}/gene-knowledge")
+async def put_order_gene_knowledge(
+    order_id: str,
+    body: GeneKnowledgeSaveRequest,
+    genes: Optional[str] = Query(
+        None,
+        description="Comma-separated gene symbols allowed (portal: selected variants); if set, body.gene must be listed",
+    ),
+):
+    """Save portal edits to the shared ``gene_knowledge`` SQLite cache for one gene."""
+    queue_manager = get_queue_manager()
+    job = queue_manager.get_job(order_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
+    return await asyncio.to_thread(_put_order_gene_knowledge, order_id, job, body, genes)
+
+
+@app.get("/order/{order_id}/gene-knowledge")
+async def get_order_gene_knowledge(
+    order_id: str,
+    enrich: bool = Query(False, description="If true, call Gemini for genes missing from SQLite cache"),
+    gene: Optional[str] = Query(
+        None,
+        description="If set, only this gene symbol (must appear in order variants)",
+    ),
+    force: bool = Query(
+        False,
+        description="If true, always re-run Gemini for the selected gene(s) (new write-up)",
+    ),
+    genes: Optional[str] = Query(
+        None,
+        description=(
+            "Comma-separated gene symbols to include (must each appear in order variants). "
+            "If omitted, all order genes are included. Use an empty value (genes=) for none."
+        ),
+    ),
+):
+    """
+    Gene-level text from the ``gene_knowledge`` SQLite cache (same source as report-time enrichment:
+    ``function_summary``, ``disease_association``, disorder, OMIM, inheritance).
+
+    Use this to populate the portal Gene database tab and richer Review Case report narratives.
+    """
+    queue_manager = get_queue_manager()
+    job = queue_manager.get_job(order_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
+    return await asyncio.to_thread(
+        _compute_order_gene_knowledge, order_id, job, enrich, gene, force, genes
     )
 
 

@@ -76,6 +76,9 @@ from app.services.carrier_screening.review import (
 )
 print(f"  [OK] carrier_screening.review (all functions)")
 
+from app.services.carrier_screening.gene_knowledge_db import init_gene_knowledge_database
+print(f"  [OK] carrier_screening.gene_knowledge_db")
+
 from app.services.carrier_screening.report import (
     generate_report_json, generate_report_pdf,
 )

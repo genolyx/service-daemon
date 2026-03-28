@@ -1475,6 +1475,49 @@ def discover_qc_metric_images(search_roots: List[str]) -> Dict[str, List[str]]:
 # Result JSON Generation
 # ══════════════════════════════════════════════════════════════
 
+
+def _coalesce_inheritance_from_diseases(var: Dict[str, Any]) -> str:
+    """Top-level inheritance from annotator; else first non-empty diseases[].inheritance."""
+    inh = (var.get("inheritance") or "").strip()
+    if inh:
+        return inh
+    for d in var.get("diseases") or []:
+        if isinstance(d, dict):
+            x = (d.get("inheritance") or "").strip()
+            if x:
+                return x
+    return ""
+
+
+def _build_disease_groups_for_portal(
+    variants: List[Dict[str, Any]],
+    disease_variant_groups: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Portal Disease Summary: reviewData.disease_groups[disease] =
+    { inheritance, carrier_frequency, severity, category, variants }.
+    """
+    vid_to_v = {v.get("variant_id"): v for v in variants if v.get("variant_id")}
+    out: Dict[str, Any] = {}
+    for g in disease_variant_groups:
+        disease = g.get("disease") or ""
+        if not disease:
+            continue
+        vobjs = [
+            vid_to_v[vid]
+            for vid in g.get("variant_ids") or []
+            if vid in vid_to_v
+        ]
+        out[disease] = {
+            "inheritance": g.get("inheritance") or "",
+            "carrier_frequency": g.get("carrier_frequency") or "",
+            "severity": g.get("severity") or "",
+            "category": g.get("category") or "",
+            "variants": vobjs,
+        }
+    return out
+
+
 def generate_result_json(
     annotated_variants: List[Dict[str, Any]],
     acmg_results: List[Dict[str, Any]],
@@ -1577,9 +1620,9 @@ def generate_result_json(
             "curated_source": var.get("curated_source", ""),
             "curated_notes": var.get("curated_notes", ""),
 
-            # Disease-Gene Mapping
+            # Disease-Gene Mapping (inheritance duplicated at top level for reports / ClinVar-only rows)
             "diseases": var.get("diseases", []),
-            "inheritance": var.get("inheritance", ""),
+            "inheritance": _coalesce_inheritance_from_diseases(var),
 
             # HPO Phenotypes
             "hpo_phenotypes": var.get("hpo_phenotypes", []),
@@ -1612,6 +1655,7 @@ def generate_result_json(
 
     # 질환별 변이 그룹핑
     disease_variant_groups = _group_variants_by_disease(variants_for_review)
+    disease_groups = _build_disease_groups_for_portal(variants_for_review, disease_variant_groups)
 
     # 유전자별 변이 그룹핑
     gene_variant_groups = _group_variants_by_gene(variants_for_review)
@@ -1635,6 +1679,8 @@ def generate_result_json(
 
         # 질환별 변이 그룹
         "disease_variant_groups": disease_variant_groups,
+        # Portal Disease Summary (inheritance + panel metadata + variant objects)
+        "disease_groups": disease_groups,
 
         # 유전자별 변이 그룹
         "gene_variant_groups": gene_variant_groups,
@@ -1723,8 +1769,17 @@ def _compute_variant_stats(variants: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def _group_variants_by_disease(variants: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """변이를 질환별로 그룹핑합니다."""
+    """변이를 질환별로 그룹핑합니다 (질환별 inheritance·carrier_frequency 등은 첫 매칭 disease dict에서)."""
     disease_map: Dict[str, List[str]] = {}
+    disease_meta: Dict[str, Dict[str, str]] = {}
+
+    def _meta_from_disease_dict(d: Dict[str, Any]) -> Dict[str, str]:
+        return {
+            "inheritance": (d.get("inheritance") or "").strip(),
+            "carrier_frequency": (d.get("carrier_frequency") or "").strip(),
+            "severity": (d.get("severity") or "").strip(),
+            "category": (d.get("category") or "").strip(),
+        }
 
     for v in variants:
         diseases = v.get("diseases", [])
@@ -1733,17 +1788,31 @@ def _group_variants_by_disease(variants: List[Dict[str, Any]]) -> List[Dict[str,
 
         if diseases:
             for d in diseases:
-                name = d.get("name", "Unknown")
+                name = (d.get("name") or d.get("disease_name") or "Unknown") if isinstance(d, dict) else str(d)
                 disease_map.setdefault(name, []).append(variant_id)
+                if name not in disease_meta and isinstance(d, dict):
+                    disease_meta[name] = _meta_from_disease_dict(d)
         elif clinvar_dn and clinvar_dn not in (".", "not_provided", "not_specified"):
             disease_map.setdefault(clinvar_dn, []).append(variant_id)
+            if clinvar_dn not in disease_meta:
+                disease_meta[clinvar_dn] = {
+                    "inheritance": (v.get("inheritance") or "").strip(),
+                    "carrier_frequency": "",
+                    "severity": "",
+                    "category": "",
+                }
 
     groups = []
     for disease, variant_ids in disease_map.items():
+        meta = disease_meta.get(disease, {})
         groups.append({
             "disease": disease,
             "variant_ids": variant_ids,
             "variant_count": len(variant_ids),
+            "inheritance": meta.get("inheritance", ""),
+            "carrier_frequency": meta.get("carrier_frequency", ""),
+            "severity": meta.get("severity", ""),
+            "category": meta.get("category", ""),
         })
 
     groups.sort(key=lambda g: g["variant_count"], reverse=True)
@@ -1835,7 +1904,7 @@ def generate_variants_tsv(
             diseases = row.get("diseases", [])
             if isinstance(diseases, list):
                 row["diseases"] = "; ".join(
-                    d.get("name", "") for d in diseases if isinstance(d, dict)
+                    (d.get("name") or d.get("disease_name") or "") for d in diseases if isinstance(d, dict)
                 )
             writer.writerow(row)
 

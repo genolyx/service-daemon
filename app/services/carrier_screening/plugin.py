@@ -1419,6 +1419,18 @@ class CarrierScreeningPlugin(ServicePlugin):
                 partner_info=partner_info,
                 order_params=job.params,
                 report_language=(languages[0] if languages else "EN"),
+                disease_gene_json=self._resolve_disease_gene_json_path(),
+                gene_knowledge_db=settings.gene_knowledge_db or None,
+                gene_knowledge_enrich_on_report=bool(
+                    getattr(settings, "gene_knowledge_enrich_on_report", True)
+                ),
+                gene_knowledge_gemini_on_report=bool(
+                    getattr(settings, "gene_knowledge_gemini_on_report", True)
+                ),
+                gemini_api_key=settings.gemini_api_key or None,
+                gene_knowledge_gemini_model=getattr(
+                    settings, "gene_knowledge_gemini_model", "gemini-2.5-flash"
+                ),
             )
             logger.info(f"  Generated report.json: {report_json_path}")
 

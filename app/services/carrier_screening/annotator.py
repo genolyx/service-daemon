@@ -879,14 +879,13 @@ class HGMDAnnotator:
 class DiseaseGeneMapper:
     """
     질환-유전자 매핑 데이터를 로드하여 유전자별 관련 질환 및 유전 패턴을 제공합니다.
-    JSON 파일 형식:
-    {
-        "GENE_SYMBOL": {
-            "diseases": [
-                {"name": "...", "omim_id": "...", "inheritance": "AR|AD|XL"}
-            ]
-        }
-    }
+
+    지원 형식:
+
+    1) 레거시: 유전자 심볼을 최상위 키로 하는 객체
+    {"GENE": {"diseases": [{"name": "...", "omim_id": "...", "inheritance": "AR"}]}}
+
+    2) 패널 형식 (data/db/disease_gene_mapping.json): `diseases` 배열에 `genes`, `disease_name`, `disease_id`(OMIM:…)
     """
 
     def __init__(self, disease_gene_json: str):
@@ -897,14 +896,71 @@ class DiseaseGeneMapper:
         else:
             logger.warning(f"Disease-gene JSON not found: {disease_gene_json}")
 
+    @staticmethod
+    def _normalize_panel_diseases(raw: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        """diseases[] with genes[] + disease_name / disease_id → gene → {diseases: [...]}."""
+        out: Dict[str, Dict[str, Any]] = {}
+        for d in raw.get("diseases") or []:
+            if not isinstance(d, dict):
+                continue
+            dn = (d.get("disease_name") or d.get("name") or "").strip()
+            oid = (d.get("disease_id") or "").strip()
+            omim_id = ""
+            if oid.upper().startswith("OMIM:"):
+                omim_id = oid.split(":", 1)[1].strip()
+            elif oid.isdigit():
+                omim_id = oid
+            inh = (d.get("inheritance") or "").strip()
+            entry = {
+                "name": dn,
+                "disease_name": dn,
+                "omim_id": omim_id,
+                "disease_id": oid,
+                "inheritance": inh,
+                "carrier_frequency": (d.get("carrier_frequency") or "").strip(),
+                "severity": (d.get("severity") or "").strip(),
+                "category": (d.get("category") or "").strip(),
+            }
+            for g in d.get("genes") or []:
+                gk = str(g).strip().upper()
+                if not gk:
+                    continue
+                bucket = out.setdefault(gk, {"diseases": []})
+                seen = {x.get("name") for x in bucket["diseases"]}
+                if dn and dn not in seen:
+                    bucket["diseases"].append(dict(entry))
+        return out
+
     def _load(self, path: str):
         import json
         try:
             with open(path, "r", encoding="utf-8") as f:
-                self._data = json.load(f)
-            logger.info(f"Disease-gene mapping loaded: {len(self._data)} genes")
+                raw = json.load(f)
         except Exception as e:
             logger.error(f"Failed to load disease-gene mapping: {e}")
+            return
+
+        if isinstance(raw, dict) and isinstance(raw.get("diseases"), list) and raw["diseases"]:
+            first = raw["diseases"][0]
+            if isinstance(first, dict) and "genes" in first:
+                self._data = self._normalize_panel_diseases(raw)
+                logger.info(
+                    "Disease-gene mapping loaded (panel format): %s genes",
+                    len(self._data),
+                )
+                return
+
+        if isinstance(raw, dict):
+            legacy: Dict[str, Dict[str, Any]] = {}
+            for k, v in raw.items():
+                if k.startswith("_") or not isinstance(v, dict):
+                    continue
+                if "diseases" in v:
+                    legacy[k.strip().upper()] = v
+            self._data = legacy
+            logger.info(f"Disease-gene mapping loaded (legacy format): {len(self._data)} genes")
+        else:
+            logger.error("Disease-gene mapping: unsupported JSON root type")
 
     def lookup(self, gene: str) -> Dict[str, Any]:
         """유전자에 연관된 질환 정보를 반환합니다."""
@@ -983,6 +1039,15 @@ class VariantAnnotator:
 
         logger.info("VariantAnnotator initialized with all annotation sources")
 
+    def _diseases_for_gene(self, gene: str) -> Tuple[List[Dict[str, Any]], str]:
+        """Panel disease_gene JSON only. Gene SQLite / Gemini run on report (confirmed variants)."""
+        disease_info = self.disease_gene.lookup(gene) if gene else {}
+        diseases: List[Dict[str, Any]] = list(disease_info.get("diseases") or [])
+        inheritance = ""
+        if diseases:
+            inheritance = (diseases[0].get("inheritance") or "").strip()
+        return diseases, inheritance
+
     def annotate(
         self,
         chrom: str, pos: int, ref: str, alt: str,
@@ -1034,9 +1099,7 @@ class VariantAnnotator:
         curated = self.curated_db.lookup(gene, hgvsc, hgvsp)
 
         # Disease-Gene Mapping
-        disease_info = self.disease_gene.lookup(gene) if gene else {}
-        diseases = disease_info.get("diseases", [])
-        inheritance = diseases[0].get("inheritance", "") if diseases else ""
+        diseases, inheritance = self._diseases_for_gene(gene)
 
         # HPO Phenotypes for gene
         hpo_phenotypes = self.hpo.get_phenotypes_for_gene(gene) if gene else []
@@ -1199,9 +1262,7 @@ class VariantAnnotator:
         curated = self.curated_db.lookup(gene, hgvsc, hgvsp)
 
         # Disease-Gene Mapping (로컬 DB)
-        disease_info = self.disease_gene.lookup(gene) if gene else {}
-        diseases = disease_info.get("diseases", [])
-        inheritance = diseases[0].get("inheritance", "") if diseases else ""
+        diseases, inheritance = self._diseases_for_gene(gene)
 
         # HPO Phenotypes (로컬 DB)
         hpo_phenotypes = self.hpo.get_phenotypes_for_gene(gene) if gene else []

@@ -7,12 +7,18 @@ Service Daemon Configuration
 
 import os
 from typing import Optional, List
-from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator, model_validator
 
 
 class Settings(BaseSettings):
     """서비스 데몬 설정"""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     # ─── Application ───────────────────────────────────────
     app_name: str = Field(default="service-daemon", description="Application name")
@@ -276,6 +282,39 @@ class Settings(BaseSettings):
         default=None,
         description="JSON file mapping diseases to genes and inheritance patterns"
     )
+    gene_knowledge_db: Optional[str] = Field(
+        default=None,
+        description=(
+            "SQLite path (gene_data table). Used only when generating a report for "
+            "reviewer-confirmed variants — not during bulk VCF annotation. "
+            "If unset, may default to genetic_reporter_lookup's genetic_knowledge.db (see gene_knowledge_db_fallback_path)."
+        ),
+    )
+    gene_knowledge_db_fallback_path: Optional[str] = Field(
+        default="/home/sam/genetic_reporter_lookup/genetic_knowledge.db",
+        description=(
+            "When gene_knowledge_db is empty: if the parent directory of this path exists, use it as "
+            "gene_knowledge_db (same file and gene_data schema as genetic_reporter_lookup app2.py)."
+        ),
+    )
+    gene_knowledge_enrich_on_report: bool = Field(
+        default=True,
+        description=(
+            "If True and gene_knowledge_db is set, merge disorder/inheritance from that DB "
+            "(and optionally Gemini) into confirmed variants during report generation."
+        ),
+    )
+    gene_knowledge_gemini_on_report: bool = Field(
+        default=True,
+        description=(
+            "If True, gene_knowledge_db cache miss during report enrichment may call Gemini "
+            "(requires gemini_api_key). Set False to use SQLite cache only."
+        ),
+    )
+    gene_knowledge_gemini_model: str = Field(
+        default="gemini-2.5-flash",
+        description="Gemini model for gene_knowledge_db Search+JSON extraction.",
+    )
 
     # ─── HGMD (Human Gene Mutation Database) ───────────────
     hgmd_vcf: Optional[str] = Field(
@@ -321,12 +360,19 @@ class Settings(BaseSettings):
         description="AI provider: gemini | openai"
     )
     acmg_ai_model: str = Field(
-        default="gemini-2.0-flash",
-        description="AI model name (e.g. gemini-2.0-flash or gpt-4.1-mini)"
+        default="gemini-2.5-flash",
+        description="AI model name (e.g. gemini-2.5-flash or gpt-4.1-mini)"
     )
     gemini_api_key: str = Field(
         default="",
-        description="Google Gemini API key"
+        description="Google Gemini API key (env GEMINI_API_KEY; if unset, may load from gemini_api_key_env_file)",
+    )
+    gemini_api_key_env_file: Optional[str] = Field(
+        default="/home/sam/genetic_reporter_lookup/.env",
+        description=(
+            "If GEMINI_API_KEY is empty, load it from this .env (same convention as genetic_reporter_lookup). "
+            "Override with env GEMINI_API_KEY_ENV_FILE or set to empty to disable."
+        ),
     )
     acmg_ai_api_key: str = Field(
         default="",
@@ -364,6 +410,13 @@ class Settings(BaseSettings):
         default="carrier_screening,nipt,sgnipt",
         description="Comma-separated list of enabled service codes"
     )
+
+    @field_validator("gemini_api_key", "acmg_ai_api_key", mode="before")
+    @classmethod
+    def _strip_api_key_fields(cls, v: object) -> object:
+        if isinstance(v, str):
+            return v.strip()
+        return v
 
     @property
     def resolved_orders_db_path(self) -> str:
@@ -433,10 +486,38 @@ class Settings(BaseSettings):
         """Carrier Screening BED 파일 디렉토리 경로"""
         return os.path.join(self.carrier_screening_pipeline_dir, "data", "bed")
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"
+    @model_validator(mode="after")
+    def _fill_gemini_api_key_from_genetic_reporter_lookup(self) -> "Settings":
+        """Match genetic_reporter_lookup: GEMINI_API_KEY from that project's .env when not set here."""
+        if (self.gemini_api_key or "").strip():
+            return self
+        path = (self.gemini_api_key_env_file or "").strip()
+        if not path or not os.path.isfile(path):
+            return self
+        try:
+            from dotenv import dotenv_values
+
+            vals = dotenv_values(path)
+            k = (vals.get("GEMINI_API_KEY") or "").strip()
+            if k:
+                return self.model_copy(update={"gemini_api_key": k})
+        except Exception:
+            pass
+        return self
+
+    @model_validator(mode="after")
+    def _fill_gene_knowledge_db_from_genetic_reporter_lookup(self) -> "Settings":
+        """Use the same SQLite as genetic_reporter_lookup (genetic_knowledge.db) when not set."""
+        if (self.gene_knowledge_db or "").strip():
+            return self
+        path = (self.gene_knowledge_db_fallback_path or "").strip()
+        if not path:
+            return self
+        abspath = os.path.abspath(path)
+        parent = os.path.dirname(abspath)
+        if not os.path.isdir(parent):
+            return self
+        return self.model_copy(update={"gene_knowledge_db": abspath})
 
 
 # 전역 설정 인스턴스

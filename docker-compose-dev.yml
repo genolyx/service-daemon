@@ -17,8 +17,12 @@ services:
     container_name: ${APP_ENV:-dev}-service-daemon
     restart: unless-stopped
 
+    # Later files override earlier (GEMINI_API_KEY in gitignored .env overrides .env.docker).
     env_file:
-      - ${ENV_FILE:-.env.docker}
+      - path: ${ENV_FILE:-.env.docker}
+        required: true
+      - path: .env
+        required: false
 
     # .env.docker 가 APP_ENV=prod 여도 dev 스택에서는 배지·/health 의 environment 가 dev 가 되도록 덮어씀
     environment:
@@ -56,6 +60,8 @@ services:
       - ./app:/app/app
       - ./portal:/app/portal
       - ./data:/app/data:ro
+      # gene_knowledge SQLite (rw; must match GENE_KNOWLEDGE_DB in .env.docker — /app/data is :ro)
+      - ./data/gene_knowledge.db:/data/service-daemon/gene_knowledge.db
       # snpEff: JAR + snpEff.config 둘 다 필요. 호스트 tools/snpEff 가 이미지를 덮어씀 (재빌드 없이 config 반영).
       - ${SNPEFF_TOOLS_HOST:-./tools/snpEff}:/opt/tools/snpEff:ro
 

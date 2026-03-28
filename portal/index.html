@@ -213,6 +213,90 @@
     .modal h3{margin-bottom:16px}
     #fastqBrowseModal{z-index:1000}
     #fastqBrowseModal .modal{max-width:720px}
+    /* Gene database: override global tbody td nowrap; sticky actions; row stripes (no per-cell bg patches) */
+    #geneDbTableWrap{overflow-x:auto;-webkit-overflow-scrolling:touch;background:var(--table-bg);border-radius:inherit}
+    #tblGeneDb{table-layout:fixed;width:100%;min-width:0;border-collapse:separate;border-spacing:0;background:transparent}
+    #tblGeneDb th,#tblGeneDb td{
+      border-bottom:1px solid var(--line);padding:8px 8px;vertical-align:top;
+      box-sizing:border-box;overflow:hidden;min-width:0;
+      white-space:normal;
+    }
+    #tblGeneDb th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);line-height:1.25;background:var(--thead-bg)}
+    /* HGVSc | HGVSp side by side, aligned above c. | p. in the cell below */
+    #tblGeneDb .gene-db-hgvs-head{
+      display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:10px;align-items:end;
+      line-height:1.2;text-align:left;
+    }
+    #tblGeneDb .gene-db-hgvs-head span{font-size:11px;font-weight:600;letter-spacing:.04em}
+    #tblGeneDb .gene-db-hgvs-head span:last-child{opacity:.92}
+    /* Gene symbol: enough width — narrow col + max-width bugs clipped "PAH" into HGVSc */
+    #tblGeneDb th:nth-child(1),#tblGeneDb td:nth-child(1){
+      width:76px;min-width:76px;
+      white-space:nowrap;text-overflow:ellipsis;
+    }
+    /* HGVSc + HGVSp in one cell — narrower HGVS col pulls Transcript left; more % for Disorder */
+    #tblGeneDb th:nth-child(2){width:15%}
+    #tblGeneDb th:nth-child(3){width:12%}
+    #tblGeneDb th:nth-child(4){width:14%}
+    #tblGeneDb th:nth-child(2),#tblGeneDb td:nth-child(2){padding-right:4px}
+    #tblGeneDb th:nth-child(3),#tblGeneDb td:nth-child(3){padding-left:4px}
+    #tblGeneDb th:nth-child(5){width:88px}
+    #tblGeneDb th:nth-child(6){width:128px}
+    #tblGeneDb th:nth-child(7){width:20%}
+    #tblGeneDb th:nth-child(8){width:20%}
+    #tblGeneDb th:nth-child(9){width:11%}
+    #tblGeneDb th:nth-child(10){width:118px;min-width:118px}
+    #tblGeneDb .gene-db-hgvs-inline{
+      display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:10px;align-items:baseline;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:11px;
+    }
+    #tblGeneDb .gene-db-hgvs-inline .hgvs-c,#tblGeneDb .gene-db-hgvs-inline .hgvs-p{min-width:0}
+    #tblGeneDb .gene-db-hgvs-inline .hgvs-p{opacity:.92}
+    #tblGeneDb .gene-db-hgvs-inline.gene-db-hgvs-empty{display:block}
+    #tblGeneDb td:nth-child(3){
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+      font-size:11px;white-space:nowrap;text-overflow:ellipsis;
+    }
+    #tblGeneDb td:nth-child(5){
+      white-space:nowrap;text-overflow:ellipsis;
+    }
+    #tblGeneDb td:nth-child(6){
+      white-space:nowrap;text-overflow:ellipsis;
+    }
+    #tblGeneDb .gene-db-inherit-pill{
+      max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:top;
+    }
+    /* Keep Gene / Notes visible when scrolling horizontally — bg matches zebra row */
+    #tblGeneDb thead th:last-child,
+    #tblGeneDb tbody td:last-child{
+      position:sticky;right:0;z-index:3;
+      width:118px;min-width:118px;max-width:118px;
+      box-sizing:border-box;
+      border-left:1px solid var(--line);
+      box-shadow:none;
+    }
+    #tblGeneDb thead th:last-child{
+      top:0;right:0;
+      z-index:4;background:var(--thead-bg);
+    }
+    #tblGeneDb tbody tr:nth-child(odd) td:last-child{background:var(--row-alt)}
+    #tblGeneDb tbody tr:nth-child(even) td:last-child{background:var(--table-bg)}
+    #tblGeneDb .gene-db-text{
+      min-width:0;max-width:100%;max-height:220px;overflow:auto;overflow-wrap:anywhere;word-break:break-word;
+      white-space:pre-wrap;font-size:12px;line-height:1.45;color:var(--text);
+      contain:content;
+    }
+    #geneDbEditModal{z-index:10050}
+    #geneDbEditModal .modal{max-width:min(720px,96vw);max-height:min(92vh,900px)}
+    #geneDbEditModal textarea,#geneDbEditModal input[type=text]{
+      width:100%;box-sizing:border-box;font-size:13px;line-height:1.45;padding:10px;border-radius:10px;
+      border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)
+    }
+    #geneDbEditModal textarea{min-height:80px;resize:vertical}
+    #geneDbEditModal label{display:block;font-size:12px;font-weight:600;margin:12px 0 4px}
+    #geneDbEditModal .gene-db-edit-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap}
+    a.omim-link{color:var(--brand);text-decoration:underline;text-underline-offset:2px}
+    a.omim-link:hover{opacity:.92}
     .fb-list{border:1px solid var(--line);border-radius:12px;background:var(--table-bg);max-height:48vh;overflow:auto}
     .fb-item{padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px}
     .fb-item:last-child{border-bottom:none}
@@ -895,6 +979,7 @@
         <div class="sub-tab" data-tab="qc" onclick="showReviewTab('qc')">QC Summary</div>
         <div class="sub-tab" data-tab="stats" onclick="showReviewTab('stats')">Statistics</div>
         <div class="sub-tab" data-tab="report" onclick="showReviewTab('report')">Review Case</div>
+        <div class="sub-tab" data-tab="genedb" onclick="showReviewTab('genedb')">Gene database</div>
       </div>
 
       <!-- Variants Tab -->
@@ -976,6 +1061,21 @@
           <div class="col-12">
             <div class="card" style="margin:0">
               <h3 style="font-size:14px">Selected Variants for Report</h3>
+              <p class="muted" style="font-size:12px;line-height:1.55;margin:0 0 10px">
+                <strong>When narratives fill:</strong> Values are built when this panel is shown from (1) the server <strong>gene_knowledge</strong> SQLite row for that gene when present, else (2) simple <strong>templates</strong> from panel disease + ClinVar/HGVS — that is <em>not</em> a live web search in the browser.
+                <strong>Gemini</strong> runs on the server only when the cache row is missing or incomplete (<strong>Gene database → Fetch missing from Gemini</strong>) or during report generation. If you see one-line “The GENE gene is associated with …” text, the cache is empty or not configured yet. Use <strong>New search / write-up</strong> on a variant card to re-run Gemini for that gene only.
+              </p>
+              <div class="muted" style="font-size:12px;line-height:1.55;margin:0 0 12px;padding:10px 12px;border-radius:12px;border:1px solid rgba(130,160,255,.28);background:rgba(130,160,255,.07)">
+                <strong style="display:block;margin-bottom:6px">Gemini gene cache — field definitions (same as daemon extraction prompt)</strong>
+                <span style="opacity:.92">Search step: prioritize OMIM, GeneReviews, UniProt, GTEx; name the primary disorder. Extraction maps search text into SQLite <code>gene_data</code> (genetic_reporter_lookup–compatible).</span>
+                <ul style="margin:8px 0 0;padding-left:1.25em">
+                  <li><code>disorder_name</code> — Specific name of the primary disorder associated with this gene.</li>
+                  <li><code>disease_association</code> — 1–3 sentences on how pathogenic variants in this gene relate to that disorder (clinical/genetic mechanism), not just repeating the disorder name.</li>
+                  <li><code>function_summary</code> — 1–3 sentences on normal gene product function / pathway role.</li>
+                  <li><code>inheritance</code> — Pattern if known (e.g. AR, AD, XL).</li>
+                  <li><code>omim_number</code> — Digits only when cited in the text.</li>
+                </ul>
+              </div>
               <div id="selectedVariantsList" class="muted">No variants selected</div>
             </div>
           </div>
@@ -1026,10 +1126,92 @@
           </div>
         </div>
       </div>
+
+      <!-- Gene database: SQLite gene_knowledge (same cache as report-time Gemini merge) -->
+      <div id="reviewGeneDb" class="hidden">
+        <p class="muted" style="margin:0 0 12px;font-size:13px">
+          Shows <strong>checked variants only</strong> (Variants tab): <strong>one row per variant</strong>. <strong>Gene-level</strong> text (disorder, function, disease association) is shared in SQLite <code>gene_data</code> and reused when the same gene appears again. <strong>Variant-level</strong> notes (same HGVS across orders) live in <code>variant_knowledge</code>.
+          Use <strong>Fetch missing from Gemini</strong> for gene-level fill (requires API key).
+        </p>
+        <div class="muted" style="font-size:12px;line-height:1.55;margin:0 0 12px;padding:10px 12px;border-radius:12px;border:1px solid rgba(130,160,255,.28);background:rgba(130,160,255,.07)">
+          <strong style="display:block;margin-bottom:6px">Gemini gene cache — field definitions (same as daemon extraction prompt)</strong>
+          <span style="opacity:.92">Search step: prioritize OMIM, GeneReviews, UniProt, GTEx; name the primary disorder. Extraction maps search text into SQLite <code>gene_data</code> (genetic_reporter_lookup–compatible).</span>
+          <ul style="margin:8px 0 0;padding-left:1.25em">
+            <li><code>disorder_name</code> — Specific name of the primary disorder associated with this gene.</li>
+            <li><code>disease_association</code> — 1–3 sentences on how pathogenic variants in this gene relate to that disorder (clinical/genetic mechanism), not just repeating the disorder name.</li>
+            <li><code>function_summary</code> — 1–3 sentences on normal gene product function / pathway role.</li>
+            <li><code>inheritance</code> — Pattern if known (e.g. AR, AD, XL).</li>
+            <li><code>omim_number</code> — Digits only when cited in the text.</li>
+          </ul>
+        </div>
+        <p id="geneDbHint" class="muted" style="margin:0 0 10px;font-size:12px"></p>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+          <input id="geneDbSearch" type="search" placeholder="Filter gene or text..." style="max-width:320px" oninput="renderGeneDatabase()" />
+          <span class="muted" id="geneDbCount"></span>
+          <button type="button" class="btn primary" id="btnGeneDbFetchGemini" onclick="fetchGeneKnowledgeForReview(true)">Fetch missing from Gemini</button>
+        </div>
+        <div id="geneDbTableWrap" class="table-wrap" style="max-height:55vh">
+          <table id="tblGeneDb">
+            <thead>
+              <tr>
+                <th>Gene</th>
+                <th title="cDNA (HGVSc) and protein (HGVSp)">
+                  <div class="gene-db-hgvs-head"><span>HGVSc</span><span>HGVSp</span></div>
+                </th>
+                <th>Transcript</th>
+                <th>Disorder</th>
+                <th>OMIM</th>
+                <th>Inheritance</th>
+                <th>Gene function (summary)</th>
+                <th>Disease association</th>
+                <th>Variant notes</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tblGeneDbBody"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
   </div>
 
   <div id="toast" class="toast"></div>
+
+  <div id="geneDbEditModal" class="modal-overlay hidden" aria-hidden="true" onclick="if(event.target===this)geneDbEditClose()">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="geneDbEditTitle" onclick="event.stopPropagation()">
+      <h3 id="geneDbEditTitle" style="margin:0 0 8px;font-size:16px">Edit gene cache</h3>
+      <p class="muted" style="margin:0 0 12px;font-size:12px;line-height:1.5">Saves to the shared <code>gene_knowledge</code> SQLite on the server (same data as reports / Review Case).</p>
+      <div><strong id="geneDbEditGeneLabel" style="font-size:15px;letter-spacing:.02em"></strong></div>
+      <label for="geneDbEditDisorder">Disorder</label>
+      <textarea id="geneDbEditDisorder" rows="2" autocomplete="off"></textarea>
+      <label for="geneDbEditOmim">OMIM</label>
+      <input id="geneDbEditOmim" type="text" autocomplete="off" />
+      <label for="geneDbEditInheritance">Inheritance</label>
+      <input id="geneDbEditInheritance" type="text" autocomplete="off" placeholder="e.g. autosomal recessive" />
+      <label for="geneDbEditFunction">Gene function (summary)</label>
+      <textarea id="geneDbEditFunction" rows="4" autocomplete="off"></textarea>
+      <label for="geneDbEditDiseaseAssoc">Disease association</label>
+      <textarea id="geneDbEditDiseaseAssoc" rows="4" autocomplete="off"></textarea>
+      <div class="gene-db-edit-actions">
+        <button type="button" class="btn" onclick="geneDbEditClose()">Cancel</button>
+        <button type="button" class="btn primary" id="geneDbEditSaveBtn" onclick="geneDbEditSave()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="variantDbEditModal" class="modal-overlay hidden" aria-hidden="true" style="z-index:10051" onclick="if(event.target===this)variantDbEditClose()">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="variantDbEditTitle" onclick="event.stopPropagation()">
+      <h3 id="variantDbEditTitle" style="margin:0 0 8px;font-size:16px">Edit variant cache</h3>
+      <p class="muted" style="margin:0 0 12px;font-size:12px;line-height:1.5">Stored by stable key <code>GENE|HGVSc</code> (or protein if no cDNA). Same variant in a future order reuses this row; gene-level text stays in <code>gene_data</code>.</p>
+      <div class="muted" style="font-size:11px;margin-bottom:10px;word-break:break-all"><code id="variantDbEditKeyDisplay"></code></div>
+      <label for="variantDbEditNotes">Variant notes</label>
+      <textarea id="variantDbEditNotes" rows="6" autocomplete="off" placeholder="Interpretation, literature, or lab notes specific to this HGVS…"></textarea>
+      <div class="gene-db-edit-actions">
+        <button type="button" class="btn" onclick="variantDbEditClose()">Cancel</button>
+        <button type="button" class="btn primary" id="variantDbEditSaveBtn" onclick="variantDbEditSave()">Save</button>
+      </div>
+    </div>
+  </div>
 
   <div id="globalConfirmModal" class="modal-overlay hidden" style="z-index:20000" aria-hidden="true">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="globalConfirmTitle" onclick="event.stopPropagation()">
@@ -1263,6 +1445,11 @@
     let variantComments = {};
     /** Review Case sub-tab: per-variant editable gene_description + variant_summary for PDF */
     let variantReportTexts = {};
+    /** gene_symbol (upper) → row from daemon ``gene_knowledge`` SQLite (Gemini cache: function_summary, disease_association, …) */
+    let geneKnowledgeByGene = {};
+    /** variant_key (gene|HGVS) → row from ``variant_knowledge`` (per-variant notes; same key across orders) */
+    let variantKnowledgeByKey = {};
+    let geneKnowledgeMeta = null;
     let variantSortKey = null, variantSortAsc = true;
 
     // ═══════════════════════════════════════════════════════════
@@ -1466,6 +1653,24 @@
         return await r.json();
       } catch (e) {
         console.error('API POST error:', e);
+        throw e;
+      }
+    }
+
+    async function apiPut(path, body) {
+      try {
+        const r = await fetch(`${API_BASE}${path}`, {
+          method: 'PUT',
+          headers: apiFetchHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(errorDetailFromResponseBody(err) || `${r.status} ${r.statusText}`);
+        }
+        return await r.json();
+      } catch (e) {
+        console.error('API PUT error:', e);
         throw e;
       }
     }
@@ -2685,6 +2890,27 @@
       return d.innerHTML;
     }
 
+    /** First digit run in the field → https://omim.org/entry/{id} (handles "261600", "OMIM:261600", etc.) */
+    function omimCellHtml(raw) {
+      const s = (raw || '').trim();
+      if (!s) return '—';
+      const m = s.match(/\d+/);
+      const id = m ? m[0] : '';
+      if (!id) return escapeHtml(s);
+      const url = `https://omim.org/entry/${id}`;
+      return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="omim-link">${escapeHtml(s)}</a>`;
+    }
+
+    /** Gene DB: two-column grid — HGVSc above c., HGVSp above p. (same geometry as thead) */
+    function geneDbHgvsInlineHtml(hgvsc, hgvsp) {
+      const c = (hgvsc || '').trim();
+      const p = (hgvsp || '').trim();
+      if (!c && !p) return '<div class="gene-db-hgvs-inline gene-db-hgvs-empty">—</div>';
+      const cHtml = c ? `<span class="hgvs-c">${escapeHtml(c)}</span>` : '<span class="hgvs-c muted">—</span>';
+      const pHtml = p ? `<span class="hgvs-p">${escapeHtml(p)}</span>` : '<span class="hgvs-p muted">—</span>';
+      return `<div class="gene-db-hgvs-inline">${cHtml}${pHtml}</div>`;
+    }
+
     /** pipeline.log 등: ANSI SGR(예: [1;33m … [0m) → 터미널과 비슷한 span 색상 */
     function ansiToHtml(raw) {
       if (raw == null || raw === '') return '';
@@ -3244,6 +3470,211 @@
       return reviewLoadedOrderId ? String(reviewLoadedOrderId).trim() : '';
     }
 
+    /** Unique gene symbols from **checked** variants only (scopes Gene database + gene-knowledge API). */
+    function getSelectedGeneSymbols() {
+      const out = new Set();
+      if (!reviewData?.variants?.length) return [];
+      for (const v of reviewData.variants) {
+        if (!selectedVariants.has(v.variant_id)) continue;
+        const g = (v.gene || '').trim().toUpperCase();
+        if (g) out.add(g);
+      }
+      return [...out].sort();
+    }
+
+    /** Drop cached genes not in the current selection. When nothing is checked, keep memory intact (reload / re-select still shows SQLite data). */
+    function makeVariantKeyClient(gene, hgvsc, hgvsp) {
+      const g = (gene || '').trim().toUpperCase();
+      const hc = (hgvsc || '').trim();
+      const hp = (hgvsp || '').trim();
+      if (hc) return `${g}|${hc}`;
+      if (hp) return `${g}|${hp}`;
+      return `${g}|`;
+    }
+
+    function pruneGeneKnowledgeToSelection() {
+      const keep = new Set(getSelectedGeneSymbols());
+      if (keep.size === 0) return;
+      Object.keys(geneKnowledgeByGene).forEach(k => {
+        if (!keep.has(k)) delete geneKnowledgeByGene[k];
+      });
+    }
+
+    function pruneVariantKnowledgeToSelection() {
+      const keep = new Set();
+      if (!reviewData?.variants?.length) return;
+      for (const v of reviewData.variants) {
+        if (!selectedVariants.has(v.variant_id)) continue;
+        const g = (v.gene || '').trim().toUpperCase();
+        if (!g) continue;
+        keep.add(makeVariantKeyClient(g, v.hgvsc || '', v.hgvsp || ''));
+      }
+      if (keep.size === 0) return;
+      Object.keys(variantKnowledgeByKey).forEach(k => {
+        if (!keep.has(k)) delete variantKnowledgeByKey[k];
+      });
+    }
+
+    let _geneKnowledgeFetchDebounce = null;
+    function scheduleGeneKnowledgeFetchAfterSelectionChange() {
+      if (_geneKnowledgeFetchDebounce) clearTimeout(_geneKnowledgeFetchDebounce);
+      _geneKnowledgeFetchDebounce = setTimeout(() => {
+        _geneKnowledgeFetchDebounce = null;
+        const orderId = getActiveReviewOrderId();
+        if (!orderId || !reviewData) return;
+        fetchGeneKnowledgeForReview(false);
+      }, 320);
+    }
+
+    function onVariantSelectionChanged() {
+      pruneGeneKnowledgeToSelection();
+      pruneVariantKnowledgeToSelection();
+      scheduleGeneKnowledgeFetchAfterSelectionChange();
+      if (typeof renderVariantsTable === 'function') renderVariantsTable();
+    }
+
+    /**
+     * Load SQLite gene_knowledge rows for this order’s genes (optional Gemini fill when enrich=true).
+     * Drives Gene database tab and default Review Case narratives (function_summary / disease_association).
+     */
+    /**
+     * Re-run Gemini for one gene (always refresh cache) and reload Review Case narratives for selected variants on that gene.
+     */
+    async function refreshVariantWriteupFromGemini(geneSymbol, btn) {
+      const orderId = getActiveReviewOrderId();
+      if (!orderId) return toast('Load an order first', false);
+      const g = (geneSymbol || '').trim();
+      if (!g) return toast('Cannot refresh write-up: this variant has no gene symbol.', false);
+      let b = btn instanceof HTMLElement ? btn : null;
+      try {
+        if (b) {
+          b.disabled = true;
+          b.classList.add('loading');
+          b.textContent = 'Searching…';
+        }
+        const res = await apiGet(`/order/${encodeURIComponent(orderId)}/gene-knowledge?gene=${encodeURIComponent(g)}&force=1`);
+        if (res.error) {
+          toast(res.error, false);
+          return;
+        }
+        if (res.gene_knowledge_db_configured === false) {
+          toast(res.message || 'gene_knowledge_db is not configured on the daemon. Set GENE_KNOWLEDGE_DB (path to SQLite) in the daemon environment and restart.', false);
+          return;
+        }
+        Object.assign(geneKnowledgeByGene, res.genes || {});
+        Object.assign(variantKnowledgeByKey, res.variants || {});
+        geneKnowledgeMeta = {
+          configured: res.gene_knowledge_db_configured,
+          geminiAvailable: res.gemini_available,
+        };
+        const gu = g.toUpperCase();
+        const row = (res.genes || {})[gu] || {};
+        const hasLong = ((row.function_summary || '').trim() || (row.disease_association || '').trim());
+        if (!hasLong && !((row.disorder || '').trim())) {
+          toast(
+            (res.gemini_fetch_error || 'Gemini did not return usable text for this gene. Check GEMINI_API_KEY, model access, and daemon logs.') + ' Boxes were not updated.',
+            false
+          );
+          updateSelectedVariantsList();
+          renderGeneDatabase();
+          return;
+        }
+        for (const v of reviewData?.variants || []) {
+          if ((v.gene || '').toUpperCase() === gu && selectedVariants.has(v.variant_id)) {
+            delete variantReportTexts[v.variant_id];
+          }
+        }
+        toast(hasLong ? 'Gene write-up refreshed from Gemini.' : 'Gene cache updated (short disorder label only).');
+        updateSelectedVariantsList();
+        renderGeneDatabase();
+      } catch (e) {
+        toast('Gene search failed: ' + e.message, false);
+      } finally {
+        if (b) {
+          b.disabled = false;
+          b.classList.remove('loading');
+          b.textContent = 'New search / write-up';
+        }
+      }
+    }
+
+    async function fetchGeneKnowledgeForReview(enrich) {
+      const orderId = getActiveReviewOrderId();
+      const btn = qs('btnGeneDbFetchGemini');
+      if (!orderId) {
+        geneKnowledgeByGene = {};
+        variantKnowledgeByKey = {};
+        geneKnowledgeMeta = null;
+        return;
+      }
+      if (enrich) {
+        let hasContent = false;
+        for (const vid of selectedVariants) {
+          const rt = variantReportTexts[vid];
+          if (rt && ((rt.gene_description || '').trim() || (rt.variant_summary || '').trim())) {
+            hasContent = true;
+            break;
+          }
+        }
+        if (hasContent && !confirm('Replace existing report narrative text for selected variants with refreshed defaults from the gene cache?')) return;
+        for (const vid of selectedVariants) delete variantReportTexts[vid];
+      }
+      try {
+        if (enrich && btn) {
+          btn.disabled = true;
+          btn.classList.add('loading');
+          btn.textContent = 'Fetching…';
+        }
+        const sel = getSelectedGeneSymbols();
+        if (enrich && sel.length === 0) {
+          toast('Select at least one variant before running “Fetch missing from Gemini”.', false);
+          return;
+        }
+        const params = new URLSearchParams();
+        if (enrich) params.set('enrich', '1');
+        // With genes= and no symbols the API returned {} and wiped the UI after reload. Omit param = all order genes from SQLite (merge below).
+        if (sel.length > 0) params.set('genes', sel.join(','));
+        const res = await apiGet(`/order/${encodeURIComponent(orderId)}/gene-knowledge?${params.toString()}`);
+        Object.assign(geneKnowledgeByGene, res.genes || {});
+        Object.assign(variantKnowledgeByKey, res.variants || {});
+        geneKnowledgeMeta = {
+          configured: res.gene_knowledge_db_configured,
+          geminiAvailable: res.gemini_available,
+        };
+        if (res.error) {
+          if (enrich) toast(res.error, false);
+          renderGeneDatabase();
+          const rr = qs('reviewReport');
+          if (rr && !rr.classList.contains('hidden')) updateSelectedVariantsList();
+          return;
+        }
+        for (const vid of selectedVariants) delete variantReportTexts[vid];
+        if (enrich) toast('Gene knowledge updated.');
+        renderGeneDatabase();
+        const rr = qs('reviewReport');
+        if (rr && !rr.classList.contains('hidden')) updateSelectedVariantsList();
+      } catch (e) {
+        if (enrich) toast('Gene knowledge: ' + e.message, false);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.classList.remove('loading');
+          btn.textContent = 'Fetch missing from Gemini';
+        }
+      }
+    }
+
+    /** Pre-check P/LP so Review Case has rows without an extra Variants-tab step */
+    function autoSelectPathogenicVariantsForReport() {
+      if (!reviewData?.variants?.length) return;
+      for (const v of reviewData.variants) {
+        const id = v.variant_id;
+        if (!id) continue;
+        const c = (v.acmg_classification || '').toLowerCase();
+        if (c === 'pathogenic' || c === 'likely pathogenic') selectedVariants.add(id);
+      }
+    }
+
     async function refreshReviewOrderList() {
       try {
         const data = await apiGet('/orders?service_code=carrier_screening');
@@ -3291,9 +3722,15 @@
         selectedVariants = new Set();
         variantComments = {};
         variantReportTexts = {};
+        geneKnowledgeByGene = {};
+        variantKnowledgeByKey = {};
+        geneKnowledgeMeta = null;
+        autoSelectPathogenicVariantsForReport();
 
         // Populate gene filter dropdown
         populateGeneFilter();
+
+        await fetchGeneKnowledgeForReview(false);
 
         // Render all tabs
         renderCarrierBanner();
@@ -3301,6 +3738,7 @@
         renderReviewStats();
         renderVariantsTable();
         renderDiseaseSummary();
+        renderGeneDatabase();
         showReviewTab('variants');
         toast(`Loaded ${(reviewData.variants || []).length} variants`);
         updateReportGenerateUi();
@@ -3391,7 +3829,7 @@
     }
 
     function showReviewTab(tab) {
-      const tabMap = { variants: 'reviewVariants', diseases: 'reviewDiseases', qc: 'reviewQc', stats: 'reviewStats', report: 'reviewReport' };
+      const tabMap = { variants: 'reviewVariants', diseases: 'reviewDiseases', qc: 'reviewQc', stats: 'reviewStats', report: 'reviewReport', genedb: 'reviewGeneDb' };
       Object.values(tabMap).forEach(id => { const el = qs(id); if (el) el.classList.add('hidden'); });
       const target = tabMap[tab];
       if (target) qs(target).classList.remove('hidden');
@@ -3404,7 +3842,233 @@
         updateSelectedVariantsList();
         updateReportGenerateUi();
       }
+      if (tab === 'genedb') {
+        fetchGeneKnowledgeForReview(false);
+      }
       if (tab !== 'variants') qs('variantDetail').classList.add('hidden');
+    }
+
+    /** Gene database tab: gene_knowledge SQLite rows (Gemini cache) merged with per-gene variant counts */
+    let geneDbEditSymbol = '';
+
+    function geneDbCellHtml(text) {
+      const t = (text || '').trim();
+      if (!t) return '—';
+      return `<div class="gene-db-text">${escapeHtml(t)}</div>`;
+    }
+
+    function geneDbEditOpen(geneSymbol) {
+      const g = (geneSymbol || '').trim().toUpperCase();
+      if (!g) return;
+      geneDbEditSymbol = g;
+      const gk = geneKnowledgeByGene[g] || {};
+      qs('geneDbEditGeneLabel').textContent = g;
+      qs('geneDbEditDisorder').value = (gk.disorder || '').trim();
+      qs('geneDbEditOmim').value = (gk.omim_number || '').trim();
+      qs('geneDbEditInheritance').value = (gk.inheritance || '').trim();
+      qs('geneDbEditFunction').value = (gk.function_summary || '').trim();
+      qs('geneDbEditDiseaseAssoc').value = (gk.disease_association || '').trim();
+      const m = qs('geneDbEditModal');
+      m.classList.remove('hidden');
+      m.setAttribute('aria-hidden', 'false');
+    }
+
+    function geneDbEditClose() {
+      geneDbEditSymbol = '';
+      const m = qs('geneDbEditModal');
+      if (m) {
+        m.classList.add('hidden');
+        m.setAttribute('aria-hidden', 'true');
+      }
+    }
+
+    async function geneDbEditSave() {
+      const g = (geneDbEditSymbol || '').trim().toUpperCase();
+      if (!g) return;
+      const orderId = getActiveReviewOrderId();
+      if (!orderId) {
+        toast('Select an order first', false);
+        return;
+      }
+      if (!getSelectedGeneSymbols().length) {
+        toast('Select at least one variant (Variants tab) before saving gene text.', false);
+        return;
+      }
+      const meta = geneKnowledgeMeta;
+      if (meta && meta.configured === false) {
+        toast('gene_knowledge database is not configured on the daemon.', false);
+        return;
+      }
+      const btn = qs('geneDbEditSaveBtn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+      try {
+        const body = {
+          gene: g,
+          disorder: qs('geneDbEditDisorder').value,
+          omim_number: qs('geneDbEditOmim').value,
+          inheritance: qs('geneDbEditInheritance').value,
+          function_summary: qs('geneDbEditFunction').value,
+          disease_association: qs('geneDbEditDiseaseAssoc').value,
+        };
+        const gq = new URLSearchParams();
+        gq.set('genes', getSelectedGeneSymbols().join(','));
+        const res = await apiPut(`/order/${encodeURIComponent(orderId)}/gene-knowledge?${gq.toString()}`, body);
+        const row = res.row || {};
+        geneKnowledgeByGene[g] = {
+          gene_symbol: g,
+          function_summary: row.function_summary || '',
+          disease_association: row.disease_association || '',
+          disorder: row.disorder || '',
+          omim_number: row.omim_number || '',
+          inheritance: row.inheritance || '',
+        };
+        geneDbEditClose();
+        renderGeneDatabase();
+        try {
+          if (typeof updateSelectedVariantsList === 'function') updateSelectedVariantsList();
+        } catch (e) { /* ignore */ }
+        toast('Gene cache saved.');
+      } catch (e) {
+        toast((e && e.message) || 'Save failed', false);
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+      }
+    }
+
+    let variantDbEditKey = '';
+
+    function variantDbEditOpen(variantKey) {
+      const vk = (variantKey || '').trim();
+      if (!vk) return;
+      variantDbEditKey = vk;
+      const row = variantKnowledgeByKey[vk] || {};
+      qs('variantDbEditKeyDisplay').textContent = vk;
+      qs('variantDbEditNotes').value = (row.variant_notes || '').trim();
+      const m = qs('variantDbEditModal');
+      m.classList.remove('hidden');
+      m.setAttribute('aria-hidden', 'false');
+    }
+
+    function variantDbEditClose() {
+      variantDbEditKey = '';
+      const m = qs('variantDbEditModal');
+      if (m) {
+        m.classList.add('hidden');
+        m.setAttribute('aria-hidden', 'true');
+      }
+    }
+
+    async function variantDbEditSave() {
+      const vk = (variantDbEditKey || '').trim();
+      if (!vk) return;
+      const orderId = getActiveReviewOrderId();
+      if (!orderId) {
+        toast('Select an order first', false);
+        return;
+      }
+      if (!getSelectedGeneSymbols().length) {
+        toast('Select at least one variant before saving.', false);
+        return;
+      }
+      const meta = geneKnowledgeMeta;
+      if (meta && meta.configured === false) {
+        toast('gene_knowledge database is not configured on the daemon.', false);
+        return;
+      }
+      const btn = qs('variantDbEditSaveBtn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+      try {
+        const gq = new URLSearchParams();
+        gq.set('genes', getSelectedGeneSymbols().join(','));
+        const res = await apiPut(`/order/${encodeURIComponent(orderId)}/variant-knowledge?${gq.toString()}`, {
+          variant_key: vk,
+          variant_notes: qs('variantDbEditNotes').value,
+        });
+        const row = res.row || {};
+        variantKnowledgeByKey[vk] = {
+          variant_key: vk,
+          gene_symbol: row.gene_symbol || '',
+          hgvsc: row.hgvsc || '',
+          hgvsp: row.hgvsp || '',
+          variant_notes: row.variant_notes || '',
+          updated_at: row.updated_at || '',
+        };
+        variantDbEditClose();
+        renderGeneDatabase();
+        toast('Variant notes saved.');
+      } catch (e) {
+        toast((e && e.message) || 'Save failed', false);
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+      }
+    }
+
+    function renderGeneDatabase() {
+      const tbody = qs('tblGeneDbBody');
+      const countEl = qs('geneDbCount');
+      const hintEl = qs('geneDbHint');
+      if (!tbody) return;
+      const meta = geneKnowledgeMeta;
+      if (hintEl) {
+        if (!meta) {
+          hintEl.textContent = '';
+        } else if (meta.configured === false) {
+          hintEl.textContent = 'Daemon has no gene_knowledge database configured — narratives use panel disease names only until an operator sets gene_knowledge_db and optionally runs populate_gene_knowledge_db.';
+        } else if (meta.geminiAvailable === false) {
+          hintEl.textContent = 'No Gemini API key on the daemon — only rows already in SQLite appear. Use “Fetch missing from Gemini” after configuring the key, or pre-populate the cache.';
+        } else {
+          hintEl.textContent = '';
+        }
+      }
+      if (!reviewData) {
+        tbody.innerHTML = '<tr><td colspan="10" class="muted">Load an order to see variants.</td></tr>';
+        if (countEl) countEl.textContent = '';
+        return;
+      }
+      if (!selectedVariants.size) {
+        tbody.innerHTML = '<tr><td colspan="10" class="muted">Select one or more variants on the <strong>Variants</strong> tab — each checked row appears here (gene text is shared; variant notes are per HGVS).</td></tr>';
+        if (countEl) countEl.textContent = '0 variant(s)';
+        return;
+      }
+      const variants = (reviewData.variants || []).filter(v => selectedVariants.has(v.variant_id));
+      const q = (qs('geneDbSearch') && qs('geneDbSearch').value) ? qs('geneDbSearch').value.trim().toLowerCase() : '';
+      let rows = variants.map(v => {
+        const g = (v.gene || '').trim().toUpperCase();
+        const vk = makeVariantKeyClient(g, v.hgvsc || '', v.hgvsp || '');
+        const gk = geneKnowledgeByGene[g] || {};
+        const vr = variantKnowledgeByKey[vk] || {};
+        const fs = (gk.function_summary || '').trim();
+        const da = (gk.disease_association || '').trim();
+        const disorder = (gk.disorder || '').trim();
+        const omim = (gk.omim_number || '').trim();
+        const inheritance = (gk.inheritance || '').trim();
+        const vn = (vr.variant_notes || '').trim();
+        const hgvsc = (v.hgvsc || '').trim();
+        const hgvsp = (v.hgvsp || '').trim();
+        const transcript = (v.transcript || v.canonical_enst || '').trim();
+        const haystack = [g, hgvsc, hgvsp, transcript, disorder, omim, inheritance, fs, da, vn].join(' ').toLowerCase();
+        return { v, g, vk, fs, da, disorder, omim, inheritance, vn, hgvsc, hgvsp, transcript, haystack };
+      });
+      if (q) rows = rows.filter(r => r.haystack.includes(q));
+      if (countEl) countEl.textContent = rows.length ? `${rows.length} variant row(s)` : 'No rows';
+
+      const canEdit = !meta || meta.configured !== false;
+
+      tbody.innerHTML = rows.length ? rows.map(r => `
+        <tr>
+          <td><strong>${escapeHtml(r.g)}</strong></td>
+          <td class="muted">${geneDbHgvsInlineHtml(r.hgvsc, r.hgvsp)}</td>
+          <td class="muted">${r.transcript ? `<span title="${escapeHtml(r.transcript)}">${escapeHtml(r.transcript)}</span>` : '—'}</td>
+          <td>${geneDbCellHtml(r.disorder)}</td>
+          <td class="muted">${r.omim ? omimCellHtml(r.omim) : '—'}</td>
+          <td>${r.inheritance ? `<span class="pill new gene-db-inherit-pill" title="${escapeHtml(r.inheritance)}">${escapeHtml(r.inheritance)}</span>` : '—'}</td>
+          <td>${geneDbCellHtml(r.fs)}</td>
+          <td>${geneDbCellHtml(r.da)}</td>
+          <td>${geneDbCellHtml(r.vn)}</td>
+          <td style="white-space:nowrap">
+            ${canEdit ? `<button type="button" class="btn" style="padding:4px 8px;font-size:10px;margin-right:4px" onclick='geneDbEditOpen(${JSON.stringify(r.g)})' title="Edit shared gene row">Gene</button><button type="button" class="btn" style="padding:4px 8px;font-size:10px" onclick='variantDbEditOpen(${JSON.stringify(r.vk)})' title="Edit variant-specific notes (same HGVS in future orders)">Notes</button>` : '—'}
+          </td>
+        </tr>`).join('') : '<tr><td colspan="10" class="muted">No matching variants</td></tr>';
     }
 
     // ── Carrier Status Banner ──
@@ -3761,6 +4425,7 @@
       if (checked) selectedVariants.add(variantId);
       else selectedVariants.delete(variantId);
       qs('variantCount').textContent = `${(reviewData?.variants || []).length} variant(s), ${selectedVariants.size} selected`;
+      onVariantSelectionChanged();
     }
 
     function toggleAllCheckboxes(masterCb) {
@@ -3777,6 +4442,7 @@
         }
       });
       qs('variantCount').textContent = `${(reviewData?.variants || []).length} variant(s), ${selectedVariants.size} selected`;
+      onVariantSelectionChanged();
     }
 
     function findVariantIdFromRow(row) {
@@ -3800,6 +4466,7 @@
       });
       qs('chkAll').checked = true;
       qs('variantCount').textContent = `${(reviewData?.variants || []).length} variant(s), ${selectedVariants.size} selected`;
+      onVariantSelectionChanged();
     }
 
     function deselectAll() {
@@ -3808,6 +4475,7 @@
       qs('tblVariantsBody').querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
       qs('chkAll').checked = false;
       qs('variantCount').textContent = `${(reviewData?.variants || []).length} variant(s), ${selectedVariants.size} selected`;
+      onVariantSelectionChanged();
     }
 
     // ── Variant Detail ──
@@ -3953,20 +4621,73 @@
       }
     }
 
+    /** What the server returned for this gene — drives honesty banners in Review Case */
+    function geneNarrativeKnowledgeTier(v) {
+      const meta = geneKnowledgeMeta;
+      if (meta && meta.configured === false) return 'disabled';
+      const gk = geneKnowledgeByGene[(v.gene || '').toUpperCase()];
+      if (!gk || typeof gk !== 'object') return 'none';
+      const fs = (gk.function_summary || '').trim();
+      const da = (gk.disease_association || '').trim();
+      if (fs || da) return 'full';
+      const hasAny = (gk.disorder || '').trim() || (gk.omim_number || '').trim() || (gk.inheritance || '').trim();
+      if (hasAny) return 'partial';
+      return 'none';
+    }
+
+    function reportNarrativeHonestyBannerHtml(v) {
+      const tier = geneNarrativeKnowledgeTier(v);
+      const box = 'font-size:11px;line-height:1.45;margin:0 0 10px;padding:8px 10px;border-radius:8px';
+      if (tier === 'disabled') {
+        return `<div class="muted" style="${box};background:rgba(255,120,80,.08);border:1px solid rgba(255,120,80,.28)"><strong>No gene_knowledge DB</strong> on the daemon — “Gene &amp; disease association” is a <strong>template</strong> from the panel disease name. Configure <code>gene_knowledge_db</code> and use <strong>Gene database → Fetch missing from Gemini</strong> for search-backed paragraphs.</div>`;
+      }
+      if (tier === 'full') {
+        return `<div class="muted" style="${box};background:rgba(63,185,80,.07);border:1px solid rgba(63,185,80,.22)"><strong>Gene &amp; disease</strong> below comes from the <strong>gene_knowledge</strong> cache (filled via Gemini/search on the server when the row was created). <strong>Variant interpretation</strong> is still built from this variant’s HGVS + ClinVar (+ inheritance from cache if shown) — edit freely.</div>`;
+      }
+      if (tier === 'partial') {
+        return `<div class="muted" style="${box};background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.22)">Cache has <strong>labels only</strong> (disorder/OMIM) — not full paragraphs yet. Open <strong>Gene database</strong> and click <strong>Fetch missing from Gemini</strong> to run search extraction into the cache, then return here (draft text refreshes).</div>`;
+      }
+      return `<div class="muted" style="${box};background:rgba(130,160,255,.07);border:1px solid rgba(130,160,255,.2)"><strong>Template text</strong> — not a live search. “The … gene is associated with …” is generated from your <strong>panel / result</strong> disease field. <strong>Variant interpretation</strong> is assembled from HGVS + ClinVar. To get long-form gene text, configure the cache and use <strong>Gene database → Fetch missing from Gemini</strong>.</div>`;
+    }
+
+    function defaultGeneDescriptionFromKnowledge(v, gk) {
+      if (!gk || typeof gk !== 'object') return null;
+      const fs = (gk.function_summary || '').trim();
+      const da = (gk.disease_association || '').trim();
+      const dis = (gk.disorder || '').trim();
+      const parts = [];
+      if (fs) parts.push(fs);
+      if (da) parts.push(da);
+      if (!parts.length && dis) {
+        const gene = v.gene || 'gene';
+        parts.push(`The ${gene} gene is associated with ${dis}.`);
+      }
+      return parts.length ? parts.join('\n\n') : null;
+    }
+
     function ensureVariantReportTexts(v) {
       const id = v.variant_id;
       if (!id || variantReportTexts[id]) return;
       const disease = getVariantDisease(v);
       const dis = disease !== '-' ? disease : 'Unknown disorder';
       const gene = v.gene || 'gene';
+      const gk = geneKnowledgeByGene[(gene || '').toUpperCase()];
+      const fromGk = defaultGeneDescriptionFromKnowledge(v, gk);
       const geneDesc = (v.report_gene_description && String(v.report_gene_description).trim())
+        || fromGk
         || (dis !== 'Unknown disorder' ? `The ${gene} gene is associated with ${dis}.` : '');
       const comment = (variantComments[id]?.comment || '').trim();
       const parts = [];
       if (v.hgvsp) parts.push(`Protein: ${v.hgvsp}`);
       if (v.clinvar_sig_primary) parts.push(`ClinVar: ${v.clinvar_sig_primary}`);
-      const varSum = (v.report_variant_summary && String(v.report_variant_summary).trim())
+      let varSum = (v.report_variant_summary && String(v.report_variant_summary).trim())
         || comment || parts.join(' ') || '';
+      const inh = gk && (gk.inheritance || '').trim();
+      if (inh && varSum && !varSum.toLowerCase().includes(inh.toLowerCase())) {
+        varSum = `${varSum}\n\nTypical inheritance pattern: ${inh}.`;
+      } else if (inh && !varSum) {
+        varSum = `Typical inheritance pattern: ${inh}.`;
+      }
       variantReportTexts[id] = { gene_description: geneDesc, variant_summary: varSum };
     }
 
@@ -4001,7 +4722,7 @@
     function updateSelectedVariantsList() {
       const list = qs('selectedVariantsList');
       if (selectedVariants.size === 0) {
-        list.innerHTML = '<div class="muted" style="padding:8px">No variants selected. Go to the <strong>Variants</strong> tab, check variants, then return here to edit report text.</div>';
+        list.innerHTML = '<div class="muted" style="padding:8px">No variants selected for the report. Use the <strong>Variants</strong> tab to check rows (pathogenic / likely pathogenic are auto-checked on <strong>Load</strong> when present). Narrative boxes appear only for checked variants.</div>';
         return;
       }
       pruneVariantReportTexts();
@@ -4023,9 +4744,13 @@
               <span class="${acmgClass(comment.classification || v.acmg_classification)}" style="margin-left:10px">${escapeHtml(comment.classification || v.acmg_classification || '—')}</span>
               ${disease !== '-' ? `<div class="muted" style="font-size:12px;margin-top:4px">${escapeHtml(disease)}</div>` : ''}
             </div>
-            <button type="button" class="btn danger-btn" style="padding:4px 10px;font-size:11px" data-remove-vid="${vidEnc}">Remove</button>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <button type="button" class="btn primary" style="padding:4px 10px;font-size:11px" title="Re-run Gemini search for this gene and refresh the text boxes below" onclick='refreshVariantWriteupFromGemini(${JSON.stringify(v.gene || '')}, this)'>New search / write-up</button>
+              <button type="button" class="btn danger-btn" style="padding:4px 10px;font-size:11px" data-remove-vid="${vidEnc}">Remove</button>
+            </div>
           </div>
           <div style="font-size:11px;line-height:1.45;color:var(--muted);margin-bottom:10px;padding:10px;background:var(--input-bg);border-radius:8px;max-height:140px;overflow:auto">${buildVariantReferenceLines(v)}</div>
+          ${reportNarrativeHonestyBannerHtml(v)}
           ${comment.comment ? `<div class="muted" style="font-size:12px;margin-bottom:8px"><em>Reviewer note (Variants tab):</em> ${escapeHtml(comment.comment)}</div>` : ''}
           <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Gene & disease association (report narrative)</label>
           <textarea class="report-variant-text" data-variant-id="${vidEnc}" data-report-field="gene_description" rows="3" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-size:12px;margin-bottom:10px;resize:vertical">${escapeHtml(rt.gene_description)}</textarea>

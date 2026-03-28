@@ -17,7 +17,10 @@ services:
     restart: unless-stopped
 
     env_file:
-      - ${ENV_FILE:-.env.docker}
+      - path: ${ENV_FILE:-.env.docker}
+        required: true
+      - path: .env
+        required: false
 
     command: /bin/sh -c "uvicorn app.main:app --host 0.0.0.0 --port $${APP_PORT:-8000} --no-access-log"
 
@@ -41,6 +44,8 @@ services:
       - ${SGNIPT_PIPELINE_DIR:-/opt/pipelines/sgnipt}:/opt/pipelines/sgnipt:ro
       # - ${NEXTFLOW_HOST_PATH:-/usr/local/bin/nextflow}:/usr/local/bin/nextflow:ro
       - /var/run/docker.sock:/var/run/docker.sock
+      # gene_knowledge SQLite (Gemini cache; rw — see GENE_KNOWLEDGE_DB in .env.docker)
+      - ./data/gene_knowledge.db:/data/service-daemon/gene_knowledge.db
       # snpEff JAR+config: 이미지에 포함했으면 생략 가능. 호스트 복사본을 쓰려면 주석 해제:
       # - ${SNPEFF_TOOLS_HOST:-./tools/snpEff}:/opt/tools/snpEff:ro
 

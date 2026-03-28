@@ -524,7 +524,8 @@ class CarrierScreeningPlugin(ServicePlugin):
     def _shell_command_run_analysis(self, job: Job, script: str) -> str:
         """
         Dark Gene run_analysis.sh 호출 (-w/-s/-d/-r).
-        예: ./src/run_analysis.sh -w 2601 -s NA12878_Twist_Exome -d . -r ./data/refs --skip-cnv
+        예: bash run_analysis.sh -w 2601 -s SAMPLE -d <data_dir> -r <ref_dir> \\
+            --skip-cnv --aligner bwa-mem2 --variant-caller deepvariant --no-skip-vep
         -s 는 fastq/<work>/<s>/ 폴더명과 같아야 함 (Portal 의 Sample name 파이프라인).
         """
         data_dir = self._run_analysis_data_dir()

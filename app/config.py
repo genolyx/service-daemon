@@ -161,8 +161,10 @@ class Settings(BaseSettings):
         description="-r for run_analysis (default: <data_dir>/data/refs)",
     )
     carrier_screening_script_extra_args: str = Field(
-        default="--skip-cnv",
-        description="Extra args for run_analysis.sh (e.g. empty string to allow CNV)",
+        default=(
+            "--skip-cnv --aligner bwa-mem2 --variant-caller deepvariant --no-skip-vep"
+        ),
+        description="Extra args for run_analysis.sh (shlex-split, appended after -d/-r)",
     )
     carrier_screening_artifact_base: Optional[str] = Field(
         default=None,

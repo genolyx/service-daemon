@@ -29,6 +29,128 @@ from .layout_norm import carrier_sequencing_folder
 logger = logging.getLogger(__name__)
 
 
+def carrier_report_generation_paths(job: Job) -> Tuple[str, str]:
+    """
+    (output_dir, analysis_dir) for Generate Report: report.json/PDF and QC extraction.
+
+    When settings.carrier_screening_report_output_root is set, uses
+    <root>/output|analysis/<work_dir>/<sample_name> under that tree (e.g. /home/sam/Carrier_result).
+    Otherwise matches _get_dirs (pipeline locations).
+    """
+    root = (settings.carrier_screening_report_output_root or "").strip()
+    wk = str(job.work_dir).strip() or "00"
+    smp = str(job.sample_name).strip()
+    if root:
+        return (
+            os.path.join(root, "output", wk, smp),
+            os.path.join(root, "analysis", wk, smp),
+        )
+    work_root = settings.carrier_screening_work_root
+    output_dir = job.output_dir or os.path.join(work_root, "output", wk, smp)
+    analysis_dir = job.analysis_dir or os.path.join(work_root, "analysis", wk, smp)
+    return output_dir, analysis_dir
+
+
+def carrier_report_output_dir(job: Job) -> str:
+    """Directory where report.json and Report_*.pdf are written for this order."""
+    return carrier_report_generation_paths(job)[0]
+
+
+def _project_root_dir() -> str:
+    """Repo root (parent of the `app` package)."""
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+
+
+def _resolve_path_from_settings(p: Optional[str]) -> str:
+    """
+    Turn env/config paths into absolute paths. Relative values are resolved from the
+    repo root (not the process cwd), so REPORT_TEMPLATE_DIR=data/carrier_report works
+    no matter where uvicorn was started from.
+    """
+    p = (p or "").strip()
+    if not p:
+        return ""
+    if os.path.isabs(p):
+        return os.path.normpath(p)
+    return os.path.normpath(os.path.join(_project_root_dir(), p))
+
+
+def _bundled_carrier_report_template_dir() -> Optional[str]:
+    """Shipped templates: <repo>/data/carrier_report (same layout as Carrier_result/carrier_report)."""
+    d = os.path.join(_project_root_dir(), "data", "carrier_report")
+    return d if os.path.isdir(d) else None
+
+
+def _usable_carrier_jinja_dir(path: str) -> bool:
+    """Must contain carrier_EN.html or Jinja will fail and we fall back to ugly built-in HTML."""
+    if not path or not os.path.isdir(path):
+        return False
+    return os.path.isfile(os.path.join(path, "carrier_EN.html"))
+
+
+def _candidate_carrier_template_dirs() -> List[str]:
+    """Ordered candidates; first usable (see _usable_carrier_jinja_dir) wins."""
+    candidates: List[str] = []
+    t = _resolve_path_from_settings(
+        getattr(settings, "carrier_screening_report_template_dir", None)
+    )
+    if t:
+        candidates.append(t)
+    root = (settings.carrier_screening_report_output_root or "").strip()
+    if root:
+        root_abs = _resolve_path_from_settings(root)
+        candidates.append(os.path.join(root_abs, "carrier_report"))
+    bundled = _bundled_carrier_report_template_dir()
+    if bundled:
+        candidates.append(bundled)
+    legacy = _resolve_path_from_settings(settings.report_template_dir)
+    if legacy:
+        candidates.append(legacy)
+    candidates.append(
+        os.path.join(settings.carrier_screening_pipeline_dir, "data", "templates")
+    )
+    return candidates
+
+
+def resolve_carrier_pdf_template_dir() -> Optional[str]:
+    """
+    Directory of Jinja2 templates for WeasyPrint PDFs.
+
+    Only directories that contain carrier_EN.html are used. This avoids picking an
+    empty <CARRIER_SCREENING_REPORT_OUTPUT_ROOT>/carrier_report before packaged
+    data/carrier_report (which would make Jinja fail and fall back to built-in HTML).
+
+    Priority:
+      1. carrier_screening_report_template_dir
+      2. <CARRIER_SCREENING_REPORT_OUTPUT_ROOT>/carrier_report
+      3. Packaged data/carrier_report
+      4. report_template_dir (legacy)
+      5. pipeline .../data/templates
+    """
+    seen: set = set()
+    for cand in _candidate_carrier_template_dirs():
+        if not cand:
+            continue
+        norm = os.path.normpath(cand)
+        if norm in seen:
+            continue
+        seen.add(norm)
+        if _usable_carrier_jinja_dir(norm):
+            logger.info("Carrier PDF: using Jinja template directory %s", norm)
+            return norm
+        if os.path.isdir(norm):
+            logger.warning(
+                "Carrier PDF: skipping template directory %r (missing carrier_EN.html)",
+                norm,
+            )
+    logger.error(
+        "Carrier PDF: no usable Jinja template directory (need carrier_EN.html). "
+        "Reports will use built-in HTML. Add templates under data/carrier_report or set "
+        "CARRIER_SCREENING_REPORT_TEMPLATE_DIR."
+    )
+    return None
+
+
 def _job_stop_requested(order_id: str) -> bool:
     """Portal Stop during PROCESSING: 파이프라인 PID는 없지만 취소 플래그만 설정된 경우."""
     from ...runner import get_runner
@@ -1223,9 +1345,7 @@ class CarrierScreeningPlugin(ServicePlugin):
             )
             from .review import extract_qc_summary
 
-            dirs = self._get_dirs(job)
-            output_dir = dirs["output"]
-            analysis_dir = dirs["analysis"]
+            output_dir, analysis_dir = carrier_report_generation_paths(job)
 
             # QC 요약
             qc_extras = self._qc_extra_search_dirs(job, analysis_dir)
@@ -1279,15 +1399,8 @@ class CarrierScreeningPlugin(ServicePlugin):
                 pi["gender"] = params["patient_gender"]
             patient_info = pi
 
-            # 템플릿 디렉토리 결정
-            template_dir = settings.report_template_dir
-            if not template_dir:
-                # 파이프라인 내 templates 디렉토리 확인
-                pipeline_template_dir = os.path.join(
-                    settings.carrier_screening_pipeline_dir, "data", "templates"
-                )
-                if os.path.isdir(pipeline_template_dir):
-                    template_dir = pipeline_template_dir
+            # 템플릿: 명시 → Carrier_result/carrier_report → data/carrier_report → REPORT_TEMPLATE_DIR → 파이프라인
+            template_dir = resolve_carrier_pdf_template_dir()
 
             logger.info(
                 f"[generate_report] Generating report for {job.order_id} "
@@ -1304,6 +1417,8 @@ class CarrierScreeningPlugin(ServicePlugin):
                 output_dir=output_dir,
                 patient_info=patient_info,
                 partner_info=partner_info,
+                order_params=job.params,
+                report_language=(languages[0] if languages else "EN"),
             )
             logger.info(f"  Generated report.json: {report_json_path}")
 

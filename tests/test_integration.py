@@ -279,6 +279,9 @@ def test_generate_report_json():
         assert data["carrier_status"]["status"] == "carrier"
         assert "Cystic fibrosis" in data["carrier_status"]["carrier_diseases"]
         assert data["reviewer"]["name"] == "Dr. Kim"
+        # Jinja templates use primary_patient.findings (orig JSON shape)
+        assert len(data["primary_patient"]["findings"]) == 1
+        assert data["primary_patient"]["findings"][0]["gene"] == "CFTR"
 
 
 def test_carrier_status_negative():

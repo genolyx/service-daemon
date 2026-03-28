@@ -1,0 +1,99 @@
+{
+  "report_metadata": {
+    "report_type": "Carrier Screening Report",
+    "language": "EN",
+    "order_id": "ORD-99255",
+    "report_date": "Dec 24, 2025",
+    "hospital": "City General Health System",
+    "doctor": "Dr. Sarah Williams"
+  },
+  "primary_patient": {
+    "name": "Jane Doe",
+    "dob": "Jan 01, 1990",
+    "gender": "Female",
+    "sample_id": "SAM-22522",
+    "collection_date": "Dec 20, 2025",
+    "findings": [
+        {
+          "gene": "SCN5A",
+          "omim_number": "607595",
+          "inheritance": "Autosomal dominant",
+          "disorder": "Long QT Syndrome 3",
+          "mutation": "c.664C>T",
+          "classification": "Pathogenic",
+          "acmg_evidence": "- PVS1 (Null variant): The nonsense mutation leading to R222Ter would likely be considered a null variant, strongly supporting pathogenicity if it's in a gene where loss-of-function is a known disease mechanism.\n- PS4 (Very strong evidence): Association with Brugada syndrome in multiple affected individuals and families.\n- PP1 (Co-segregation): While not explicitly stated for c.664C>T, co-segregation of variants with the disease phenotype within families is a strong indicator of pathogenicity.",
+          "gene_description": "Mutations in SCN5A are associated with Long QT Syndrome 3, Brugada Syndrome, Progressive Familial Heart Block Type IA, Dilated Cardiomyopathy 1E, Sick Sinus Syndrome 1, Familial Atrial Fibrillation 10, Sudden Infant Death Syndrome (SIDS), and Familial Ventricular Fibrillation 1.",
+          "gene_function": "The SCN5A gene encodes the alpha subunit of the cardiac sodium channel, Nav1.5, which is essential for the initial depolarization of cardiac myocytes and the propagation of electrical signals in the heart.",
+          "variant_summary": "The SCN5A c.664C>T variant is classified as Pathogenic and is strongly associated with Brugada syndrome, an inherited disorder that can lead to sudden cardiac death. This variant is a nonsense mutation, predicted to cause a loss-of-function due to a premature stop codon and the production of a truncated protein. Such loss-of-function variants in SCN5A are a known cause of Brugada syndrome, and the variant has been observed in affected individuals, including a case with a complex cardiac phenotype.",
+          "full_analysis": "The SCN5A c.664C>T variant is classified as Pathogenic. This classification is supported by its association with Brugada syndrome and its predicted molecular impact as a nonsense mutation leading to a truncated protein. The variant is listed as Pathogenic in ClinVar."
+        },
+        {
+          "gene": "PIGQ",
+          "omim_number": "618548",
+          "inheritance": "autosomal recessive",
+          "disorder": "Multiple Congenital Anomalies-Hypotonia-Seizures Syndrome 4",
+          "mutation": "c.560G>A",
+          "classification": "Uncertain significance; requires further investigation",
+          "acmg_evidence": "- PVS1 (Pathogenic, Very Strong): Predicted loss of function, applicable if c.560G>A is a null variant (nonsense, frameshift, etc.) in a gene where loss-of-function is a known mechanism of disease.\n- PM2 (Pathogenic, Moderate): Rare or absent in population databases.\n- PS4 (Pathogenic, Strong): Increased prevalence in affected individuals.\n- PP3 (Pathogenic, Supporting): Multiple lines of computational evidence support a deleterious effect.\n- BP4 (Benign, Supporting): Multiple lines of computational evidence suggest no impact.\n- BS2 (Benign, Strong): Found in healthy individuals.",
+          "gene_description": "Mutations in the PIGQ gene are associated with inherited GPI deficiencies (IGDs), specifically PIGQ-congenital disorders of glycosylation (PIGQ-CDG), also known as Multiple Congenital Anomalies-Hypotonia-Seizures Syndrome 4 (MCAHS4).",
+          "gene_function": "Part of the glycosylphosphatidylinositol-N-acetylglucosaminyltransferase (GPI-GnT) complex, catalyzing the transfer of N-acetylglucosamine to phosphatidylinositol in the first step of GPI biosynthesis.",
+          "variant_summary": "The genetic variant PIGQ c.560G>A is located in a gene critical for glycosylphosphatidylinositol (GPI) anchor biosynthesis, a process vital for cell surface protein anchoring and neuronal development. Mutations in PIGQ are linked to severe neurodevelopmental disorders characterized by intellectual disability, developmental delay, and epilepsy. While this specific variant's classification is pending further investigation, its potential impact on GPI-anchored protein expression warrants careful evaluation.",
+          "full_analysis": "The PIGQ gene is crucial for GPI anchor biosynthesis, essential for cell surface protein function and neuronal development. Variants in PIGQ are associated with severe neurodevelopmental disorders like early infantile epileptic encephalopathy and MCAHS4. The specific variant PIGQ c.560G>A has not been definitively classified due to a lack of specific data. However, if predicted to cause loss of function and found to be rare in populations or present in affected individuals, it could be classified as Pathogenic or Likely Pathogenic."
+        },
+        {
+          "gene": "ERCC6",
+          "omim_number": "609413",
+          "inheritance": "Autosomal recessive",
+          "disorder": "Cockayne syndrome",
+          "mutation": "c.1901A>G",
+          "classification": "Pathogenic",
+          "acmg_evidence": "- PVS1: The variant causes a premature stop codon, leading to a loss of function (Pathogenic, Very Strong).\n- PM2: The variant is considered rare in population databases, with a global minor allele frequency of approximately 0.1% (rs185142838).\n- PP3: The creation of a premature translational stop signal strongly supports a deleterious effect.\n- Segregation with Disease: The variant has been observed to segregate with disease in affected individuals.\n- Observed in Affected Individuals: The premature stop signal has been observed in individuals with clinical features of Cockayne syndrome and Cerebrooculofacioskeletal syndrome.",
+          "gene_description": "Mutations in the ERCC6 gene are associated with Cockayne syndrome (CS), UV-sensitive syndrome (UVSS), and Cerebrooculofacioskeletal syndrome (COFS). Cockayne syndrome is the most prominent disorder linked to ERCC6 mutations.",
+          "gene_function": "The ERCC6 gene encodes the Cockayne syndrome B (CSB) protein, a DNA helicase and chromatin remodeler crucial for transcription-coupled nucleotide excision repair (TC-NER). It repairs damaged DNA and facilitates the restart of transcription by removing stalled RNA polymerase II.",
+          "variant_summary": "The genetic variant ERCC6 c.1901A>G has been classified as Pathogenic. This variant leads to a premature translational stop signal (nonsense mutation) at amino acid 1288 (p.Arg1288Ter), predicted to cause a loss-of-function. This molecular impact, observed in affected individuals and segregating with disease, aligns with established ACMG criteria for pathogenicity. The variant is associated with Cockayne syndrome and potentially Cerebrooculofacioskeletal syndrome.",
+          "full_analysis": "The ERCC6 c.1901A>G variant (NM_000124.4(ERCC6):c.3862C>T) results in a premature stop codon at amino acid position 1288 (p.Arg1288Ter), leading to a loss-of-function. This variant is classified as Pathogenic, with strong evidence supporting its clinical significance. It is associated with Cockayne syndrome and potentially Cerebrooculofacioskeletal syndrome."
+        },
+        {
+          "gene": "ABCA12",
+          "omim_number": "607800",
+          "inheritance": "Autosomal Recessive",
+          "disorder": "Autosomal Recessive Congenital Ichthyosis (ARCI)",
+          "mutation": "c.3828A>G",
+          "classification": "Variant of Uncertain Significance (VUS)",
+          "acmg_evidence": "- PVS1: Null (Not Applicable as it is a synonymous variant and no loss of function is directly proven for this specific variant).\n- PM2: Absent (Specific population frequency data for this variant was not immediately retrievable from gnomAD within the provided text, which is needed to assess pathogenicity).\n- PP5: Considered (The variant is in a gene (ABCA12) known to be associated with ARCI, and this variant is synonymous, suggesting potential downstream effects).\n- BA1: Absent (No evidence to suggest this variant is a common benign variant).\n- BS1: Absent (No direct evidence that this variant is common in the general population).\n- BP4: Considered (Synonymous variants are generally considered less likely to be pathogenic than missense or truncating mutations, but can sometimes affect function).\n- PP3: Considered (In silico tools were not explicitly mentioned for this specific variant, but computational predictions could be used to assess potential impacts on splicing or mRNA stability).\n- PP1: Absent (Segregation analysis within affected families has not been provided for this specific variant).\n- PP2: Absent (No prior evidence linking this specific variant to the phenotype has been presented).",
+          "gene_description": "Mutations in the ABCA12 gene are associated with Autosomal Recessive Congenital Ichthyosis (ARCI), a group of rare genetic skin disorders characterized by abnormal scaling of the skin. Specific phenotypes include Harlequin Ichthyosis (HI), Congenital Ichthyosiform Erythroderma (CIE), and Lamellar Ichthyosis type 2 (LI2).",
+          "gene_function": "The ABCA12 protein functions as an ATP-binding cassette transporter crucial for transporting lipids, specifically glucosylceramides, within skin cells. This transport is essential for forming the lipid barrier in the stratum corneum, vital for skin barrier function and preventing water loss. It is involved in keratinocyte differentiation, desquamation, and cellular cholesterol homeostasis.",
+          "variant_summary": "The ABCA12 c.3828A>G variant is a synonymous mutation within a gene known to cause Autosomal Recessive Congenital Ichthyosis (ARCI). This variant does not change the amino acid sequence, but it may potentially affect splicing or mRNA stability. Due to a lack of specific clinical interpretation data and functional evidence, its significance remains uncertain and is provisionally classified as a Variant of Uncertain Significance (VUS).",
+          "full_analysis": "The genetic variant ABCA12 c.3828A>G is a synonymous variant that does not alter the amino acid sequence of the ABCA12 protein (p.Glu1276Glu). While ABCA12 is a known disease-causing gene for Autosomal Recessive Congenital Ichthyosis (ARCI), specific ACMG interpretation data for this particular variant is limited in public databases. Without further functional studies or segregation analysis, its pathogenicity remains uncertain. Therefore, it is tentatively classified as a Variant of Uncertain Significance (VUS), though it could potentially be benign or pathogenic depending on additional evidence."
+        },
+        {
+          "gene": "MCPH1",
+          "omim_number": "251200",
+          "inheritance": "Autosomal Recessive",
+          "disorder": "Primary Autosomal Recessive Microcephaly 1",
+          "mutation": "c.1869_1870del",
+          "classification": "Pathogenic",
+          "acmg_evidence": "- PVS1: Frameshift variant in a gene where loss-of-function is a known mechanism of disease.\n- PM3: The variant is observed in individuals with the disorder (ClinVar lists this variant in association with \"Microcephaly 1, primary, autosomal recessive\").\n- PP3: Multiple lines of evidence indicate a predicted deleterious effect on the gene or gene product (frameshift leading to premature stop codon and likely non-functional protein).",
+          "gene_description": "Mutations in the MCPH1 gene are associated with Primary Autosomal Recessive Microcephaly 1 (MCPH1), characterized by a significantly reduced head circumference, reduced brain weight, intellectual disability, and also rare variants linked to autism spectrum disorders and congenital hearing impairment. MCPH1 also functions as a tumor suppressor gene linked to ovarian and breast cancers.",
+          "gene_function": "MCPH1 is involved in chromosome condensation and DNA damage response, including G2/M checkpoint arrest and modulation of ATM and ATR signaling pathways. It plays a role in neurogenesis and the regulation of cerebral cortex size.",
+          "variant_summary": "The MCPH1 c.1869_1870del variant is a frameshift mutation that leads to a premature termination codon, resulting in a non-functional or unstable microcephalin protein. This protein is crucial for normal brain development, involved in processes like chromosome condensation and cell cycle regulation. The variant has been observed in individuals with primary microcephaly, an autosomal recessive disorder characterized by significantly reduced brain size, indicating a strong association with the disease.",
+          "full_analysis": "The genetic variant MCPH1 c.1869_1870del is a frameshift mutation predicted to result in a premature stop codon (p.Ser623_Cys624insTer). This type of mutation is highly likely to produce a non-functional or unstable protein. The MCPH1 gene encodes microcephalin, a protein essential for chromosome condensation, DNA damage response, and cell cycle regulation, which are critical for maintaining brain size during development. Consequently, variants in MCPH1 leading to loss of function are associated with primary microcephaly, an autosomal recessive neurodevelopmental disorder."
+        },
+        {
+          "gene": "UPB1",
+          "omim_number": "606673",
+          "inheritance": "Autosomal recessive",
+          "disorder": "Beta-ureidopropionase deficiency",
+          "mutation": "c.105-2A>G",
+          "classification": "Pathogenic",
+          "acmg_evidence": "- PVS1 (Pathogenic Very Strong): Null variant (splice site variant) in a gene where loss-of-function is a known mechanism of disease (UPB1D).\n- PM2 (Pathogenic Moderate): Likely absent or extremely rare in population databases, given it's a splice site variant in a gene causing a rare disorder.\n- PP3 (Pathogenic Supporting): Computational evidence suggests a deleterious effect on the splice site, and studies confirm splicing alterations in UPB1 variants.\n- Supporting Evidence: Identified in affected individuals with UPB1D, and other pathogenic splice site variants in UPB1 have been reported.",
+          "gene_description": "Mutations in the UPB1 gene are linked to Beta-ureidopropionase deficiency, a condition characterized by reduced or absent enzyme activity, leading to metabolic changes and neurological symptoms.",
+          "gene_function": "The UPB1 gene encodes the enzyme beta-ureidopropionase, which is crucial for the final step of pyrimidine degradation. It converts N-carbamyl-beta-alanine and N-carbamyl-beta-aminoisobutyric acid into beta-alanine, ammonia, and carbon dioxide, playing a role in amino acid biosynthesis and nucleotide metabolism.",
+          "variant_summary": "The UPB1 c.105-2A>G variant is a splice site mutation located in intron 1 of the UPB1 gene. This variant is predicted to disrupt normal RNA splicing, leading to a deficiency of the beta-ureidopropionase enzyme. This deficiency causes beta-ureidopropionase deficiency (UPB1D), an autosomal recessive disorder that can manifest with significant neurological symptoms, including developmental delay and epilepsy. The variant's impact on splicing and its association with disease strongly support its pathogenic nature.",
+          "full_analysis": "The genetic variant UPB1 c.105-2A>G is a splice site variant within intron 1 of the UPB1 gene. This type of variant is predicted to disrupt pre-mRNA splicing, leading to a non-functional beta-ureidopropionase enzyme and consequently beta-ureidopropionase deficiency (UPB1D). UPB1D is an autosomal recessive disorder with a variable clinical presentation, ranging from asymptomatic to severe neurological involvement including developmental delay, epilepsy, and structural brain abnormalities. The variant's classification as Pathogenic is supported by its nature as a splice site mutation in a gene where loss-of-function is the known mechanism of disease, and its identification in affected individuals."
+        }
+    ]
+    },
+    "partner": null,
+    "genes_evaluated_count": 302
+  }

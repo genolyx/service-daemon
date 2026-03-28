@@ -1,0 +1,57 @@
+{
+  "report_metadata": {
+    "report_type": "Carrier Screening Report",
+    "language": "EN",
+    "order_id": "ORD-9922",
+    "report_date": "Dec 24, 2025",
+    "hospital": "City General Health System",
+    "doctor": "Dr. Sarah Williams"
+  },
+  "primary_patient": {
+    "name": "Jane Doe",
+    "dob": "Jan 01, 1990",
+    "gender": "Female",
+    "sample_id": "SAM-225",
+    "collection_date": "Dec 20, 2025",
+    "findings": [
+      {
+            "gene": "ELP1",
+            "mutation": "c.3701-1G>A",
+            "disorder": "Familial dysautonomia",
+            "inheritance": "Autosomal recessive",
+            "classification": "Likely Pathogenic",
+            "gene_description": "Familial Dysautonomia (FD): This is the most well-known association. FD (also called HSAN III) is an autosomal recessive neurodegenerative disorder. It is characterized by the progressive loss of sensory and autonomic neurons, leading to symptoms like autonomic crises (unstable blood pressure/heart rate), absence of tears, and decreased pain sensitivity.",
+            "variant_summary": "The ELP1 c.3701-1G>A variant is a highly significant genetic alteration located at the canonical splice acceptor site of Exon 33. In the genetic code, the position is an invariant nucleotide (G) that the cell's splicing machinery must recognize to correctly stitch exons together into a functional protein. By changing this G to an A, the variant disrupts the normal recognition of the splice site, typically resulting in exon skipping or the use of an alternative cryptic site. Because this mutation occurs near the 3' end of the gene, it is predicted to cause a frameshift and a premature stop codon, leading to a truncated protein or the complete degradation of the mRNA through a process called nonsense-mediated decay (NMD). This loss-of-function (LoF) mechanism prevents the assembly of the Elongator complex, which is essential for modifying transfer RNA (tRNA) molecules. Without these modifications, protein translation becomes inefficient, particularly in high-demand cells like neurons. Clinically, this variant is classified as Pathogenic/Likely Pathogenic for Familial Dysautonomia. While it is extremely rare in the general population, it has been documented in both Ashkenazi Jewish and non-Jewish individuals, often appearing in a compound heterozygous state alongside the common founder mutation."
+          },
+          {
+            "gene": "GJB2",
+            "mutation": "c.235del",
+            "disorder": "GJB2-related conditions",
+            "inheritance": "Autosomal recessive",
+            "classification": "Pathogenic",
+            "gene_description": "Autosomal Recessive Nonsyndromic Hearing Loss (DFNB1A): This is the most prevalent association, accounting for up to 50% of autosomal recessive deafness in many populations. It typically presents as stable, bilateral, sensorineural hearing loss without other medical issues.",
+            "variant_summary": "The GJB2 c.235del (often written as c.235delC) variant is a well-established Pathogenic mutation and is one of the most frequent causes of hereditary deafness in East Asian populations, including individuals of Chinese, Japanese, and Korean descent. The mutation involves the deletion of a single cytosine base at position 235 of the cDNA, which shifts the reading frame starting at amino acid 79. This frameshift creates a premature stop codon just three amino acids later (p.Leu79Cysfs*3), resulting in a severely truncated and non-functional Connexin 26 protein. Because the GJB2 gene consists of only one large coding exon, this truncated protein is unable to form the hexameric connexon channels required for potassium ion recycling in the cochlea. Without these channels, the inner ear cannot maintain the chemical balance (homeostasis) necessary for hair cells to convert sound waves into nerve impulses. Clinically, individuals who are homozygous for this variant typically present with congenital, non-progressive, severe-to-profound sensorineural hearing loss. While the severity can occasionally vary to a moderate level, the truncating nature of this specific mutation generally leads to a more significant hearing impairment than non-truncating (missense) variants."
+          },
+          {
+            "gene": "MCCC1",
+            "mutation": "c.872C>T",
+            "disorder": "3-methylcrotonyl-CoA carboxylase (3-MCC) deficiency (MCCC1-related)",
+            "inheritance": "Autosomal recessive",
+            "classification": "Pathogenic",
+            "gene_description": "3-MCCD is known for its extreme clinical variability. While it can cause metabolic crises (lethargy, vomiting, and seizures) in infancy, more than 90% of individuals diagnosed through newborn screening (NBS) remain asymptomatic throughout their lives. It is currently the most common organic aciduria detected by newborn screening programs.",
+            "variant_summary": "The MCCC1 c.872C>T variant is a well-documented genetic alteration classified as Pathogenic/Likely Pathogenic for 3-Methylcrotonyl-CoA carboxylase deficiency. This variant is a missense mutation, meaning a single letter change in the DNA results in the replacement of one amino acid with another in the protein sequence—specifically, alanine is replaced by valine at position 291 (p.Ala291Val). Because alanine is a highly conserved residue within the biotin-attachment domain of the alpha subunit, this substitution is predicted to disrupt the stability or catalytic efficiency of the MCC enzyme complex. In the clinical setting, this variant has been frequently observed in individuals who show biochemical markers of MCC deficiency (elevated C5-OH carnitine on newborn screening). While the variant is rare in the general population (appearing in roughly 0.01% to 0.03% of individuals in global databases like gnomAD), it has been confirmed through functional studies to significantly reduce enzyme activity. Despite its classification as pathogenic, the presence of this variant does not necessarily predict a severe clinical outcome; many individuals with this genotype remain asymptomatic unless they encounter a metabolic stressor, such as a high-protein diet or a severe viral illness, which can trigger a metabolic crisis."
+          },
+          {
+            "gene": "ZFYVE26",
+            "mutation": "c.274-2A>G",
+            "disorder": "Spastic paraplegia type 15",
+            "inheritance": "Autosomal recessive",
+            "classification": "Likely Pathogenic",
+            "gene_description": "The ZFYVE26 gene is primarily associated with Hereditary Spastic Paraplegia type 15 (SPG15), a rare neurodegenerative condition also known as Kjellin syndrome. SPG15 is classified as a complicated form of hereditary spastic paraplegia because it affects more than just the motor pathways. Key features include progressive muscle stiffness and weakness in the lower limbs, thinning of the corpus callosum (the bridge between the brain's hemispheres), intellectual disability, and a specific eye condition called pigmentary maculopathy (retinal degeneration).",
+            "variant_summary": "The ZFYVE26 c.274-2A>G variant is a highly impactful genetic change located at the canonical splice acceptor site of Exon 3. In the genetic code, the position is part of an invariant sequence (AG) that signals to the cell where an intron ends and an exon begins. By changing the Adenine (A) to a Guanine (G) at this critical junction, the variant effectively breaks the signal for the splicing machinery. This typically leads to exon skipping (where Exon 3 is deleted from the final instruction set) or the use of an alternative cryptic splice site. This disruption is predicted to cause a frameshift, leading to a premature stop codon and a truncated, non-functional protein. Because the spastizin protein cannot be formed correctly, the autophagy process in neurons is severely compromised, leading to the cellular clogging and eventual degeneration observed in SPG15 patients. In clinical databases like ClinVar, this variant is classified as Pathogenic or Likely Pathogenic. It is extremely rare in the general population, with a frequency of approximately 0.002% in global databases. This variant is typically identified in individuals with a clinical diagnosis of Kjellin syndrome, often in a compound heterozygous state alongside another loss-of-function mutation in the same gene."
+          }
+  ]
+  },
+  "partner": null,
+  "genes_evaluated_count": 302
+}

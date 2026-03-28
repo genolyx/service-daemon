@@ -246,11 +246,14 @@ def ingest_result_json_from_disk(store: OrderStore, job: Job) -> None:
         logger.warning("Could not ingest result.json for %s: %s", job.order_id, e)
 
 
-def ingest_report_json_from_disk(store: OrderStore, job: Job) -> None:
+def ingest_report_json_from_disk(
+    store: OrderStore, job: Job, output_dir: Optional[str] = None
+) -> None:
     """If output_dir/report.json exists, store in DB."""
-    if not job.output_dir:
+    od = (output_dir or "").strip() or job.output_dir
+    if not od:
         return
-    path = os.path.join(job.output_dir, "report.json")
+    path = os.path.join(od, "report.json")
     if not os.path.isfile(path):
         return
     try:

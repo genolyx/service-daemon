@@ -1,0 +1,18 @@
+{
+  "report_metadata": {
+    "order_id": "ORD-9252",
+    "hospital": "City General Health System",
+    "doctor": "Dr. Sarah Williams",
+    "report_date": "Dec 24, 2025"
+  },
+  "primary_patient": {
+    "name": "Jane Does",
+    "dob": "Jan 01, 1990",
+    "gender": "Female",
+    "sample_id": "SAM-1120",
+    "collection_date": "Dec 20, 2025",
+    "findings": []
+  },
+  "partner": null,
+  "genes_evaluated_count": 302
+}

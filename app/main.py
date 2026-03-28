@@ -992,8 +992,19 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
         await asyncio.to_thread(store.set_review_json, order_id, review_blob)
 
     # 생성된 리포트 파일을 Platform에 업로드
-    output_dir = job.output_dir
+    if job.service_code == "carrier_screening":
+        from .services.carrier_screening.plugin import carrier_report_output_dir
+
+        output_dir = carrier_report_output_dir(job)
+    else:
+        output_dir = job.output_dir or ""
     report_files = []
+
+    if not output_dir:
+        raise HTTPException(
+            status_code=500,
+            detail="Report output directory could not be resolved",
+        )
 
     # report.json
     report_json = os.path.join(output_dir, "report.json")
@@ -1035,8 +1046,10 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
             content_type="text/html",
         ))
 
-    if store and job.output_dir:
-        await asyncio.to_thread(ingest_report_json_from_disk, store, job)
+    if store and output_dir:
+        await asyncio.to_thread(
+            ingest_report_json_from_disk, store, job, output_dir
+        )
 
     # 플랫폼 업로드는 파일당 긴 타임아웃·순차 요청이라 포털이 멈춘 것처럼 보일 수 있음 → 백그라운드
     uploaded_count = 0

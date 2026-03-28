@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        /* PDF Page Setup */
+        @page {
+            size: Letter;
+            margin: 0.6in 0.5in 1in 0.5in;
+
+            @top-right { content: element(headerContent); }
+            @bottom-left { content: element(footerContent); }
+            @bottom-right {
+                content: "第 " counter(page) " 页，共 " counter(pages) " 页";
+                font-family: 'Microsoft YaHei', sans-serif;
+                font-size: 8pt;
+                color: #94a3b8;
+            }
+        }
+
+        @page :first { @top-right { content: none; } }
+
+        body {
+            font-family: 'Microsoft YaHei', Helvetica, Arial, sans-serif;
+            line-height: 1.3;
+            color: #334155;
+            margin: 0;
+        }
+
+        #header-content {
+            position: running(headerContent);
+            font-size: 8pt;
+            color: #64748b;
+            text-align: right;
+        }
+
+        #footer-content {
+            position: running(footerContent);
+            width: 100%;
+            font-size: 8pt;
+            color: #64748b;
+            line-height: 1.3;
+            border-top: 1px solid #cbd5e1;
+            padding-top: 8px;
+        }
+
+        .new-page { page-break-before: always; }
+
+        /* Branding Header */
+        .brand-header {
+            border-bottom: 1.5px solid #3b82f6;
+            padding-bottom: 8px;
+            margin-bottom: 25px;
+            display: block;
+            width: 100%;
+            clear: both;
+            overflow: hidden;
+        }
+
+        .brand-name {
+            float: left;
+            font-size: 18pt;
+            font-weight: 500;
+            color: #0f172a;
+            letter-spacing: -0.01em;
+            white-space: nowrap;
+            line-height: 40px;
+        }
+
+        .logo-placeholder {
+            float: right;
+            width: 140px;
+            height: 40px;
+            border: 1px dashed #cbd5e1;
+            text-align: center;
+            line-height: 40px;
+            font-size: 6.5pt;
+            color: #94a3b8;
+            text-transform: uppercase;
+        }
+
+        /* INLINE COMPACT PATIENT INFO TABLE */
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 35px;
+            table-layout: fixed;
+            clear: both;
+        }
+        .info-table td {
+            padding: 4px 0;
+            vertical-align: middle;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 7.5pt;
+        }
+        .label {
+            display: inline;
+            font-size: 7.5pt;
+            color: #64748b;
+            font-weight: 500;
+            margin-right: 4px;
+        }
+        .value { display: inline; color: #1e293b; }
+        
+        .couples-container {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+        .partner-box {
+            width: 48%;
+            border: 1px solid #f1f5f9;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .risk-banner-joint {
+            padding: 20px;
+            text-align: center;
+            border: none; /* Simply change this from '2px solid #be123c' to 'none' */
+            background-color: #fff1f2;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        .risk-title {
+            font-size: 14pt;
+            font-weight: 800;
+            color: #be123c;
+        }
+
+        /* Results Banners */
+        .banner {
+            padding: 12px 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+            margin-bottom: 40px;
+        }
+        .banner-pos { background-color: #fff1f2; color: #be123c; border-left: 4px solid #be123c; }
+        .banner-neg { background-color: #f0fdf4; color: #15803d; border-left: 4px solid #15803d; }
+        .status-text { font-size: 12pt; font-weight: 500; margin: 0; }
+        .banner-desc { margin: 4px 0 0 0; font-size: 8.5pt; color: #334155; }
+
+        /* Findings Table */
+        .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 25px;
+        }
+        .summary-table th {
+            text-align: left;
+            font-size: 8pt;
+            color: #64748b;
+            border-bottom: 1.5px solid #cbd5e1;
+            padding: 4px 5px;
+            font-weight: 500;
+        }
+        .summary-table td {
+            padding: 8px 5px;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 8pt;
+            vertical-align: top;
+        }
+        
+        .condition-heading {
+            font-size: 11pt;
+            font-weight: 500;
+            color: #0f172a;
+            margin-bottom: 15px;
+            padding: 4px 0 4px 12px;
+            border-left: 6px solid #be123c;
+            line-height: 1.2;
+            background-color: #f8fafc;
+            display: block;
+        }
+
+        .clinical-statement {
+            font-size: 8pt;
+            color: #64748b;
+            line-height: 1.4;
+            text-align: justify;
+            margin-bottom: 20px;
+            background: #f8fafc;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .section-title {
+            margin-top: 25px;
+            font-size: 11pt;
+            font-weight: 500;
+            color: #0f172a;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 4px;
+        }
+
+        .detail-item {
+            margin-top: 25px;
+            padding: 10px 0;
+            page-break-inside: avoid;
+            border-bottom: 1px dashed #e2e8f0;
+        }
+        .sub-label {
+            font-size: 8pt;
+            font-weight: 500;
+            color: #64748b;
+            margin-top: 10px;
+        }
+        .detail-text {
+            font-size: 8pt;
+            color: #334155;
+            margin: 2px 0 0 0;
+            text-align: justify;
+            line-height: 1.3;
+        }
+
+        .gene-list-grid {
+            font-size: 8pt;
+            color: #94a3b8;
+            margin-top: 10px;
+            line-height: 1.8;
+            text-align: justify;
+            word-break: break-all;
+        }
+
+        .director-section {
+            margin-top: 50px;
+            padding-top: 10px;
+            border-top: 1px solid #e2e8f0;
+            page-break-inside: avoid;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="header-content">
+        {{ data.primary_patient.name }} | 订单编号: {{ data.report_metadata.order_id }}
+    </div>
+
+    <div id="footer-content">
+        <strong>Genolyx Diagnostics</strong> | 1400 16th Street, San Francisco, CA 94103<br>
+        clientservices@genolyx.com | 800.436.3037 | © 2025 Genolyx Corporation
+    </div>
+
+    <div class="brand-header">
+        <div class="brand-name">帶因者篩查報告 (夫妻聯合)</div>
+        <div class="logo-placeholder"><span>Logo 占位符</span></div>
+    </div>
+
+    <table class="info-table">
+        <tr>
+            <td><span class="label">主要受检者:</span> <span class="value">{{ data.primary_patient.name }}</span></td>
+            <td><span class="label">送检医院:</span> <span class="value">{{ data.report_metadata.hospital }}</span></td>
+        </tr>
+        <tr>
+            <td><span class="label">受检伴侣:</span> <span class="value">{{ data.partner.name }}</span></td>
+            <td><span class="label">临床医生:</span> <span class="value">{{ data.report_metadata.doctor }}</span></td>
+        </tr>
+        <tr>
+            <td><span class="label">订单编号:</span> <span class="value">{{ data.report_metadata.order_id }}</span></td>
+            <td><span class="label">报告日期:</span> <span class="value">{{ data.report_metadata.report_date }}</span></td>
+        </tr>
+    </table>
+
+    <div class="couples-container">
+        <div class="partner-box">
+            <div class="label" style="font-size: 10pt; border-bottom: 1px solid #64748b; display: block; margin-bottom: 5px;">主要受检者信息</div>
+            <div style="font-size: 7.5pt; line-height: 1.4;">
+                <span class="label">姓名:</span> <span class="value">{{ data.primary_patient.name }}</span><br>
+                <span class="label">出生日期:</span> <span class="value">{{ data.primary_patient.dob }}</span><br>
+                <span class="label">样本编号:</span> <span class="value">{{ data.primary_patient.sample_id }}</span>
+            </div>
+        </div>
+
+        <div class="partner-box">
+            <div class="label" style="font-size: 10pt; border-bottom: 1px solid #64748b; display: block; margin-bottom: 5px;">受检伴侣信息</div>
+            <div style="font-size: 7.5pt; line-height: 1.4;">
+                <span class="label">姓名:</span> <span class="value">{{ data.partner.name }}</span><br>
+                <span class="label">出生日期:</span> <span class="value">{{ data.partner.dob }}</span><br>
+                <span class="label">样本编号:</span> <span class="value">{{ data.partner.sample_id }}</span>
+            </div>
+        </div>
+    </div>
+
+    {# --- LOGIC: BANNERS --- #}
+    {% set match = namespace(found=false) %}
+    {% for p1 in data.primary_patient.findings %}
+        {% for p2 in data.partner.findings %}
+            {% if p1.gene == p2.gene %}
+                {% set match.found = true %}
+                <div class="risk-banner-joint">
+                    <div class="risk-title">已识别高生育风险</div>
+                    <p class="banner-desc">受检双方均为 <strong>{{ p1.disorder }} ({{ p1.gene }})</strong> 的携带者。后代患病的风险为 25%。</p>
+                </div>
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+
+    {% if not match.found and (data.primary_patient.findings or data.partner.findings) %}
+    <div class="banner banner-pos">
+        <p class="status-text">+ 检出携带者</p>
+        <p class="banner-desc">一方或双方检出不同疾病的携带者。未检出共同遗传风险。</p>
+    </div>
+    {% endif %}
+
+    {% if not match.found and not data.primary_patient.findings and not data.partner.findings %}
+    <div class="banner banner-neg">
+        <p class="status-text">- 阴性</p>
+        <p class="banner-desc">受检双方均未检出具有临床意义的基因变异。</p>
+    </div>
+    {% endif %}
+
+    <table class="summary-table">
+        <thead>
+            <tr>
+                <th width="15%">受检者</th>
+                <th width="30%">疾病名称</th>
+                <th width="15%">相关基因</th>
+                <th width="40%">变异信息</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p1 in data.primary_patient.findings %}
+                {% for p2 in data.partner.findings %}
+                    {% if p1.gene == p2.gene %}
+                       <tr style="background-color: #fff1f2;">
+                            <td style="color: #be123c; font-weight: 700;">共同风险</td>
+                            <td><strong>{{ p1.disorder }}</strong></td>
+                            <td>{{ p1.gene }}</td>
+                            <td>主要受检者: {{ p1.mutation }}<br>伴侣: {{ p2.mutation }}</td>
+                       </tr>
+                    {% endif %}
+                {% endfor %}
+            {% endfor %}
+
+            {% for item in data.primary_patient.findings %}
+                <tr>
+                    <td style="color: #3b82f6; font-weight: 500;">主要受检者</td>
+                    <td>{{ item.disorder }}</td>
+                    <td>{{ item.gene }}</td>
+                    <td>{{ item.mutation }}</td>
+                </tr>
+            {% endfor %}
+
+            {% for item in data.partner.findings %}
+                <tr>
+                    <td style="color: #64748b; font-weight: 500;">伴侣</td>
+                    <td>{{ item.disorder }}</td>
+                    <td>{{ item.gene }}</td>
+                    <td>{{ item.mutation }}</td>
+                </tr>
+            {% endfor %}
+
+            {% if not data.primary_patient.findings and not data.partner.findings %}
+                <tr>
+                    <td colspan="4" style="text-align: center; padding: 20px; color: #64748b; font-style: italic;">未检出具有临床意义的变异。</td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+
+    <div class="clinical-statement">
+        本携带者筛查评估了 302 个基因，旨在检测与后代患遗传病风险增加相关的基因变异。了解携带者身份可为家庭规划和临床准备提供依据。本筛查不用于诊断受检者已存在的疾病。如需确认个体病理原因，建议进行专门的诊断性基因检测。
+    </div>
+
+    {% if data.findings %}
+    <div class="new-page">
+        <div class="section-title">详细临床解读</div>
+        {% for item in data.findings %}
+        <div class="detail-item">
+            <div class="condition-heading">
+                {{ item.disorder }}
+            </div>
+            
+            <div style="margin-bottom: 12px;">
+                <div class="sub-label">基因关联</div>
+                <p class="detail-text">
+                    <strong>{{ item.gene }}</strong> 基因与 {{ item.disorder }} 相关。{{ item.gene_description }}
+                </p>
+            </div>
+
+            <div>
+                <div class="sub-label">结果解读</div>
+                <p class="detail-text">
+                    在 <strong>{{ item.gene }}</strong> 基因中检测到 <strong>{{ item.mutation }}</strong> 变异，确认受检者为 {{ item.disorder }} 的携带者。{{ item.variant_summary }} 该结果分类为 <strong>{{ item.classification }}</strong>。
+                </p>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <div class="new-page">
+            <div class="section-title">评估基因</div>
+            <div class="gene-list-grid">
+                ABCA3, ABCC8, ABCD1, ACAD9, ACADM, ACADSB, ACADVL, ACAT1, ADA, ADAMTS2, ADGRG1, AGA, AGL, AGPS, AGXT, AIRE, ALDH3A2, ALDOB, ALG1, ALG12, ALMS1, ALPL, AMT, AP3B1, APTX, ARG1, ARSA, ARSB, ASL, ASNS, ASPA, ASS1, ATIC, ATP6V1B1, ATP7B, ATRX, BBS1, BBS10, BBS12, BCKDHA, BCKDHB, BTD, BTK, CAPN3, CASP8, CBS, CDH23, CEP290, CERKL, CFTR, CHM, CHRNE, CIB2, CLN3, CLN5, CLN6, CLN8, CLRN1, CNGB3, COL4A3, COL4A4, COL4A5, CP, CPT1A, CPT2, CRB1, CTNS, CTSD, CTSK, CYBA, CYBB, CYP11B1, CYP11B2, CYP17A1, CYP19A1, CYP1B1, CYP21A2, CYP27A1, DBT, DCLRE1C, DHCR7, DHDDS, DKC1, DLD, DMD, DNAH5, DNAI1, DNAI2, DPM1, DYSF, EDA, EIF2B1, EIF2B2, EIF2B3, EIF2B4, EIF2B5, EMD, ERCC6, ERCC8, ESCO2, ETFA, ETFB, ETFDH, ETHE1, EVC, EVC2, EXOSC3, F11, F8, F9, FAH, FANCA, FANCC, FANCG, FH, FKRP, FKTN, G6PC, GAA, GALC, GALE, GALK1, GALT, GAMT, GBA, GBE1, GCDH, GCH1, GJB2, GJB6, GLA, GLB1, GLDC, GLE1, GNE, GNPTAB, GNPTG, GNS, GP1BA, GP9, GPHN, GRHPR, GSS, GTC, GUSB, HADHA, HADHB, HBA1, HBA2, HBB, HEXA, HEXB, HFE2, HGSNAT, HJV, HLCS, HMGCL, HOGA1, HPS1, HPS3, HSD17B4, HSD3B2, HYLS1, IDS, IDUA, IKBKAP, IL2RG, IVD, KCNJ11, LAMA2, LAMA3, LAMB3, LAMC2, LCA5, LDLRAD1, LIPPA, LMBRD1, LOXHD1, LRPPRC, LYST, MAN2B1, MCOLN1, MED17, MESP2, MFSD8, MGAT2, MKS1, MLC1, MMAA, MMAB, MMACHC, MMADHC, MPI, MPL, MPV17, MRE11A, MSH2, MTHFR, MTM1, MTR, MTRR, MTTP, MUT, MYO7A, NAGLU, NAGS, NBN, NDRG1, NDUFAF5, NDUFS4, NDUFS6, NDUFS7, NDUFV1, NEB, NPC1, NPC2, NPHP1, NPHS1, NPHS2, NR0B1, NR2E3, NTRK1, OAT, OPA3, OTC, P3H1, PAH, PANK2, PC, PCCA, PCCB, PCDH15, PDHA1, PDHB, PEX1, PEX10, PEX12, PEX13, PEX14, PEX16, PEX19, PEX2, PEX26, PEX3, PEX5, PEX6, PEX7, PFKM, PGK1, PHGDH, PHKG2, PKHD1, PMM2, PNPO, POLG, POMGNT1, POMT1, POMT2, PPT1, PROP1, PSAP, PTB1, PTS, PUD, PYGL, QDPR, RAB23, RAG1, RAG2, RAPSN, RARS2, RDH12, RDX, REEP6, RPE65, RPGRIP1L, RS1, RTEL1, SACS, SAMD9, SAMHD1, SC5D, SCN4A, SCN4B, SCN5A, SCN8A, SCN9A, SDHA, SDHAF2, SDHB, SDHC, SDHD, SEPN1, SERPINA1, SGCA, SGCB, SGCD, SGCG, SGSH, SLC12A3, SLC12A6, SLC17A5, SLC19A2, SLC19A3, SLC22A5, SLC25A13, SLC25A15, SLC25A20, SLC26A2, SLC26A4, SLC35A1, SLC35C1, SLC37A4, SLC3A1, SLC4A11, SLC6A19, SLC6A8, SLC7A7, SMARCB1, SMN1, SMPD1, SPG11, SPG7, STAR, SUMF1, SYNE1, TAT, TAZ, TCTN2, TFR2, TGM1, TH, THCA, TMEM216, TMEM67, TNP1, TPP1, TRMU, TSFM, TTPA, TYMP, TYR, USH1C, USH1G, USH2A, VDR, VHL, VPS13A, VPS13B, VPS33B, VSX2, WAS, WNT10A, WRN, XPA, XPC, ZFYVE26, ZNF469.
+            </div>
+        </div>
+
+        <div class="new-page">
+            <div class="section-title">检测方法与局限性</div>
+            <p class="detail-text">
+                使用基于杂交的方案从提交的样本中提取基因组 DNA 并进行目标区域富集，随后利用 Illumina 技术进行测序。除非另有说明，所有目标区域的测序深度均达到 ≥50x，或辅以额外的补充分析。读段（Reads）与参考序列 (GRCh37) 进行比对，变异的识别与解读基于“评估基因”部分指出的单个临床相关转录本。富集和分析重点在于指定转录本的编码序列、侧翼 20bp 的内含子序列，以及在检测设计时证明可致病的其他特定基因组区域。启动子、非翻译区 (UTR) 及其他非编码区通常不进行分析。外显子缺失和重复（CNV）分析采用内部算法，通过将先证者序列中每个靶点的读取深度与一组临床样本的平均读取深度及深度分布进行比较来确定拷贝数。
+                <br><br>
+                对 X 和 Y 染色体的标记物进行分析以进行质量控制，并可能检测到与预期性染色体组成不符的情况。此类异常将根据内部指南包含在报告中。实验室利用特定的分类方法来识别经二代测序 (NGS) 检测到且需要正交验证的变异（Lincoln, et al. J Mol Diagn. 2019 Mar;21(2):318-329.）。如有需要，将根据实验室制定的严格标准，采用一种或多种经验证的正交方法（PubMed ID 30610921）确认报告变异的存在及其位置。
+                <br><br>
+                根据申请需求进行以下特定分析：对于 GBA 基因，已修改参考基因组以屏蔽基因和假基因中多态性旁系同源序列变异 (PSV) 的位点。对于 CYP21A2 和 GBA，如果通过 NGS 流程识别出一个或多个可报告变异、基因转换或融合事件，将通过长程 PCR 及随后的短程 PCR 产生的扩增子进行 PacBio 测序验证。在某些情况下，可能无法区分基因和假基因。对于 GJB2，报告范围包括与 GJB6 重叠的大段上游缺失。对于 HBA1/2，修改了参考基因组以强制将来源于 HBA1 的部分测序读段与 HBA2 比对，并修改了变异调用算法以支持这些区域 4 个等位基因的预期。HBA1/2 拷贝数分析由自定义假设检验算法执行并生成二倍体型调用。如果样本的序列数据不支持所测假设中的唯一高置信度匹配，该样本将被标记以进行人工复核。拷贝数变异仅针对 HBA1 和 HBA2 的编码序列以及 HS-40 区域进行报告。本检测无法区分 -α3.7 亚型，所有 -α3.7 变异均判定为 HBA1 缺失。当重叠的拷贝数增加和缺失事件断点相似时，本检测可能无法发现。
+                <br><br>
+                对于 FMR1，通过带有荧光标记引物的 PCR 结合毛细管电泳检测三核苷酸重复。参考范围：正常：45 CGG 重复；中间型：45-54 CGG 重复；前突变：55-200 CGG 重复；全突变：>200 CGG 重复。对于具有 55-90 个三核苷酸重复的等位基因，该区域通过 PCR 扩增并采用 PacBio 长读段技术测序。AGG 中断的数量直接从生成的 DNA 序列中读取。
+                <br><br>
+                本报告仅包含截至报告日期与所测疾病具有临床显著关联的变异。临床意义未明变异 (VUS)、良性变异及可能良性变异不包括在内。如果未来证据表明变异的临床意义发生变化，实验室可能会更新报告并发出通知。PMID 是已发表科学论文的唯一标识符，可通过 http://www.ncbi.nlm.nih.gov/pubmed 查询。rsID 是指单个基因组位置的唯一标识符，用于关联人群频率信息。报告的人群频率源自多个公开数据库，包括 ExAC、gnomAD 和 dbSNP。
+                <br><br>
+                验证研究结果显示，本检测对于单核苷酸变异 (SNV)、15bp 以内的插入和缺失以及外显子级缺失和重复的分析灵敏度和特异性均 >99%。对于大于 15bp 但小于完整外显子的插入和缺失，灵敏度可能略有下降。在极少数情况下，由于固有的序列属性或数据质量受限，可能无法分析单外显子拷贝数事件。某些类型的变异，如结构重排（如倒位、基因转换事件、易位等）或嵌入复杂结构序列（如短串联重复或节段重复）中的变异可能无法检出。此外，可能无法完全解析有关变异的某些细节，如嵌合体、顺反相位（Phasing）或比对歧义。除非明确保证，否则本检测不覆盖启动子、非编码外显子及其他非编码区。本报告反映了对提取的基因组 DNA 样本的分析。在极少数情况下，检测到的 DNA 可能不代表个体的体细胞基因组，例如在循环血液淋巴肿瘤、骨髓移植、输血、嵌合现象、培养伪影或母体细胞污染的情况下。
+            </p>
+        <div class="director-section">
+            <div style="margin-bottom: 5px;">
+                <img src="signature.png" style="height: 40px; display: block;" alt="Signature">
+            </div>
+            <div style="font-weight: 600; color: #0f172a; font-size: 8.5pt;">Ken Kwon, PhD, FACMG</div>
+            <div style="font-size: 7pt; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Laboratory Director</div>
+        </div>
+</body>
+</html>

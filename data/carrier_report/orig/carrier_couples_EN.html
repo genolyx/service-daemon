@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+        <style>
+            /* PDF Page Setup */
+            @page {
+                size: Letter;
+                margin: 0.6in 0.5in 1in 0.5in;
+
+                @top-right { content: element(headerContent); }
+                @bottom-left { content: element(footerContent); }
+                @bottom-right {
+                    content: "Page " counter(page) " of " counter(pages);
+                    font-family: 'Helvetica Neue', Arial, sans-serif;
+                    font-size: 8pt;
+                    color: #94a3b8;
+                }
+            }
+
+            @page :first { @top-right { content: none; } }
+
+            body {
+                font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                line-height: 1.3;
+                color: #334155;
+                margin: 0;
+            }
+
+            #header-content {
+                position: running(headerContent);
+                font-size: 8pt;
+                color: #64748b;
+                text-align: right;
+            }
+
+            #footer-content {
+                position: running(footerContent);
+                /* FIX: Forces the footer line across the whole page */
+                width: 100%;
+                font-size: 8pt;
+                color: #64748b;
+                line-height: 1.3;
+                border-top: 1px solid #cbd5e1;
+                padding-top: 8px;
+            }
+
+            .new-page { page-break-before: always; }
+
+            /* Branding Header */
+            .brand-header {
+                border-bottom: 1.5px solid #3b82f6;
+                padding-bottom: 8px;
+                margin-bottom: 25px;
+                display: block;
+                /* FIX: Forces the header line across the whole page */
+                width: 100%;
+                clear: both;
+                overflow: hidden;
+            }
+
+            .brand-name {
+                float: left;
+                font-size: 18pt;
+                font-weight: 500;
+                color: #0f172a;
+                letter-spacing: -0.01em;
+                white-space: nowrap;
+                line-height: 40px;
+            }
+
+            .logo-placeholder {
+                float: right;
+                width: 140px;
+                height: 40px;
+                border: 1px dashed #cbd5e1;
+                text-align: center;
+                line-height: 40px;
+                font-size: 6.5pt;
+                color: #94a3b8;
+                text-transform: uppercase;
+            }
+
+            /* INLINE COMPACT PATIENT INFO TABLE */
+            .info-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 35px;
+                table-layout: fixed;
+                clear: both;
+            }
+            .info-table td {
+                padding: 4px 0;
+                vertical-align: middle;
+                border-bottom: 1px solid #f1f5f9;
+                font-size: 7.5pt;
+            }
+            .label {
+                display: inline;
+                font-size: 7.5pt;
+                color: #64748b;
+                text-transform: uppercase;
+                font-weight: 500;
+                margin-right: 4px;
+            }
+            .value { display: inline; color: #1e293b; }
+            .value-bold { display: inline; font-weight: 500; color: #0f172a; }
+            
+            /* Split the info table into two columns */
+            .couples-container {
+                display: flex;
+                justify-content: space-between;
+                gap: 20px;
+                margin-bottom: 25px;
+            }
+            .partner-box {
+                width: 48%;
+                border: 1px solid #f1f5f9;
+                padding: 10px;
+                border-radius: 4px;
+            }
+            .risk-banner-joint {
+                padding: 20px;
+                text-align: center;
+                border: none; /* Simply change this from '2px solid #be123c' to 'none' */
+                background-color: #fff1f2;
+                border-radius: 8px;
+                margin-bottom: 30px;
+            }
+            .risk-title {
+                font-size: 14pt;
+                font-weight: 800;
+                color: #be123c;
+                text-transform: uppercase;
+            }
+
+            /* Results Banners */
+            .banner {
+                padding: 12px 15px;
+                border-radius: 4px;
+                margin-top: 10px;
+                margin-bottom: 40px;
+            }
+            .banner-pos { background-color: #fff1f2; color: #be123c; border-left: 4px solid #be123c; }
+            .banner-neg { background-color: #f0fdf4; color: #15803d; border-left: 4px solid #15803d; }
+            .status-text { font-size: 12pt; font-weight: 500; margin: 0; }
+            .banner-desc { margin: 4px 0 0 0; font-size: 8.5pt; color: #334155; }
+
+            /* Findings Table */
+            .summary-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 25px;
+            }
+            .summary-table th {
+                text-align: left;
+                font-size: 8pt;
+                color: #64748b;
+                border-bottom: 1.5px solid #cbd5e1;
+                padding: 4px 5px;
+                text-transform: uppercase;
+                font-weight: 500;  /* <--- This makes the headers Bold */
+            }
+            .summary-table td {
+                padding: 8px 5px;
+                border-bottom: 1px solid #f1f5f9;
+                font-size: 8pt;
+                vertical-align: top;
+            }
+            
+            /* Detailed Interpretations - Page 2 Bolder Designation */
+            .condition-heading {
+                /* FIX: Increased size slightly and added display: block for cleaner line */
+                font-size: 11pt;
+                font-weight: 500;
+                color: #0f172a;
+                margin-bottom: 15px;
+                padding: 4px 0 4px 12px;
+                /* Matches your positive red line from the banner */
+                border-left: 6px solid #be123c;
+                line-height: 1.2;
+                background-color: #f8fafc;
+                display: block;
+            }
+
+            .clinical-statement {
+                font-size: 8pt;
+                color: #64748b;
+                line-height: 1.4;
+                text-align: justify;
+                margin-bottom: 20px;
+                /* Change 'background' to 'background-color' and add !important */
+                background-color: #f8fafc !important;
+                padding: 10px;
+                border-radius: 4px;
+
+            }
+
+            .section-title {
+                margin-top: 25px;
+                font-size: 11pt;
+                font-weight: 500;
+                color: #0f172a;
+                border-bottom: 1px solid #e2e8f0;
+                padding-bottom: 4px;
+                text-transform: uppercase;
+            }
+
+            .detail-item {
+                margin-top: 25px;
+                padding: 10px 0;
+                page-break-inside: avoid; /* Keeps the whole interpretation on one page */
+                border-bottom: 1px dashed #e2e8f0; /* Separates multiple findings */
+            }
+            .sub-label {
+                font-size: 8pt;
+                font-weight: 500;
+                color: #64748b;
+                text-transform: uppercase;
+                letter-spacing: 0.02em;
+                margin-top: 10px;
+            }
+            /* text for interpretation */
+            .detail-text {
+                font-size: 8pt;
+                color: #334155;
+                margin: 2px 0 0 0;
+                text-align: justify;
+                line-height: 1.3;  /* <--- ADD THIS LINE */
+            }
+
+            .gene-list-grid {
+                font-size: 8pt;
+                color: #94a3b8;
+                margin-top: 10px;
+                line-height: 1.8;      /* Increased spacing between lines for readability */
+                text-align: justify;   /* Aligns edges nicely on the page */
+                word-break: break-all; /* Ensures long gene names don't break the layout */
+            }
+
+            .director-section {
+                margin-top: 50px;
+                padding-top: 10px;
+                border-top: 1px solid #e2e8f0;
+                page-break-inside: avoid;
+            }
+        </style>
+</head>
+<body>
+
+    <div id="header-content">
+        {{ data.primary_patient.name }} | Order ID: {{ data.report_metadata.order_id }}
+    </div>
+
+    <div id="footer-content">
+        <strong>Genolyx Diagnostics</strong> | 1400 16th Street, San Francisco, CA 94103<br>
+        clientservices@genolyx.com | 800.436.3037 | © 2025 Genolyx Corporation
+    </div>
+
+    <div class="brand-header">
+        <div class="brand-name">Carrier Screening (Couple Report)</div>
+        <div class="logo-placeholder"><span>Logo Placeholder</span></div>
+    </div>
+
+    <table class="info-table">
+        <tr>
+            <td><span class="label">Primary Patient:</span> <span class="value">{{ data.primary_patient.name }}</span></td>
+            <td><span class="label">Hospital:</span> <span class="value">{{ data.report_metadata.hospital }}</span></td>
+        </tr>
+        <tr>
+            <td><span class="label">Partner:</span> <span class="value">{{ data.partner.name }}</span></td>
+            <td><span class="label">Physician:</span> <span class="value">{{ data.report_metadata.doctor }}</span></td>
+        </tr>
+        <tr>
+            <td><span class="label">Order ID:</span> <span class="value">{{ data.report_metadata.order_id }}</span></td>
+            <td><span class="label">Report Date:</span> <span class="value">{{ data.report_metadata.report_date }}</span></td>
+        </tr>
+    </table>
+
+    <div class="couples-container">
+        <div class="partner-box">
+            <div class="label" style="font-size: 10pt; border-bottom: 1px solid #64748b; display: block; margin-bottom: 5px;">Primary Patient</div>
+            
+            <div style="font-size: 7.5pt; line-height: 1.4;">
+                <span class="label">Name:</span> <span class="value">{{ data.primary_patient.name }}</span><br>
+                <span class="label">DOB:</span> <span class="value">{{ data.primary_patient.dob }}</span><br>
+                <span class="label">Sample ID:</span> <span class="value">{{ data.primary_patient.sample_id }}</span>
+            </div>
+        </div>
+
+        <div class="partner-box">
+            <div class="label" style="font-size: 10pt; border-bottom: 1px solid #64748b; display: block; margin-bottom: 5px;">Partner</div>
+            
+            <div style="font-size: 7.5pt; line-height: 1.4;">
+                <span class="label">Name:</span> <span class="value">{{ data.partner.name }}</span><br>
+                <span class="label">DOB:</span> <span class="value">{{ data.partner.dob }}</span><br>
+                <span class="label">Sample ID:</span> <span class="value">{{ data.partner.sample_id }}</span>
+            </div>
+        </div>
+    </div>
+    {# --- LOGIC: BANNERS --- #}
+    {% set match = namespace(found=false) %}
+    {% for p1 in data.primary_patient.findings %}
+        {% for p2 in data.partner.findings %}
+            {% if p1.gene == p2.gene %}
+                {% set match.found = true %}
+                <div class="risk-banner-joint">
+                    <div class="risk-title">High Reproductive Risk Identified</div>
+                    <p class="banner-desc">Both partners are carriers for <strong>{{ p1.disorder }} ({{ p1.gene }})</strong>. There is a 25% risk for offspring to be affected.</p>
+                </div>
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+
+    {# Individual Findings Banner (If no joint match but someone is a carrier) #}
+    {% if not match.found and (data.primary_patient.findings or data.partner.findings) %}
+    <div class="banner banner-pos">
+        <p class="status-text">+ CARRIER IDENTIFIED</p>
+        <p class="banner-desc">One or both partners are carriers for different conditions. No shared genetic risks were identified.</p>
+    </div>
+    {% endif %}
+
+    {# Negative Banner #}
+    {% if not match.found and not data.primary_patient.findings and not data.partner.findings %}
+    <div class="banner banner-neg">
+        <p class="status-text">- NEGATIVE</p>
+        <p class="banner-desc">No clinically significant genetic changes were identified in either partner.</p>
+    </div>
+    {% endif %}
+
+    {# --- RESULTS TABLE --- #}
+    <table class="summary-table">
+        <thead>
+            <tr>
+                <th width="15%">Partner</th>
+                <th width="30%">Condition</th>
+                <th width="15%">Gene</th>
+                <th width="40%">Variant</th>
+            </tr>
+        </thead>
+        <tbody>
+            {# 1. JOINT FINDINGS #}
+            {% for p1 in data.primary_patient.findings %}
+                {% for p2 in data.partner.findings %}
+                    {% if p1.gene == p2.gene %}
+                       <tr style="background-color: #fff1f2;">
+                            <td style="color: #be123c; font-weight: 700;">JOINT</td>
+                            <td><strong>{{ p1.disorder }}</strong></td>
+                            <td>{{ p1.gene }}</td>
+                            <td>Primary: {{ p1.mutation }}<br>Partner: {{ p2.mutation }}</td>
+                       </tr>
+                    {% endif %}
+                {% endfor %}
+            {% endfor %}
+
+            {# 2. PRIMARY ONLY #}
+            {% for item in data.primary_patient.findings %}
+                <tr>
+                    <td style="color: #3b82f6; font-weight: 500;">Primary</td>
+                    <td>{{ item.disorder }}</td>
+                    <td>{{ item.gene }}</td>
+                    <td>{{ item.mutation }}</td>
+                </tr>
+            {% endfor %}
+
+            {# 3. PARTNER ONLY #}
+            {% for item in data.partner.findings %}
+                <tr>
+                    <td style="color: #64748b; font-weight: 500;">Partner</td>
+                    <td>{{ item.disorder }}</td>
+                    <td>{{ item.gene }}</td>
+                    <td>{{ item.mutation }}</td>
+                </tr>
+            {% endfor %}
+
+            {% if not data.primary_patient.findings and not data.partner.findings %}
+                <tr>
+                    <td colspan="4" style="text-align: center; padding: 20px; color: #64748b; font-style: italic;">No clinically significant variants detected.</td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+
+    <div class="clinical-statement">
+        This carrier test evaluated 302 gene(s) for genetic changes (variants) that are associated with an increased risk of having a child with
+        a genetic condition. Knowledge of carrier status for one of these conditions may provide information that can be used to assist with
+        family planning and/or preparation. Carrier screening is not intended for diagnostic purposes. To identify a potential genetic basis for
+        a condition in the individual being tested, diagnostic testing for the gene(s) of interest is recommended.
+    </div>
+
+    {% if data.findings %}
+    <div class="new-page">
+        <div class="section-title">Detailed Interpretations</div>
+        {% for item in data.findings %}
+        <div class="detail-item">
+            <div class="condition-heading">
+                {{ item.disorder }}
+            </div>
+            
+            <div style="margin-bottom: 12px;">
+                <div class="sub-label">Gene Association</div>
+                <p class="detail-text">
+                    The <strong>{{ item.gene }}</strong> gene is associated with {{ item.disorder }}. {{ item.gene_description }}
+                </p>
+            </div>
+
+            <div>
+                <div class="sub-label">Interpretation</div>
+                <p class="detail-text">
+                    Identification of the <strong>{{ item.mutation }}</strong> variant in the <strong>{{ item.gene }}</strong> gene confirms this individual’s status as a carrier for {{ item.disorder }}. {{ item.variant_summary }} This finding is classified as <strong>{{ item.classification }}</strong>.
+                </p>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="new-page">
+        <div class="section-title">Genes Evaluated</div>
+        <div class="gene-list-grid">
+            ABCA3, ABCC8, ABCD1, ACAD9, ACADM, ACADSB, ACADVL, ACAT1, ADA, ADAMTS2, ADGRG1, AGA, AGL, AGPS, AGXT, AIRE, ALDH3A2, ALDOB, ALG1, ALG12, ALMS1, ALPL, AMT, AP3B1, APTX, ARG1, ARSA, ARSB, ASL, ASNS, ASPA, ASS1, ATIC, ATP6V1B1, ATP7B, ATRX, BBS1, BBS10, BBS12, BCKDHA, BCKDHB, BTD, BTK, CAPN3, CASP8, CBS, CDH23, CEP290, CERKL, CFTR, CHM, CHRNE, CIB2, CLN3, CLN5, CLN6, CLN8, CLRN1, CNGB3, COL4A3, COL4A4, COL4A5, CP, CPT1A, CPT2, CRB1, CTNS, CTSD, CTSK, CYBA, CYBB, CYP11B1, CYP11B2, CYP17A1, CYP19A1, CYP1B1, CYP21A2, CYP27A1, DBT, DCLRE1C, DHCR7, DHDDS, DKC1, DLD, DMD, DNAH5, DNAI1, DNAI2, DPM1, DYSF, EDA, EIF2B1, EIF2B2, EIF2B3, EIF2B4, EIF2B5, EMD, ERCC6, ERCC8, ESCO2, ETFA, ETFB, ETFDH, ETHE1, EVC, EVC2, EXOSC3, F11, F8, F9, FAH, FANCA, FANCC, FANCG, FH, FKRP, FKTN, G6PC, GAA, GALC, GALE, GALK1, GALT, GAMT, GBA, GBE1, GCDH, GCH1, GJB2, GJB6, GLA, GLB1, GLDC, GLE1, GNE, GNPTAB, GNPTG, GNS, GP1BA, GP9, GPHN, GRHPR, GSS, GTC, GUSB, HADHA, HADHB, HBA1, HBA2, HBB, HEXA, HEXB, HFE2, HGSNAT, HJV, HLCS, HMGCL, HOGA1, HPS1, HPS3, HSD17B4, HSD3B2, HYLS1, IDS, IDUA, IKBKAP, IL2RG, IVD, KCNJ11, LAMA2, LAMA3, LAMB3, LAMC2, LCA5, LDLRAD1, LIPPA, LMBRD1, LOXHD1, LRPPRC, LYST, MAN2B1, MCOLN1, MED17, MESP2, MFSD8, MGAT2, MKS1, MLC1, MMAA, MMAB, MMACHC, MMADHC, MPI, MPL, MPV17, MRE11A, MSH2, MTHFR, MTM1, MTR, MTRR, MTTP, MUT, MYO7A, NAGLU, NAGS, NBN, NDRG1, NDUFAF5, NDUFS4, NDUFS6, NDUFS7, NDUFV1, NEB, NPC1, NPC2, NPHP1, NPHS1, NPHS2, NR0B1, NR2E3, NTRK1, OAT, OPA3, OTC, P3H1, PAH, PANK2, PC, PCCA, PCCB, PCDH15, PDHA1, PDHB, PEX1, PEX10, PEX12, PEX13, PEX14, PEX16, PEX19, PEX2, PEX26, PEX3, PEX5, PEX6, PEX7, PFKM, PGK1, PHGDH, PHKG2, PKHD1, PMM2, PNPO, POLG, POMGNT1, POMT1, POMT2, PPT1, PROP1, PSAP, PTB1, PTS, PUD, PYGL, QDPR, RAB23, RAG1, RAG2, RAPSN, RARS2, RDH12, RDX, REEP6, RPE65, RPGRIP1L, RS1, RTEL1, SACS, SAMD9, SAMHD1, SC5D, SCN4A, SCN4B, SCN5A, SCN8A, SCN9A, SDHA, SDHAF2, SDHB, SDHC, SDHD, SEPN1, SERPINA1, SGCA, SGCB, SGCD, SGCG, SGSH, SLC12A3, SLC12A6, SLC17A5, SLC19A2, SLC19A3, SLC22A5, SLC25A13, SLC25A15, SLC25A20, SLC26A2, SLC26A4, SLC35A1, SLC35C1, SLC37A4, SLC3A1, SLC4A11, SLC6A19, SLC6A8, SLC7A7, SMARCB1, SMN1, SMPD1, SPG11, SPG7, STAR, SUMF1, SYNE1, TAT, TAZ, TCTN2, TFR2, TGM1, TH, THCA, TMEM216, TMEM67, TNP1, TPP1, TRMU, TSFM, TTPA, TYMP, TYR, USH1C, USH1G, USH2A, VDR, VHL, VPS13A, VPS13B, VPS33B, VSX2, WAS, WNT10A, WRN, XPA, XPC, ZFYVE26, ZNF469.
+        </div>
+    </div>
+
+    <div class="new-page">
+        <div class="section-title">Methods and Limitations</div>
+        <p class="detail-text">
+        Genomic DNA obtained from the submitted sample is enriched for targeted regions using a hybridization-based protocol, and sequenced using
+        Illumina technology. Unless otherwise indicated, all targeted regions are sequenced with ≥50x depth or are supplemented with additional analysis.
+        Reads are aligned to a reference sequence (GRCh37), and sequence changes are identified and interpreted in the context of a single clinically
+        relevant transcript, indicated in the Genes analyzed section. Enrichment and analysis focus on the coding sequence of the indicated transcripts,
+        20bp of flanking intronic sequence, and other specific genomic regions demonstrated to be causative of disease at the time of assay design.
+        Promoters, untranslated regions, and other non-coding regions are not otherwise interrogated. Exonic deletions and duplications are called using
+        an in-house algorithm that determines copy number at each target by comparing the read depth for each target in the proband sequence with
+        both mean read-depth and read-depth distribution, obtained from a set of clinical samples. Markers across the X and Y chromosomes are
+        analyzed for quality control purposes and may detect deviations from the expected sex chromosome complement. Such deviations may be
+        included in the report in accordance with internal guidelines. Invitae utilizes a classification methodology to identify next-generation sequencing
+        (NGS)-detected variants that require orthogonal confirmation (Lincoln, et al. J Mol Diagn. 2019 Mar;21(2):318-329.). Confirmation of the presence
+        and location of reportable variants is performed based on stringent criteria established by Invitae (1400 16th Street, San Francisco, CA 94103,
+        #05D2040778), as needed, using one of several validated orthogonal approaches (PubMed ID 30610921). The following analyses are performed if
+        relevant to the requisition. For GBA the reference genome has been modified to mask the sites of polymorphic paralog sequence variants (PSVs)
+        in both the gene and pseudogene. For CYP21A2 and GBA, if one or more reportable variants, gene conversion, or fusion event is identified via our
+        NGS pipeline (see Limitations), these variants are confirmed by PacBio sequencing of an amplicon generated by long-range PCR and subsequent
+        short-range PCR. In some cases, it may not be possible to disambiguate between the gene and pseudogene. For GJB2, the reportable range
+        includes large upstream deletions overlapping GJB6. For HBA1/2, the reference genome has been modified to force some sequencing reads
+        derived from HBA1 to align to HBA2, and variant calling algorithms are modified to support an expectation of 4 alleles in these regions. HBA1/2
+        copy number calling is performed by a custom hypothesis testing algorithm which generates diplotype calls. If sequence data for a sample does
+        not support a unique high confidence match from among hypotheses tested, that sample is flagged for manual review. Copy number variation is
+        only reported for coding sequence of HBA1 and HBA2 and the HS-40 region. This assay does not distinguish among the -ɑ3.7 subtypes, and all
+        -ɑ3.7 variants are called as HBA1 deletions. This assay may not detect overlapping copy gain and copy loss events when the breakpoints of those
+        events are similar. For FMR1, triplet repeats are detected by PCR with fluorescently labeled primers followed by capillary electrophoresis.
+        Reference ranges: Normal: 45 CGG repeats, intermediate: 45-54 CGG repeats, premutation: 55-200 CGG repeats, full mutation: >200 CGG
+        repeats. For alleles with 55-90 triplet repeats, the region surrounding the FMR1 repeat is amplified by PCR. The PCR amplicons are then processed
+        through PacBio SMRTBell library prep and sequenced using PacBio long read technology. The number of AGG interruptions within the 55-90
+        triplet repeat is read directly from the resulting DNA sequences. Technical component of confirmatory sequencing is performed by Invitae
+        Corporation (1400 16th Street, San Francisco, CA 94103, #05D2040778).<br><br>
+        This report only includes variants that have a clinically significant association with the conditions tested as of the report date. Variants of
+        uncertain significance, benign variants, and likely benign variants are not included in this report. However, if additional evidence becomes
+        available to indicate that the clinical significance of a variant has changed, Invitae may update this report and provide notification.
+        A PMID is a unique identifier referring to a published, scientific paper. Search by PMID athttp://www.ncbi.nlm.nih.gov/pubmed.
+        An rsID is a unique identifier referring to a single genomic position, and is used to associate population frequency information with sequence
+        changes at that position. Reported population frequencies are derived from a number of public sites that aggregate data from large-scale
+        population sequencing projects, including ExAC (http://exac.broadinstitute.org), gnomAD (http://gnomad.broadinstitute.org), and dbSNP
+        (http://ncbi.nlm.nih.gov/SNP).<br><br>
+        Based on validation study results, this assay achieves >99% analytical sensitivity and specificity for single nucleotide variants, insertions and
+        deletions 15bp in length, and exon-level deletions and duplications. Invitae's methods also detect insertions and deletions larger than 15bp but
+        smaller than a full exon but sensitivity for these may be marginally reduced. Invitae’s deletion/duplication analysis determines copy number at a
+        single exon resolution at virtually all targeted exons. However, in rare situations, single-exon copy number events may not be analyzed due to
+        inherent sequence properties or isolated reduction in data quality. Certain types of variants, such as structural rearrangements (e.g. inversions,
+        gene conversion events, translocations, etc.) or variants embedded in sequence with complex architecture (e.g. short tandem repeats or
+        segmental duplications), may not be detected. Additionally, it may not be possible to fully resolve certain details about variants, such as
+        mosaicism, phasing, or mapping ambiguity. Unless explicitly guaranteed, sequence changes in the promoter, non-coding exons, and other non-
+        coding regions are not covered by this assay. Please consult the test definition on our website for details regarding regions or types of variants
+        that are covered or excluded for this test. This report reflects the analysis of an extracted genomic DNA sample. While this test is intended to
+        reflect the analysis of extracted genomic DNA from a referred patient, in very rare cases the analyzed DNA may not represent that individual’s
+        constitutional genome, such as in the case of a circulating hematolymphoid neoplasm, bone marrow transplant, blood transfusion, chimerism,
+        culture artifact or maternal cell contamination.
+        </p>
+        <div class="director-section">
+            <div style="margin-bottom: 5px;">
+                <img src="signature.png" style="height: 40px; display: block;" alt="Signature">
+            </div>
+            <div style="font-weight: 600; color: #0f172a; font-size: 8.5pt;">Ken Kwon, PhD, FACMG</div>
+            <div style="font-size: 7pt; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Laboratory Director</div>
+        </div>
+</body>
+</html>

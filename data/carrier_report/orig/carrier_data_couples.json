@@ -1,0 +1,61 @@
+{
+  "report_metadata": {
+    "report_type": "Carrier Screening Report",
+    "language": "EN",
+    "order_id": "ORD-99283",
+    "report_date": "Dec 24, 2025",
+    "hospital": "City General Health System",
+    "doctor": "Dr. Sarah Williams"
+  },
+  "primary_patient": {
+    "name": "Jane Doe",
+    "dob": "Jan 01, 1990",
+    "gender": "Female",
+    "sample_id": "SAM-1120",
+    "collection_date": "Dec 20, 2025",
+    "findings": [
+      {
+        "gene": "ELP1",
+        "mutation": "c.3701-1G>A",
+        "disorder": "Familial dysautonomia",
+        "inheritance": "Autosomal recessive",
+        "classification": "Likely Pathogenic",
+        "gene_description": "The ELP1 gene is associated with Familial Dysautonomia, a neurodegenerative disorder...",
+        "variant_summary": "The c.3701-1G>A variant disrupts a canonical splice site, leading to loss of protein function..."
+      },
+      {
+        "gene": "GJB2",
+        "mutation": "c.235del",
+        "disorder": "GJB2-related conditions",
+        "inheritance": "Autosomal recessive",
+        "classification": "Pathogenic",
+        "gene_description": "GJB2-related hearing loss is the most common form of hereditary deafness...",
+        "variant_summary": "The c.235del variant causes a frameshift and premature stop codon..."
+      }
+    ]
+  },
+  "partner": {
+    "name": "John Smith",
+    "dob": "Mar 12, 1988",
+    "gender": "Male",
+    "sample_id": "SAM-1121",
+    "collection_date": "Dec 20, 2025",
+    "findings": [
+      {
+        "gene": "GJB2",
+        "mutation": "c.109G>A",
+        "disorder": "GJB2-related conditions",
+        "inheritance": "Autosomal recessive",
+        "classification": "Pathogenic",
+        "gene_description": "GJB2-related hearing loss...",
+        "variant_summary": "The c.109G>A (p.Val37Ile) variant is a well-known pathogenic missense mutation..."
+      }
+    ]
+  },
+  "genes_evaluated_count": 302,
+  "director": {
+    "name": "Ken Kwon, PhD, FACMG",
+    "title": "Laboratory Director",
+    "signature_url": "signature.png"
+  }
+}

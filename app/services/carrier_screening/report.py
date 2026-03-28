@@ -11,22 +11,20 @@ Carrier_result/generate.py의 Jinja2 + WeasyPrint 패턴을 통합하여
     - report.pdf        : PDF 리포트 (다국어 지원)
 
 report.json 구조:
-    - version, type, generated_at
-    - order_id, sample_name
-    - primary_patient: 환자 정보
-    - partner: 파트너 정보 (couple 검사 시)
-    - carrier_status: 캐리어 상태 판정
-    - confirmed_variants: 리뷰어 확정 변이 목록
-    - disease_groups: 질환별 변이 그룹
-    - qc_summary: QC 메트릭스 요약
-    - reviewer: 리뷰어 정보
-    - report_metadata: 리포트 메타데이터
+    - report_metadata: order_id, report_date, hospital, doctor, language, …
+    - primary_patient: 환자 정보 + findings[] (Jinja carrier_*.html — 템플릿이 변이 표시에 사용)
+    - partner: 파트너 정보 + findings[] (couples 템플릿)
+    - findings: couples 전용, primary+partner 병합 (carrier_couples_*.html 상세 해석)
+    - genes_evaluated_count
+    - carrier_status, confirmed_variants, disease_groups, qc_summary, reviewer
 """
 
 import os
 import json
 import logging
-from typing import Dict, Any, List, Optional
+from datetime import datetime
+from typing import Dict, Any, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 from ...datetime_kst import now_kst_date_iso, now_kst_iso
 
@@ -96,6 +94,94 @@ def report_languages_from_order(params: Dict[str, Any]) -> Optional[List[str]]:
 
 
 # ══════════════════════════════════════════════════════════════
+# Jinja template JSON (Carrier_result / data/carrier_report/*.html)
+# Templates iterate data.primary_patient.findings (not confirmed_variants).
+# ══════════════════════════════════════════════════════════════
+
+def _report_date_human_kst() -> str:
+    """Matches sample JSON like 'Dec 24, 2025' for report cover."""
+    return datetime.now(ZoneInfo("Asia/Seoul")).strftime("%b %d, %Y")
+
+
+def _disorder_label_for_template(v: Dict[str, Any]) -> str:
+    diseases = v.get("diseases") or []
+    if isinstance(diseases, list):
+        for d in diseases:
+            if isinstance(d, dict):
+                name = (d.get("name") or "").strip()
+                if name:
+                    return name
+            elif isinstance(d, str) and d.strip():
+                return d.strip()
+    cd = (v.get("clinvar_disease") or "").strip()
+    if cd and cd not in (".", "not_provided", "not_specified"):
+        return cd
+    hd = (v.get("hgmd_disease") or "").strip()
+    if hd:
+        return hd
+    return "Unknown disorder"
+
+
+def _variant_to_template_finding(v: Dict[str, Any]) -> Dict[str, Any]:
+    """Shape expected by carrier_*.html / carrier_couples_*.html (orig/carrier_data_positive.json)."""
+    disorder = _disorder_label_for_template(v)
+    mutation = (
+        (v.get("hgvsc") or "").strip()
+        or (v.get("hgvsp") or "").strip()
+        or (v.get("variant_id") or "")
+    )
+    rc = (v.get("reviewer_comment") or "").strip()
+    parts = []
+    if v.get("hgvsp"):
+        parts.append(f"Protein: {v['hgvsp']}")
+    if v.get("clinvar_sig"):
+        parts.append(f"ClinVar: {v['clinvar_sig']}")
+    variant_summary = rc if rc else (" ".join(parts) if parts else "")
+    gene_description = ""
+    if disorder and disorder != "Unknown disorder":
+        gene_description = f"The {v.get('gene') or 'gene'} gene is associated with {disorder}."
+    return {
+        "gene": v.get("gene") or "",
+        "mutation": mutation,
+        "disorder": disorder,
+        "inheritance": (v.get("inheritance") or "").strip() or "—",
+        "classification": v.get("classification") or "VUS",
+        "gene_description": gene_description,
+        "variant_summary": variant_summary,
+    }
+
+
+def _finding_subject_raw(v: Dict[str, Any]) -> str:
+    """Optional pipeline/portal keys to assign a variant to partner vs primary in couples mode."""
+    s = (
+        v.get("report_subject")
+        or v.get("finding_subject")
+        or v.get("couple_subject")
+        or ""
+    )
+    s = str(s).strip().lower()
+    if s in ("partner", "patient2", "p2", "spouse"):
+        return "partner"
+    return "primary"
+
+
+def _split_template_findings(
+    final_variants: List[Dict[str, Any]], is_couple: bool
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    if not is_couple:
+        return ([_variant_to_template_finding(v) for v in final_variants], [])
+    primary: List[Dict[str, Any]] = []
+    partner: List[Dict[str, Any]] = []
+    for v in final_variants:
+        entry = _variant_to_template_finding(v)
+        if _finding_subject_raw(v) == "partner":
+            partner.append(entry)
+        else:
+            primary.append(entry)
+    return primary, partner
+
+
+# ══════════════════════════════════════════════════════════════
 # Report JSON Generation
 # ══════════════════════════════════════════════════════════════
 
@@ -108,6 +194,8 @@ def generate_report_json(
     output_dir: str,
     patient_info: Optional[Dict[str, Any]] = None,
     partner_info: Optional[Dict[str, Any]] = None,
+    order_params: Optional[Dict[str, Any]] = None,
+    report_language: str = "EN",
 ) -> str:
     """
     리뷰어 확정 결과를 바탕으로 report.json을 생성합니다.
@@ -169,6 +257,11 @@ def generate_report_json(
 
             # 리뷰어 코멘트
             "reviewer_comment": v.get("reviewer_comment", ""),
+
+            # Couples: optional subject tag for partner vs primary (see _split_template_findings)
+            "report_subject": v.get("report_subject")
+            or v.get("finding_subject")
+            or v.get("couple_subject"),
         }
         final_variants.append(final_variant)
 
@@ -178,6 +271,8 @@ def generate_report_json(
     # 캐리어 상태 판정
     carrier_status = _determine_carrier_status(final_variants)
 
+    order_flat = _carrier_order_flat(order_params or {})
+
     # 환자 정보 기본값
     if patient_info is None:
         patient_info = {"name": sample_name}
@@ -186,30 +281,78 @@ def generate_report_json(
         partner_info and (partner_info.get("name") or partner_info.get("dob"))
     )
 
-    report = {
+    primary_findings, partner_findings = _split_template_findings(
+        final_variants, is_couple
+    )
+
+    primary_patient = dict(patient_info)
+    primary_patient.setdefault("name", sample_name)
+    primary_patient["findings"] = primary_findings
+    primary_patient.setdefault(
+        "sample_id",
+        order_flat.get("sample_id") or order_flat.get("medical_record_id") or "",
+    )
+    primary_patient.setdefault(
+        "collection_date",
+        order_flat.get("collection_date") or order_flat.get("sample_collection_date") or "",
+    )
+
+    partner_out: Optional[Dict[str, Any]] = None
+    if partner_info:
+        partner_out = dict(partner_info)
+        partner_out["findings"] = partner_findings
+        partner_out.setdefault(
+            "sample_id",
+            order_flat.get("partner_sample_id")
+            or order_flat.get("patient2_sample_id")
+            or "",
+        )
+        partner_out.setdefault(
+            "collection_date",
+            order_flat.get("partner_collection_date")
+            or order_flat.get("patient2_collection_date")
+            or primary_patient.get("collection_date")
+            or "",
+        )
+
+    genes_n = order_flat.get("genes_evaluated_count")
+    try:
+        genes_evaluated_count = int(genes_n) if genes_n is not None and str(genes_n).strip() != "" else 302
+    except (TypeError, ValueError):
+        genes_evaluated_count = 302
+
+    report_metadata = {
+        "order_id": order_id,
+        "report_date": _report_date_human_kst(),
+        "pipeline_version": "carrier-screening-v2.0",
+        "report_version": "2.0",
+        "is_couple": is_couple,
+        "report_type": "Carrier Screening Report",
+        "language": (report_language or "EN").strip().upper() or "EN",
+        "hospital": order_flat.get("hospital_name")
+        or order_flat.get("hospital")
+        or "",
+        "doctor": order_flat.get("doctor") or "",
+    }
+
+    report: Dict[str, Any] = {
         "version": "2.0",
         "type": "carrier_screening_report",
         "generated_at": now_kst_iso(),
 
-        # 리포트 메타데이터 (Carrier_result/generate.py 호환)
-        "report_metadata": {
-            "order_id": order_id,
-            "report_date": now_kst_date_iso(),
-            "pipeline_version": "carrier-screening-v2.0",
-            "report_version": "2.0",
-            "is_couple": is_couple,
-        },
+        "report_metadata": report_metadata,
 
-        # 환자 정보
-        "primary_patient": patient_info,
+        # Jinja templates (carrier_*.html) read variants from primary_patient.findings
+        "primary_patient": primary_patient,
 
-        # 파트너 정보 (couple 검사 시)
-        "partner": partner_info,
+        "partner": partner_out,
+
+        "genes_evaluated_count": genes_evaluated_count,
 
         # 캐리어 상태 요약
         "carrier_status": carrier_status,
 
-        # 확정된 변이 목록
+        # 확정된 변이 목록 (API / 프로그래밍용 — 템플릿은 findings 사용)
         "confirmed_variants": final_variants,
         "total_confirmed": len(final_variants),
 
@@ -227,6 +370,10 @@ def generate_report_json(
         # 리뷰어 정보
         "reviewer": reviewer_info,
     }
+
+    # carrier_couples_*.html "Detailed Interpretations" uses data.findings (combined)
+    if is_couple:
+        report["findings"] = primary_findings + partner_findings
 
     output_path = os.path.join(output_dir, "report.json")
     with open(output_path, "w", encoding="utf-8") as f:
@@ -376,6 +523,12 @@ def generate_report_pdf(
 
     os.makedirs(output_dir, exist_ok=True)
 
+    if not template_dir:
+        logger.error(
+            "Carrier PDF: template_dir is None — output will use built-in HTML, not Jinja. "
+            "Ensure data/carrier_report/carrier_EN.html exists or set template env vars."
+        )
+
     is_couple = report_data.get("report_metadata", {}).get("is_couple", False)
     order_id = report_data.get("report_metadata", {}).get("order_id", "Unknown")
     raw_name = report_data.get("primary_patient", {}).get("name", "Patient")
@@ -428,6 +581,13 @@ def _render_html_for_language(
     template_dir에 Jinja2 템플릿이 있으면 사용하고,
     없으면 내장 HTML 생성 로직을 사용합니다.
     """
+    lang_u = (lang or "EN").strip().upper() or "EN"
+
+    if is_couple:
+        template_name = f"carrier_couples_{lang_u}.html"
+    else:
+        template_name = f"carrier_{lang_u}.html"
+
     # Jinja2 템플릿 사용 시도
     if template_dir and os.path.isdir(template_dir):
         try:
@@ -435,20 +595,32 @@ def _render_html_for_language(
 
             env = Environment(loader=FileSystemLoader(template_dir))
 
-            # Carrier_result/generate.py 패턴: carrier_{lang}.html / carrier_couples_{lang}.html
-            if is_couple:
-                template_name = f"carrier_couples_{lang}.html"
-            else:
-                template_name = f"carrier_{lang}.html"
-
             template = env.get_template(template_name)
-            return template.render(data=report_data)
+            out = template.render(data=report_data)
+            logger.info(
+                "Carrier PDF: rendered Jinja template %s from %s",
+                template_name,
+                template_dir,
+            )
+            return out
 
         except Exception as e:
-            logger.warning(f"Jinja2 template rendering failed ({e}), falling back to built-in HTML")
+            logger.error(
+                "Jinja2 carrier template failed (%s in %s): %s — using built-in HTML instead",
+                template_name,
+                template_dir,
+                e,
+                exc_info=True,
+            )
+
+    elif template_dir:
+        logger.error(
+            "Carrier PDF: template_dir is not a directory: %r — using built-in HTML",
+            template_dir,
+        )
 
     # 내장 HTML 생성
-    return _render_builtin_html(report_data, lang)
+    return _render_builtin_html(report_data, lang_u)
 
 
 def _render_builtin_html(report_data: Dict[str, Any], lang: str) -> str:

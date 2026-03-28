@@ -166,6 +166,24 @@ class Settings(BaseSettings):
             "Set when project/FASTQ tree is not writable by the container UID (e.g. use /data/carrier_screening_work)."
         ),
     )
+    carrier_screening_report_output_root: Optional[str] = Field(
+        default=None,
+        description=(
+            "If set, Portal Generate Report writes report.json and PDFs under "
+            "<root>/output/<work_dir>/<sample_name> and reads QC from "
+            "<root>/analysis/<work_dir>/<sample_name> (same layout as pipeline output). "
+            "Unset uses carrier artifact/output paths as today. Example: /home/sam/Carrier_result"
+        ),
+    )
+    carrier_screening_report_template_dir: Optional[str] = Field(
+        default=None,
+        description=(
+            "Jinja2 HTML templates for carrier PDF (carrier_EN.html, carrier_couples_EN.html, …). "
+            "Highest priority. Relative paths are resolved from the repo root (not process cwd). "
+            "If unset: <CARRIER_SCREENING_REPORT_OUTPUT_ROOT>/carrier_report, then packaged "
+            "data/carrier_report, then REPORT_TEMPLATE_DIR, then pipeline data/templates."
+        ),
+    )
     carrier_default_backbone_bed: Optional[str] = Field(
         default=None,
         description="Default backbone BED if job params omit backbone_bed (portal override still wins)",
@@ -278,7 +296,11 @@ class Settings(BaseSettings):
     # ─── Report Templates ──────────────────────────────────
     report_template_dir: Optional[str] = Field(
         default=None,
-        description="Directory containing Jinja2 HTML report templates"
+        description=(
+            "Legacy: Jinja2 HTML report templates. For carrier PDFs, packaged data/carrier_report "
+            "is preferred when set; use carrier_screening_report_template_dir to override. "
+            "Relative paths are resolved from the repo root."
+        ),
     )
     report_languages: str = Field(
         default="EN,CN",

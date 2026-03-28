@@ -295,6 +295,32 @@
     #geneDbEditModal textarea{min-height:80px;resize:vertical}
     #geneDbEditModal label{display:block;font-size:12px;font-weight:600;margin:12px 0 4px}
     #geneDbEditModal .gene-db-edit-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap}
+    /* Dark genes review: pipeline summary TSV → table + raw fallback */
+    #darkGenesContent.dark-genes-panel{padding:0}
+    .dark-genes-table-wrap{
+      overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 0 12px;
+      border-radius:12px;border:1px solid var(--line);background:var(--table-bg);
+    }
+    .dark-genes-matrix{width:100%;border-collapse:collapse;font-size:11px;line-height:1.4}
+    .dark-genes-matrix th,.dark-genes-matrix td{
+      border:1px solid var(--line);padding:8px 10px;vertical-align:top;text-align:left;
+      max-width:min(420px,32vw);word-break:break-word;
+    }
+    .dark-genes-matrix thead th{
+      position:sticky;top:0;z-index:1;background:var(--thead-bg);
+      font-size:10px;font-weight:600;text-transform:none;letter-spacing:.02em;color:var(--muted);
+      white-space:nowrap;
+    }
+    .dark-genes-matrix tbody tr:nth-child(odd){background:var(--row-alt)}
+    .dark-genes-matrix .dark-genes-warn{color:#d97706}
+    .dark-genes-matrix .dark-genes-err{color:#dc2626;font-weight:600}
+    .dark-genes-raw-details{margin:10px 0 0;font-size:12px}
+    .dark-genes-raw-details summary{cursor:pointer;color:var(--brand);user-select:none;padding:4px 0}
+    .dark-genes-raw-details pre{
+      margin:8px 0 0;font-size:11px;line-height:1.45;white-space:pre-wrap;max-height:40vh;overflow:auto;
+      padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--card);
+    }
+    .dark-genes-section-title{font-size:13px;font-weight:600;margin:0 0 8px;color:var(--text)}
     a.omim-link{color:var(--brand);text-decoration:underline;text-underline-offset:2px}
     a.omim-link:hover{opacity:.92}
     .fb-list{border:1px solid var(--line);border-radius:12px;background:var(--table-bg);max-height:48vh;overflow:auto}
@@ -1047,7 +1073,7 @@
       <!-- Dark genes (supplementary Nextflow summary/) -->
       <div id="reviewDarkGenes" class="hidden">
         <p class="muted" id="darkGenesHint" style="margin:0 0 10px;font-size:12px"></p>
-        <div id="darkGenesContent" class="card" style="margin:0"></div>
+        <div id="darkGenesContent" class="card dark-genes-panel" style="margin:0;padding:14px"></div>
       </div>
 
       <!-- Statistics Tab -->
@@ -3853,7 +3879,26 @@
       if (tab === 'genedb') {
         fetchGeneKnowledgeForReview(false);
       }
+      /** Dark genes: refetch result.json so the tab updates after «Reprocess» without full Load */
+      if (tab === 'darkgenes') {
+        refreshDarkGenesFromServer();
+      }
       if (tab !== 'variants') qs('variantDetail').classList.add('hidden');
+    }
+
+    async function refreshDarkGenesFromServer() {
+      const orderId = (qs('reviewOrderSelect') && qs('reviewOrderSelect').value) || reviewLoadedOrderId || '';
+      if (!orderId || !reviewData) {
+        renderReviewDarkGenes();
+        return;
+      }
+      try {
+        const data = await apiGet(`/order/${encodeURIComponent(orderId)}/result`);
+        if (data && typeof data.dark_genes === 'object') {
+          reviewData.dark_genes = data.dark_genes;
+        }
+      } catch (e) { /* keep cached reviewData.dark_genes */ }
+      renderReviewDarkGenes();
     }
 
     /** Gene database tab: gene_knowledge SQLite rows (Gemini cache) merged with per-gene variant counts */
@@ -4313,6 +4358,42 @@
       }
     }
 
+    /** Dark genes: detect tab-separated summary (pipeline matrix) and render as HTML table */
+    function parseDarkGenesTsvToTableHtml(txt) {
+      const raw = String(txt || '').trim();
+      if (!raw) return null;
+      const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(l => l.length);
+      if (lines.length < 2) return null;
+      if (!lines[0].includes('\t')) return null;
+      const rows = lines.map(line => line.split('\t'));
+      const maxCols = Math.max(...rows.map(r => r.length), 0);
+      if (maxCols < 2) return null;
+      const norm = rows.map(r => {
+        const x = r.slice();
+        while (x.length < maxCols) x.push('');
+        return x;
+      });
+      function cellInner(t) {
+        const s = String(t).trim();
+        let inner = escapeHtml(s);
+        if (/WARNING:/i.test(s)) inner = `<span class="dark-genes-warn">${inner}</span>`;
+        else if (/^Error:/i.test(s) || /^ERROR\b/i.test(s)) inner = `<span class="dark-genes-err">${inner}</span>`;
+        return inner;
+      }
+      const thHtml = norm[0].map(c => `<th scope="col">${escapeHtml(String(c).trim())}</th>`).join('');
+      const trHtml = norm.slice(1).map(tr =>
+        `<tr>${tr.map(c => `<td title="${escapeHtml(String(c).trim())}">${cellInner(c)}</td>`).join('')}</tr>`,
+      ).join('');
+      return `<div class="dark-genes-table-wrap"><table class="dark-genes-matrix" role="grid"><thead><tr>${thHtml}</tr></thead><tbody>${trHtml}</tbody></table></div>`;
+    }
+
+    function darkGenesRawDetails(label, rawText, maxPre) {
+      const t = String(rawText || '');
+      const clipped = maxPre ? t.slice(0, maxPre) : t;
+      const more = maxPre && t.length > maxPre ? `\n\n[… ${t.length - maxPre} more characters …]` : '';
+      return `<details class="dark-genes-raw-details"><summary>${escapeHtml(label)}</summary><pre>${escapeHtml(clipped + more)}</pre></details>`;
+    }
+
     // ── Dark genes (supplementary unified pipeline summary/*.txt) ──
     function renderReviewDarkGenes() {
       const hint = qs('darkGenesHint');
@@ -4324,25 +4405,47 @@
         return;
       }
       const dg = reviewData.dark_genes;
-      if (!dg || dg.status === 'not_found') {
-        hint.textContent = 'No supplementary dark-gene summary found. After the unified Nextflow run, expect files such as summary/*_summary_report.txt under the order analysis directory.';
+      const dgMissing =
+        !dg ||
+        dg.status === 'not_found' ||
+        (typeof dg === 'object' && !dg.status && !dg.summary_text && !dg.summary_file);
+      if (dgMissing) {
+        hint.textContent =
+          (dg && dg.message) ||
+          'No supplementary dark-gene summary found. After the unified Nextflow run, expect files such as summary/*_summary_report.txt under the Nextflow outdir (usually analysis/<work>/<sample>/). Re-run «Reprocess only» or POST /order/{id}/reprocess-results after the pipeline finishes.';
         box.innerHTML = '';
         return;
       }
       const files = [];
       if (dg.summary_file) files.push(dg.summary_file);
       if (dg.detailed_file) files.push(dg.detailed_file);
-      hint.textContent = files.length ? `Sources: ${files.join(', ')}` : '';
+      hint.textContent = files.length
+        ? `Sources: ${files.join(', ')} — matrix view when the summary is tab-separated.`
+        : '';
       const st = escapeHtml(dg.status || '');
-      let html = `<p style="margin:0 0 10px"><span class="badge">${st}</span></p>`;
+      let html = `<p style="margin:0 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="badge">${st}</span><span class="muted" style="font-size:11px">Hard-to-sequence / supplementary pipeline</span></p>`;
       if (dg.message) html += `<p class="muted">${escapeHtml(dg.message)}</p>`;
       const txt = (dg.summary_text || '').trim();
       if (txt) {
-        html += `<h4 style="margin:0 0 8px;font-size:13px">Summary report</h4><pre style="white-space:pre-wrap;font-size:12px;line-height:1.45;max-height:55vh;overflow:auto;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--table-bg);margin:0">${escapeHtml(txt)}</pre>`;
+        const tableHtml = parseDarkGenesTsvToTableHtml(txt);
+        html += `<h4 class="dark-genes-section-title">Summary report</h4>`;
+        if (tableHtml) {
+          html += tableHtml;
+          html += darkGenesRawDetails('Raw summary text (copy/paste)', txt, null);
+        } else {
+          html += `<pre style="white-space:pre-wrap;font-size:12px;line-height:1.45;max-height:55vh;overflow:auto;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--table-bg);margin:0">${escapeHtml(txt)}</pre>`;
+        }
       }
       const det = (dg.detailed_text || '').trim();
       if (det) {
-        html += `<h4 style="margin:16px 0 8px;font-size:13px">Detailed report (excerpt)</h4><pre style="white-space:pre-wrap;font-size:11px;line-height:1.45;max-height:45vh;overflow:auto;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);margin:0">${escapeHtml(det.slice(0, 120000))}</pre>`;
+        const detTable = parseDarkGenesTsvToTableHtml(det);
+        html += `<h4 class="dark-genes-section-title" style="margin-top:16px">Detailed report</h4>`;
+        if (detTable) {
+          html += detTable;
+          html += darkGenesRawDetails('Raw detailed text (excerpt)', det, 120000);
+        } else {
+          html += `<pre style="white-space:pre-wrap;font-size:11px;line-height:1.45;max-height:45vh;overflow:auto;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);margin:0">${escapeHtml(det.slice(0, 120000))}</pre>`;
+        }
       }
       if (!txt && !det && dg.status !== 'error') {
         html += '<p class="muted">Summary files were located but text was empty.</p>';

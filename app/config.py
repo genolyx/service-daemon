@@ -190,9 +190,9 @@ class Settings(BaseSettings):
     carrier_screening_artifact_base: Optional[str] = Field(
         default=None,
         description=(
-            "Writable root for carrier analysis/output/log (subdirs analysis|output|log). "
-            "FASTQ paths stay under carrier_screening_layout_base. "
-            "Set when project/FASTQ tree is not writable by the container UID (e.g. use /data/carrier_screening_work)."
+            "Writable root for carrier fastq staging and analysis/output/log (subdirs fastq|analysis|output|log). "
+            "When unset, those paths use carrier_screening_layout_base. "
+            "Set when the layout tree is not writable by the daemon UID (e.g. /data/carrier_screening_work)."
         ),
     )
     carrier_screening_report_output_root: Optional[str] = Field(

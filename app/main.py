@@ -284,7 +284,6 @@ def _build_job_from_submit_request(service_code: str, request: OrderSubmitReques
             log_dir=os.path.join(root, "log", work_dir, oid),
         )
     if service_code == "carrier_screening":
-        layout_base = settings.carrier_screening_layout_base
         work_root = settings.carrier_screening_work_root
         return Job(
             order_id=request.order_id,
@@ -298,7 +297,7 @@ def _build_job_from_submit_request(service_code: str, request: OrderSubmitReques
             params=request.params or {},
             priority=request.priority,
             callback_url=request.callback_url,
-            fastq_dir=os.path.join(layout_base, "fastq", work_dir, request.sample_name),
+            fastq_dir=os.path.join(work_root, "fastq", work_dir, request.sample_name),
             analysis_dir=os.path.join(work_root, "analysis", work_dir, request.sample_name),
             output_dir=os.path.join(work_root, "output", work_dir, request.sample_name),
             log_dir=os.path.join(work_root, "log", work_dir, request.sample_name),

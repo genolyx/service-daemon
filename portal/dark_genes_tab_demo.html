@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dark genes tab — demo</title>
+  <style>
+    :root {
+      --bg:#0b1020;--card:#11162a;--line:#1d2442;--text:#e8ebff;--muted:#9aa3c7;
+      --table-bg:#0b1128;--chip:#202a4d;--chip-line:#2a3661;
+      --radius:14px;
+    }
+    body{margin:0;font-family:ui-sans-serif,system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px}
+    .muted{color:var(--muted);font-size:12px}
+    .card{background:linear-gradient(180deg,var(--card),#0f1426);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+    .badge{font-size:12px;padding:6px 10px;border-radius:999px;border:1px solid var(--chip-line);background:var(--chip);color:var(--muted)}
+    .sub-tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;border-bottom:1px solid var(--line);padding-bottom:10px}
+    .sub-tab{padding:8px 14px;border-radius:999px;font-size:12px;font-weight:600;cursor:default;border:1px solid var(--line);color:var(--muted)}
+    .sub-tab.active{background:rgba(106,163,255,.15);border-color:rgba(106,163,255,.45);color:#cfe3ff}
+    h1{font-size:18px;margin:0 0 8px}
+    pre{white-space:pre-wrap;font-size:12px;line-height:1.45;max-height:55vh;overflow:auto;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--table-bg);margin:0}
+    h4{margin:16px 0 8px;font-size:13px}
+  </style>
+</head>
+<body>
+  <p class="muted" style="margin:0 0 16px">Static demo — same content shape as Review → Dark genes. Open via: <code>python3 -m http.server 8765 --directory portal</code> then <code>/dark_genes_tab_demo.html</code></p>
+  <h1>Review (mock)</h1>
+  <div class="sub-tabs">
+    <span class="sub-tab">Variants</span>
+    <span class="sub-tab">Disease Summary</span>
+    <span class="sub-tab">QC Summary</span>
+    <span class="sub-tab active">Dark genes</span>
+    <span class="sub-tab">Statistics</span>
+  </div>
+  <p class="muted" id="darkGenesHint" style="margin:0 0 10px"></p>
+  <div id="darkGenesContent" class="card" style="margin:0"></div>
+
+  <script>
+    const reviewData = {
+      dark_genes: {
+        status: 'found',
+        summary_file: 'sample_summary_report.txt',
+        detailed_file: 'sample_detailed_report.txt',
+        summary_text: `DARK GENES PIPELINE — DEMO SUMMARY
+
+Sample: DEMO001
+
+- Target coverage: OK in panel regions
+- Paraphase / SMN: see detailed report
+- ExpansionHunter: no pathogenic expansion (demo)
+
+This text is mock data for UI review.`,
+        detailed_text: 'Detailed excerpt (demo): intron depth checks passed for dark_genes_plus intervals…'
+      }
+    };
+
+    function escapeHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s == null ? '' : String(s);
+      return d.innerHTML;
+    }
+
+    function renderReviewDarkGenes() {
+      const hint = document.getElementById('darkGenesHint');
+      const box = document.getElementById('darkGenesContent');
+      const dg = reviewData.dark_genes;
+      const files = [];
+      if (dg.summary_file) files.push(dg.summary_file);
+      if (dg.detailed_file) files.push(dg.detailed_file);
+      hint.textContent = files.length ? 'Sources: ' + files.join(', ') : '';
+      const st = escapeHtml(dg.status || '');
+      let html = '<p style="margin:0 0 10px"><span class="badge">' + st + '</span></p>';
+      if (dg.message) html += '<p class="muted">' + escapeHtml(dg.message) + '</p>';
+      const txt = (dg.summary_text || '').trim();
+      if (txt) {
+        html += '<h4 style="margin:0 0 8px">Summary report</h4><pre>' + escapeHtml(txt) + '</pre>';
+      }
+      const det = (dg.detailed_text || '').trim();
+      if (det) {
+        html += '<h4>Detailed report (excerpt)</h4><pre style="font-size:11px;background:var(--card)">' + escapeHtml(det) + '</pre>';
+      }
+      box.innerHTML = html;
+    }
+    renderReviewDarkGenes();
+  </script>
+</body>
+</html>

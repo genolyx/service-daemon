@@ -1531,6 +1531,7 @@ def generate_result_json(
     output_dir: str = "",
     metric_image_search_roots: Optional[List[str]] = None,
     analysis_dir: Optional[str] = None,
+    dark_genes_extra_roots: Optional[List[str]] = None,
 ) -> str:
     """
     Portal 리뷰 페이지용 result.json을 생성합니다.
@@ -1547,6 +1548,8 @@ def generate_result_json(
         output_dir: 출력 디렉토리
         metric_image_search_roots: QC 차트 이미지 탐색 루트 (artifact·layout output 등)
         analysis_dir: Pipeline analysis root (dark-gene Nextflow outdir); defaults to output_dir
+        dark_genes_extra_roots: Extra dirs to scan for summary/*.txt when artifact analysis_dir
+            has no pipeline publishDir output (e.g. Nextflow wrote under carrier_screening_layout_base).
 
     Returns:
         생성된 result.json 파일 경로
@@ -1558,15 +1561,65 @@ def generate_result_json(
     )
 
     ad = (analysis_dir or output_dir or "").strip()
-    dark_genes_block: Dict[str, Any] = {}
-    if ad and os.path.isdir(ad):
-        try:
-            from .dark_genes import collect_dark_genes_from_analysis_dir
+    od = (output_dir or "").strip()
 
-            dark_genes_block = collect_dark_genes_from_analysis_dir(ad, sample_name)
-        except Exception as e:
-            logger.warning("[generate_result_json] dark_genes collection failed: %s", e)
-            dark_genes_block = {"status": "error", "message": str(e)}
+    def _collect_dark(root: str) -> Dict[str, Any]:
+        from .dark_genes import collect_dark_genes_from_analysis_dir
+
+        return collect_dark_genes_from_analysis_dir(root, sample_name)
+
+    search_roots: List[str] = []
+    seen_real: set = set()
+
+    def _add_dark_root(path: Optional[str]) -> None:
+        if not path or not str(path).strip():
+            return
+        p = str(path).strip()
+        if not os.path.isdir(p):
+            return
+        try:
+            r = os.path.realpath(p)
+        except OSError:
+            return
+        if r in seen_real:
+            return
+        seen_real.add(r)
+        search_roots.append(os.path.abspath(p))
+
+    try:
+        _add_dark_root(ad)
+        _add_dark_root(od)
+        for extra in dark_genes_extra_roots or []:
+            _add_dark_root(extra)
+    except OSError:
+        pass
+
+    dark_genes_block: Dict[str, Any] = {
+        "status": "not_found",
+        "message": "No readable analysis/output directory for dark-gene summary",
+        "searched_roots": search_roots,
+    }
+    if ad and not os.path.isdir(ad) and not search_roots:
+        dark_genes_block["message"] = f"analysis_dir is not a directory: {ad}"
+
+    try:
+        if not search_roots:
+            pass  # keep not_found above
+        else:
+            for root in search_roots:
+                dark_genes_block = _collect_dark(root)
+                if dark_genes_block.get("status") != "not_found":
+                    break
+            if dark_genes_block.get("status") == "not_found":
+                dark_genes_block["searched_roots"] = search_roots
+                dark_genes_block["message"] = (
+                    "No dark_genes summary/detailed report under Nextflow outdir "
+                    "(expected summary/*_summary_report.txt or *_summary_report.txt in outdir root). "
+                    f"Tried: {search_roots}"
+                )
+    except Exception as e:
+        logger.warning("[generate_result_json] dark_genes collection failed: %s", e)
+        dark_genes_block = {"status": "error", "message": str(e)}
 
     # 변이 + ACMG 결합
     variants_for_review = []

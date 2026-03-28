@@ -359,7 +359,8 @@ def is_vep_annotated_vcf(vcf_path: str) -> bool:
             for line in fh:
                 if not line.startswith("#"):
                     break
-                if "##INFO=<ID=CSQ" in line and "Ensembl VEP" in line:
+                # Any CSQ INFO (VEP, Funcotator, or other) — skip redundant snpEff and try CSQ pre-parse
+                if "##INFO=<ID=CSQ" in line:
                     return True
     except Exception:
         pass

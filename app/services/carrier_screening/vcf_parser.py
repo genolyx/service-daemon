@@ -564,6 +564,30 @@ def apply_clinvar_filter(
     return matches
 
 
+def _lookup_vep_annotations(
+    vep_annotations: Dict[str, Any],
+    chrom: str,
+    pos: int,
+    ref: str,
+    alt: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    Match pre-parsed VEP rows to pysam records.
+
+    Keys from extract_vep_annotations_from_vcf use rec.chrom as in file (chr1 vs 1).
+    """
+    keys = [f"{chrom}:{pos}:{ref}:{alt}"]
+    if chrom.startswith("chr") and len(chrom) > 3:
+        keys.append(f"{chrom[3:]}:{pos}:{ref}:{alt}")
+    elif chrom and not str(chrom).startswith("chr"):
+        keys.append(f"chr{chrom}:{pos}:{ref}:{alt}")
+    for k in keys:
+        hit = vep_annotations.get(k)
+        if hit:
+            return hit
+    return None
+
+
 # ══════════════════════════════════════════════════════════════
 # Integrated VCF Parsing Pipeline
 # ══════════════════════════════════════════════════════════════
@@ -623,11 +647,20 @@ def parse_vcf_variants(
     # vep_annotations가 제공된 경우 VEP CSQ 기반 annotation 경로를 사용합니다.
     # 제공되지 않은 경우 기존 snpEff ANN/CSQ 파싱 경로를 사용합니다.
     use_vep_path = bool(vep_annotations)
+    layout_tag, layout_gi, layout_ti, layout_ci, layout_pi, layout_ei = get_annotation_layout(vcf)
     if use_vep_path:
         logger.info("VEP annotation mode: using pre-parsed CSQ data (%d variants)", len(vep_annotations))
+        # Per-record pass still skips ANN/CSQ here; per-alt loop falls back to layout_* if lookup misses.
         tag, gi, ti, ci, pi, ei = None, None, None, None, None, None
     else:
-        tag, gi, ti, ci, pi, ei = get_annotation_layout(vcf)
+        tag, gi, ti, ci, pi, ei = (
+            layout_tag,
+            layout_gi,
+            layout_ti,
+            layout_ci,
+            layout_pi,
+            layout_ei,
+        )
         if tag is None:
             stats["warnings"].append("No ANN/CSQ detected; c./p. may be missing.")
 
@@ -689,8 +722,11 @@ def parse_vcf_variants(
 
                 # 통합 annotation
                 # VEP annotation이 제공된 경우 VEP 기반 경로 사용
-                vep_key = f"{rec.chrom}:{rec.pos}:{rec.ref}:{alt_str}"
-                vep_data = (vep_annotations or {}).get(vep_key)
+                vep_data = None
+                if use_vep_path and vep_annotations:
+                    vep_data = _lookup_vep_annotations(
+                        vep_annotations, rec.chrom, rec.pos, rec.ref, alt_str
+                    )
                 if vep_data and hasattr(annotator, 'annotate_with_vep'):
                     ann = annotator.annotate_with_vep(
                         chrom=rec.chrom, pos=rec.pos, ref=rec.ref, alt=alt_str,
@@ -701,10 +737,23 @@ def parse_vcf_variants(
                     if not gene and ann.get("gene"):
                         gene = ann["gene"]
                 else:
+                    g2, t2, hc2, hp2, ef2 = gene, transcript, hgvsc, hgvsp, effect
+                    # VEP pre-parse missed this row (key mismatch) or non-VEP VCF: parse ANN/CSQ inline
+                    if use_vep_path and layout_tag:
+                        g2, t2, hc2, hp2, ef2 = extract_variant_info(
+                            rec,
+                            layout_tag,
+                            layout_gi,
+                            layout_ti,
+                            layout_ci,
+                            layout_pi,
+                            layout_ei,
+                            gene_interval_lookup=gene_interval_lookup,
+                        )
                     ann = annotator.annotate(
                         chrom=rec.chrom, pos=rec.pos, ref=rec.ref, alt=alt_str,
-                        gene=gene, transcript=transcript,
-                        hgvsc=hgvsc, hgvsp=hgvsp, effect=effect,
+                        gene=g2, transcript=t2,
+                        hgvsc=hc2, hgvsp=hp2, effect=ef2,
                         sample_metrics=sample_metrics,
                     )
 
@@ -743,14 +792,16 @@ def parse_vcf_variants(
                         ctx = {
                             "af": gnomad_af,
                             "clinvar": cv_primary or ann.get("clinvar_sig", ""),
-                            "effect": effect,
+                            "effect": ann.get("effect") or effect,
                             "chrom": rec.chrom,
                             "pos": rec.pos,
                             "ref": rec.ref,
                             "alt": alt_str,
                         }
                         result = acmg_classifier.classify(
-                            gene, hgvsc, context=ctx,
+                            ann.get("gene") or gene,
+                            ann.get("hgvsc") or hgvsc,
+                            context=ctx,
                             lite_mode=True, do_local_lookup=False,
                         )
                         acmg = {

@@ -1,7 +1,8 @@
 """
 Collect dark-gene pipeline outputs (unified Nextflow outdir = analysis_dir).
 
-Looks for summary reports under summary/ or results/summary/ (dark_gene_pipeline layout).
+Looks for summary reports under summary/ or results/summary/ (dark_gene_pipeline layout),
+or *_summary_report.txt / *_detailed_report.txt in the analysis outdir root (some runs publish flat).
 """
 
 from __future__ import annotations
@@ -9,21 +10,26 @@ from __future__ import annotations
 import glob
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 _MAX_READ_BYTES = 500_000
+# Order matters: first pattern group with any match wins (prefer summary/ subfolder).
 _SUMMARY_GLOBS = (
     "summary/*_summary_report.txt",
     "summary/*summary_report*.txt",
     "results/summary/*_summary_report.txt",
     "results/summary/*summary_report*.txt",
+    "*_summary_report.txt",
+    "*summary_report*.txt",
 )
 _DETAILED_GLOBS = (
     "summary/*_detailed_report.txt",
     "summary/*detailed_report*.txt",
     "results/summary/*_detailed_report.txt",
+    "*_detailed_report.txt",
+    "*detailed_report*.txt",
 )
 
 
@@ -37,10 +43,33 @@ def _read_text_safe(path: str, max_chars: int) -> str:
 
 
 def _first_existing_glob(base: str, patterns: tuple) -> List[str]:
+    """
+    Try each pattern in order; return matches from the first pattern that yields files.
+    (Avoid mixing summary/ and root files in one sort — prefer standard layout.)
+    """
+    for pat in patterns:
+        batch: List[str] = []
+        seen: set = set()
+        for p in glob.glob(os.path.join(base, pat)):
+            try:
+                rp = os.path.realpath(p)
+            except OSError:
+                rp = p
+            if rp in seen or not os.path.isfile(p):
+                continue
+            seen.add(rp)
+            batch.append(p)
+        if batch:
+            return sorted(batch)
+    return []
+
+
+def _rglob_unique(base: str, patterns: Tuple[str, ...]) -> List[str]:
+    """Recursive fallback when summary/ sits under an extra directory level."""
     out: List[str] = []
     seen = set()
     for pat in patterns:
-        for p in glob.glob(os.path.join(base, pat)):
+        for p in glob.glob(os.path.join(base, pat), recursive=True):
             try:
                 rp = os.path.realpath(p)
             except OSError:
@@ -69,7 +98,17 @@ def collect_dark_genes_from_analysis_dir(
         }
 
     summary_paths = _first_existing_glob(base, _SUMMARY_GLOBS)
+    if not summary_paths:
+        summary_paths = _rglob_unique(
+            base,
+            ("**/*_summary_report.txt", "**/*summary_report*.txt"),
+        )
     detailed_paths = _first_existing_glob(base, _DETAILED_GLOBS)
+    if not detailed_paths:
+        detailed_paths = _rglob_unique(
+            base,
+            ("**/*_detailed_report.txt", "**/*detailed_report*.txt"),
+        )
 
     if not summary_paths and not detailed_paths:
         return {

@@ -38,22 +38,21 @@ def carrier_sequencing_folder(job: Job) -> str:
 
 def apply_carrier_layout_directories(job: Job) -> bool:
     """
-    Set fastq paths under carrier_screening_layout_base; analysis/output/log under
-    carrier_screening_work_root (CARRIER_SCREENING_ARTIFACT_BASE or layout base).
+    Set fastq and analysis/output/log under carrier_screening_work_root
+    (CARRIER_SCREENING_ARTIFACT_BASE when set, else layout base).
 
-    - fastq_dir: layout_base/fastq/<work>/<sequencing_folder>/
+    - fastq_dir: work_root/fastq/<work>/<sequencing_folder>/
     - analysis|output|log: work_root/<kind>/<work>/<sample_name>/
 
     Returns True if any path field changed.
     """
     if job.service_code != "carrier_screening":
         return False
-    layout_base = settings.carrier_screening_layout_base
     work_root = settings.carrier_screening_work_root
     wk = str(job.work_dir).strip() or "00"
     seq_folder = carrier_sequencing_folder(job)
     path_key = str(job.sample_name).strip() or job.order_id
-    new_f = os.path.join(layout_base, "fastq", wk, seq_folder)
+    new_f = os.path.join(work_root, "fastq", wk, seq_folder)
     new_a = os.path.join(work_root, "analysis", wk, path_key)
     new_o = os.path.join(work_root, "output", wk, path_key)
     new_l = os.path.join(work_root, "log", wk, path_key)

@@ -196,16 +196,13 @@ class CarrierScreeningPlugin(ServicePlugin):
     def _get_dirs(self, job: Job) -> Dict[str, str]:
         """
         carrier-screening 디렉토리 구조:
-            carrier-screening/fastq/<work_dir>/<sample_name>/
-            carrier-screening/analysis/<work_dir>/<sample_name>/
-            carrier-screening/output/<work_dir>/<sample_name>/
-            carrier-screening/log/<work_dir>/<sample_name>/
+            <work_root>/fastq/<work_dir>/<sample_name>/  (work_root = layout_base or CARRIER_SCREENING_ARTIFACT_BASE)
+            <work_root>/analysis|output|log/<work_dir>/<sample_name>/
         """
-        layout_base = settings.carrier_screening_layout_base
         work_root = settings.carrier_screening_work_root
         return {
             "fastq": job.fastq_dir
-            or os.path.join(layout_base, "fastq", job.work_dir, job.sample_name),
+            or os.path.join(work_root, "fastq", job.work_dir, job.sample_name),
             "analysis": job.analysis_dir
             or os.path.join(work_root, "analysis", job.work_dir, job.sample_name),
             "output": job.output_dir
@@ -359,8 +356,8 @@ class CarrierScreeningPlugin(ServicePlugin):
             logger.error(
                 "[carrier_screening] Permission denied creating %s — fix host ownership, set "
                 ".env.compose HOST_UID/HOST_GID to `id -u`/`id -g`, or set CARRIER_SCREENING_ARTIFACT_BASE "
-                "to a writable dir under /data (e.g. /data/carrier_screening_work) so analysis/log are not "
-                "next to read-only FASTQ.",
+                "to a writable dir under /data (e.g. /data/carrier_screening_work) so fastq/analysis/output "
+                "staging is not under a read-only carrier layout tree.",
                 e.filename or dirs,
             )
             raise
@@ -1308,6 +1305,7 @@ class CarrierScreeningPlugin(ServicePlugin):
                     continue
                 seen_mr.add(rp)
                 metric_image_roots.append(p)
+            dark_roots = self._qc_extra_search_dirs(job, analysis_dir)
             result_json_path = await asyncio.to_thread(
                 generate_result_json,
                 annotated_variants=annotated_variants,
@@ -1321,6 +1319,7 @@ class CarrierScreeningPlugin(ServicePlugin):
                 output_dir=output_dir,
                 metric_image_search_roots=metric_image_roots,
                 analysis_dir=analysis_dir,
+                dark_genes_extra_roots=dark_roots,
             )
 
             # ── 13. variants.tsv 생성 ──

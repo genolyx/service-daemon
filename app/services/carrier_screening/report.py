@@ -136,18 +136,21 @@ def _variant_to_template_finding(v: Dict[str, Any]) -> Dict[str, Any]:
         parts.append(f"Protein: {v['hgvsp']}")
     if v.get("clinvar_sig"):
         parts.append(f"ClinVar: {v['clinvar_sig']}")
-    variant_summary = rc if rc else (" ".join(parts) if parts else "")
-    gene_description = ""
+    auto_summary = rc if rc else (" ".join(parts) if parts else "")
+    auto_gene_desc = ""
     if disorder and disorder != "Unknown disorder":
-        gene_description = f"The {v.get('gene') or 'gene'} gene is associated with {disorder}."
+        auto_gene_desc = f"The {v.get('gene') or 'gene'} gene is associated with {disorder}."
+    # Portal Generate Report tab: reviewer-edited text wins
+    og = (v.get("report_gene_description") or "").strip()
+    osum = (v.get("report_variant_summary") or "").strip()
     return {
         "gene": v.get("gene") or "",
         "mutation": mutation,
         "disorder": disorder,
         "inheritance": (v.get("inheritance") or "").strip() or "—",
         "classification": v.get("classification") or "VUS",
-        "gene_description": gene_description,
-        "variant_summary": variant_summary,
+        "gene_description": og if og else auto_gene_desc,
+        "variant_summary": osum if osum else auto_summary,
     }
 
 
@@ -262,6 +265,10 @@ def generate_report_json(
             "report_subject": v.get("report_subject")
             or v.get("finding_subject")
             or v.get("couple_subject"),
+
+            # Portal Generate Report tab (editable before PDF)
+            "report_gene_description": (v.get("report_gene_description") or "").strip(),
+            "report_variant_summary": (v.get("report_variant_summary") or "").strip(),
         }
         final_variants.append(final_variant)
 

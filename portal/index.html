@@ -894,7 +894,7 @@
         <div class="sub-tab" data-tab="diseases" onclick="showReviewTab('diseases')">Disease Summary</div>
         <div class="sub-tab" data-tab="qc" onclick="showReviewTab('qc')">QC Summary</div>
         <div class="sub-tab" data-tab="stats" onclick="showReviewTab('stats')">Statistics</div>
-        <div class="sub-tab" data-tab="report" onclick="showReviewTab('report')">Generate Report</div>
+        <div class="sub-tab" data-tab="report" onclick="showReviewTab('report')">Review Case</div>
       </div>
 
       <!-- Variants Tab -->
@@ -970,7 +970,7 @@
       <!-- Variant Detail Panel -->
       <div id="variantDetail" class="variant-detail hidden"></div>
 
-      <!-- Generate Report Tab -->
+      <!-- Review & report generation (sub-tab: Review Case) -->
       <div id="reviewReport" class="hidden">
         <div class="row">
           <div class="col-12">
@@ -1257,10 +1257,12 @@
     let pipelineLogPollTimer = null;
 
     let reviewData = null;
-    /** loadReviewData 성공 후 유지 — 드롭다운이 아직 비어 있어도 Generate Report 등에서 주문 ID 사용 */
+    /** loadReviewData 성공 후 유지 — 드롭다운이 아직 비어 있어도 Review Case 탭 등에서 주문 ID 사용 */
     let reviewLoadedOrderId = null;
     let selectedVariants = new Set();
     let variantComments = {};
+    /** Review Case sub-tab: per-variant editable gene_description + variant_summary for PDF */
+    let variantReportTexts = {};
     let variantSortKey = null, variantSortAsc = true;
 
     // ═══════════════════════════════════════════════════════════
@@ -3288,6 +3290,7 @@
 
         selectedVariants = new Set();
         variantComments = {};
+        variantReportTexts = {};
 
         // Populate gene filter dropdown
         populateGeneFilter();
@@ -3944,27 +3947,116 @@
     // ═══════════════════════════════════════════════════════════
     // Report Generation
     // ═══════════════════════════════════════════════════════════
+    function pruneVariantReportTexts() {
+      for (const k of Object.keys(variantReportTexts)) {
+        if (!selectedVariants.has(k)) delete variantReportTexts[k];
+      }
+    }
+
+    function ensureVariantReportTexts(v) {
+      const id = v.variant_id;
+      if (!id || variantReportTexts[id]) return;
+      const disease = getVariantDisease(v);
+      const dis = disease !== '-' ? disease : 'Unknown disorder';
+      const gene = v.gene || 'gene';
+      const geneDesc = (v.report_gene_description && String(v.report_gene_description).trim())
+        || (dis !== 'Unknown disorder' ? `The ${gene} gene is associated with ${dis}.` : '');
+      const comment = (variantComments[id]?.comment || '').trim();
+      const parts = [];
+      if (v.hgvsp) parts.push(`Protein: ${v.hgvsp}`);
+      if (v.clinvar_sig_primary) parts.push(`ClinVar: ${v.clinvar_sig_primary}`);
+      const varSum = (v.report_variant_summary && String(v.report_variant_summary).trim())
+        || comment || parts.join(' ') || '';
+      variantReportTexts[id] = { gene_description: geneDesc, variant_summary: varSum };
+    }
+
+    function buildVariantReferenceLines(v) {
+      const lines = [];
+      if (v.chrom && v.pos != null) {
+        const loc = `${v.chrom}:${v.pos} ${v.ref || ''}>${v.alt || ''}`;
+        lines.push(`<strong>Location</strong> ${escapeHtml(loc)}`);
+      }
+      if (v.transcript) lines.push(`<strong>Transcript</strong> ${escapeHtml(String(v.transcript))}`);
+      if (v.gnomad_af != null && v.gnomad_af !== '') lines.push(`<strong>gnomAD AF</strong> ${escapeHtml(String(fmtAF(v.gnomad_af)))}`);
+      if (v.clinvar_sig_primary) lines.push(`<strong>ClinVar</strong> ${escapeHtml(String(v.clinvar_sig_primary))}`);
+      if (v.clinvar_dn) lines.push(`<strong>ClinVar disease</strong> ${escapeHtml(String(v.clinvar_dn))}`);
+      if (v.hgmd_class || v.hgmd_disease) {
+        lines.push(`<strong>HGMD</strong> ${escapeHtml([v.hgmd_class, v.hgmd_disease].filter(Boolean).join(' — '))}`);
+      }
+      if (v.acmg_criteria && v.acmg_criteria.length) {
+        lines.push(`<strong>ACMG criteria</strong> ${escapeHtml(v.acmg_criteria.join(', '))}`);
+      }
+      if (v.acmg_reasoning) {
+        const ar = String(v.acmg_reasoning);
+        lines.push(`<strong>ACMG reasoning</strong> ${escapeHtml(ar.length > 1200 ? ar.slice(0, 1200) + '…' : ar)}`);
+      }
+      if (v.literature && typeof v.literature === 'object') {
+        const lit = v.literature;
+        const pm = lit.pmids || lit.top_titles;
+        if (pm) lines.push(`<strong>Literature</strong> ${escapeHtml(typeof pm === 'string' ? pm : JSON.stringify(pm).slice(0, 400))}`);
+      }
+      return lines.length ? lines.join('<br/>') : '<span class="muted">No extra reference fields on this variant (pipeline metadata).</span>';
+    }
+
     function updateSelectedVariantsList() {
       const list = qs('selectedVariantsList');
       if (selectedVariants.size === 0) {
-        list.innerHTML = '<div class="muted" style="padding:8px">No variants selected. Go to the Variants tab and select variants to include in the report.</div>';
+        list.innerHTML = '<div class="muted" style="padding:8px">No variants selected. Go to the <strong>Variants</strong> tab, check variants, then return here to edit report text.</div>';
         return;
       }
+      pruneVariantReportTexts();
       const variants = (reviewData?.variants || []).filter(v => selectedVariants.has(v.variant_id));
-      list.innerHTML = `<div class="muted" style="margin-bottom:8px">${variants.length} variant(s) selected</div>` +
-        variants.map(v => {
-          const comment = variantComments[v.variant_id] || {};
-          const disease = getVariantDisease(v);
-          return `<div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
-            <span style="font-weight:600;min-width:80px">${v.gene}</span>
-            <span class="muted">${v.hgvsp || v.hgvsc || v.variant_id}</span>
-            <span class="${acmgClass(comment.classification || v.acmg_classification)}">${comment.classification || v.acmg_classification}</span>
-            ${disease !== '-' ? `<span class="muted" style="font-size:11px">${disease}</span>` : ''}
-            ${comment.comment ? `<span class="muted" style="font-style:italic">"${comment.comment}"</span>` : ''}
-            <button class="btn danger-btn" style="padding:2px 8px;font-size:10px;margin-left:auto" onclick="selectedVariants.delete('${v.variant_id}');updateSelectedVariantsList()">Remove</button>
-          </div>`;
-        }).join('');
+      variants.forEach(ensureVariantReportTexts);
+
+      let html = `<div class="muted" style="margin-bottom:12px">${variants.length} variant(s) — review reference data and edit <strong>Gene & disease association</strong> and <strong>Variant interpretation</strong> below, then click <strong>Generate Report</strong>.</div>`;
+      variants.forEach(v => {
+        const id = v.variant_id;
+        const vidEnc = encodeURIComponent(id);
+        const comment = variantComments[id] || {};
+        const disease = getVariantDisease(v);
+        const rt = variantReportTexts[id] || { gene_description: '', variant_summary: '' };
+        html += `<div class="report-variant-card" style="border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;background:var(--card-bg, rgba(255,255,255,.02))">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+            <div>
+              <span style="font-weight:700;font-size:15px">${escapeHtml(v.gene || '—')}</span>
+              <span class="muted" style="margin-left:10px">${escapeHtml(v.hgvsp || v.hgvsc || id)}</span>
+              <span class="${acmgClass(comment.classification || v.acmg_classification)}" style="margin-left:10px">${escapeHtml(comment.classification || v.acmg_classification || '—')}</span>
+              ${disease !== '-' ? `<div class="muted" style="font-size:12px;margin-top:4px">${escapeHtml(disease)}</div>` : ''}
+            </div>
+            <button type="button" class="btn danger-btn" style="padding:4px 10px;font-size:11px" data-remove-vid="${vidEnc}">Remove</button>
+          </div>
+          <div style="font-size:11px;line-height:1.45;color:var(--muted);margin-bottom:10px;padding:10px;background:var(--input-bg);border-radius:8px;max-height:140px;overflow:auto">${buildVariantReferenceLines(v)}</div>
+          ${comment.comment ? `<div class="muted" style="font-size:12px;margin-bottom:8px"><em>Reviewer note (Variants tab):</em> ${escapeHtml(comment.comment)}</div>` : ''}
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Gene & disease association (report narrative)</label>
+          <textarea class="report-variant-text" data-variant-id="${vidEnc}" data-report-field="gene_description" rows="3" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-size:12px;margin-bottom:10px;resize:vertical">${escapeHtml(rt.gene_description)}</textarea>
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Variant interpretation (report narrative)</label>
+          <textarea class="report-variant-text" data-variant-id="${vidEnc}" data-report-field="variant_summary" rows="5" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-size:12px;resize:vertical">${escapeHtml(rt.variant_summary)}</textarea>
+        </div>`;
+      });
+      list.innerHTML = html;
+
+      list.querySelectorAll('[data-remove-vid]').forEach(btn => {
+        btn.onclick = () => {
+          const raw = decodeURIComponent(btn.getAttribute('data-remove-vid') || '');
+          selectedVariants.delete(raw);
+          delete variantReportTexts[raw];
+          updateSelectedVariantsList();
+        };
+      });
     }
+
+    document.getElementById('reviewReport').addEventListener('input', (e) => {
+      const ta = e.target;
+      if (!(ta instanceof HTMLTextAreaElement) || !ta.classList.contains('report-variant-text')) return;
+      const enc = ta.getAttribute('data-variant-id');
+      if (!enc) return;
+      let vid;
+      try { vid = decodeURIComponent(enc); } catch (err) { return; }
+      const field = ta.getAttribute('data-report-field');
+      if (!field || (field !== 'gene_description' && field !== 'variant_summary')) return;
+      if (!variantReportTexts[vid]) variantReportTexts[vid] = { gene_description: '', variant_summary: '' };
+      variantReportTexts[vid][field] = ta.value;
+    });
 
     async function generateReport() {
       const orderId = getActiveReviewOrderId();
@@ -3978,16 +4070,23 @@
       const revName = qs('rRevName').value.trim();
       if (!revName) return toast('Reviewer name is required', false);
 
+      (reviewData?.variants || [])
+        .filter(v => selectedVariants.has(v.variant_id))
+        .forEach(ensureVariantReportTexts);
+
       const confirmed = (reviewData?.variants || [])
         .filter(v => selectedVariants.has(v.variant_id))
         .map(v => {
           const comment = variantComments[v.variant_id] || {};
+          const rt = variantReportTexts[v.variant_id] || {};
           return {
             ...v,
             reviewer_confirmed: true,
             reviewer_classification: comment.classification || v.acmg_classification,
             reviewer_comment: comment.comment || '',
             include_in_report: true,
+            report_gene_description: rt.gene_description != null ? String(rt.gene_description) : '',
+            report_variant_summary: rt.variant_summary != null ? String(rt.variant_summary) : '',
           };
         });
 

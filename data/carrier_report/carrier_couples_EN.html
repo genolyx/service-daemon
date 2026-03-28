@@ -415,6 +415,21 @@
     </div>
     {% endif %}
 
+    {% if data.dark_genes and data.dark_genes.report_summary %}
+    <div class="new-page">
+        <div class="section-title">Supplementary analysis (hard-to-sequence regions)</div>
+        <p class="detail-text" style="white-space:pre-wrap;font-size:8.5pt;">
+            {{ data.dark_genes.report_summary }}
+        </p>
+        {% if data.dark_genes.report_detailed %}
+        <div class="sub-label" style="margin-top:14px;">Additional detail (excerpt)</div>
+        <p class="detail-text" style="white-space:pre-wrap;font-size:8pt;color:#475569;">
+            {{ data.dark_genes.report_detailed }}
+        </p>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <div class="new-page">
         <div class="section-title">Genes Evaluated</div>
         <div class="gene-list-grid">

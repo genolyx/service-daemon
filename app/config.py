@@ -142,7 +142,28 @@ class Settings(BaseSettings):
         default=None,
         description=(
             "Absolute path to main.nf if not at pipeline_dir/bin/main.nf "
-            "(e.g. /opt/pipelines/carrier-screening/main.nf)"
+            "(e.g. /opt/pipelines/carrier-screening/main.nf). "
+            "Can also point at dark_gene_pipeline/main.nf (see dark_gene_pipeline_dir)."
+        ),
+    )
+    dark_gene_pipeline_dir: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional path to the unified dark-gene Nextflow repo (main.nf: FASTQ→align→dark-genes tracks). "
+            "When set and main.nf exists, the daemon prefers this entry over CARRIER_SCREENING_PIPELINE_DIR "
+            "unless CARRIER_SCREENING_MAIN_NF is set. "
+            "Requires CARRIER_SCREENING_RUN_SCRIPT unset so jobs use nextflow run directly."
+        ),
+    )
+    dark_gene_skip_cnv: bool = Field(
+        default=True,
+        description="When using dark_gene unified main.nf, pass --skip_cnv (gCNV is heavy; set false to enable).",
+    )
+    carrier_screening_nextflow_profile: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional Nextflow profile (e.g. docker, singularity) appended as -profile <name> "
+            "for carrier direct Nextflow runs (not run_analysis.sh)."
         ),
     )
     carrier_screening_run_script: Optional[str] = Field(

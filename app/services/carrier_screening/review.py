@@ -18,6 +18,7 @@ result.json 구조:
     - disease_panel: BED 기반 질환 패널 정보
     - filter_summary: 적용된 필터 요약
     - igv_snapshots: 변이별 IGV 스냅샷 매핑
+    - dark_genes: supplementary unified-pipeline summary (summary/*.txt under analysis_dir)
     - metadata: 파이프라인/annotation DB 버전 정보
 """
 
@@ -1529,6 +1530,7 @@ def generate_result_json(
     parse_stats: Optional[Dict[str, Any]] = None,
     output_dir: str = "",
     metric_image_search_roots: Optional[List[str]] = None,
+    analysis_dir: Optional[str] = None,
 ) -> str:
     """
     Portal 리뷰 페이지용 result.json을 생성합니다.
@@ -1544,6 +1546,7 @@ def generate_result_json(
         parse_stats: VCF 파싱 통계 (선택)
         output_dir: 출력 디렉토리
         metric_image_search_roots: QC 차트 이미지 탐색 루트 (artifact·layout output 등)
+        analysis_dir: Pipeline analysis root (dark-gene Nextflow outdir); defaults to output_dir
 
     Returns:
         생성된 result.json 파일 경로
@@ -1553,6 +1556,17 @@ def generate_result_json(
     qc_summary["metric_images"] = discover_qc_metric_images(
         metric_image_search_roots or []
     )
+
+    ad = (analysis_dir or output_dir or "").strip()
+    dark_genes_block: Dict[str, Any] = {}
+    if ad and os.path.isdir(ad):
+        try:
+            from .dark_genes import collect_dark_genes_from_analysis_dir
+
+            dark_genes_block = collect_dark_genes_from_analysis_dir(ad, sample_name)
+        except Exception as e:
+            logger.warning("[generate_result_json] dark_genes collection failed: %s", e)
+            dark_genes_block = {"status": "error", "message": str(e)}
 
     # 변이 + ACMG 결합
     variants_for_review = []
@@ -1696,6 +1710,9 @@ def generate_result_json(
 
         # IGV 스냅샷 매핑
         "igv_snapshots": igv_snapshots,
+
+        # Dark-gene / hard-to-sequence supplementary pipeline (Nextflow summary/)
+        "dark_genes": dark_genes_block,
 
         # 메타데이터
         "metadata": {

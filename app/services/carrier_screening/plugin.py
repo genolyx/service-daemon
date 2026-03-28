@@ -573,6 +573,19 @@ class CarrierScreeningPlugin(ServicePlugin):
                 explicit,
             )
 
+        dg = (settings.dark_gene_pipeline_dir or "").strip()
+        if dg:
+            dg_main = os.path.join(os.path.abspath(dg), "main.nf")
+            if os.path.isfile(dg_main):
+                mdir = os.path.dirname(dg_main)
+                for cand in (
+                    os.path.join(mdir, "nextflow.config"),
+                    os.path.join(pd, "nextflow.config"),
+                ):
+                    if os.path.isfile(cand):
+                        return dg_main, cand
+                return dg_main, None
+
         pairs = [
             ("bin/main.nf", "bin/nextflow.config"),
             ("main.nf", "nextflow.config"),
@@ -606,6 +619,58 @@ class CarrierScreeningPlugin(ServicePlugin):
         )
         return fallback, None
 
+    def _uses_dark_gene_unified(self, main_nf: str) -> bool:
+        """True when main.nf is the dark_gene_pipeline single workflow (expects --fastq_dir, ref_fasta, outdir)."""
+        dg = (settings.dark_gene_pipeline_dir or "").strip()
+        if dg:
+            exp = os.path.abspath(os.path.join(dg, "main.nf"))
+            try:
+                if os.path.abspath(main_nf) == exp:
+                    return True
+            except OSError:
+                pass
+        low = (main_nf or "").lower()
+        if "dark_gene" in low and low.endswith("main.nf"):
+            return True
+        return False
+
+    def _dark_gene_unified_params(self, job: Job, main_nf: str) -> Dict[str, Any]:
+        """CLI params for dark_gene_pipeline/main.nf (see that repo nextflow.config)."""
+        r1 = (job.fastq_r1_path or "").strip()
+        if not r1:
+            raise ValueError("fastq_r1_path required for dark gene unified pipeline")
+        fastq_dir = os.path.dirname(os.path.abspath(r1))
+        root = os.path.dirname(os.path.abspath(main_nf))
+        out: Dict[str, Any] = {
+            "fastq_dir": fastq_dir,
+            "outdir": job.analysis_dir,
+        }
+        if settings.ref_fasta:
+            out["ref_fasta"] = settings.ref_fasta
+        if settings.ref_fai:
+            out["ref_fai"] = settings.ref_fai
+        if settings.ref_dict:
+            out["ref_dict"] = settings.ref_dict
+        if settings.ref_bwa_indices:
+            out["ref_bwa_indices"] = settings.ref_bwa_indices
+        backbone = self._resolve_carrier_bed(
+            job,
+            "backbone_bed",
+            "backbone",
+            settings.carrier_default_backbone_bed,
+        )
+        if backbone:
+            out["backbone_bed"] = backbone
+        eh = os.path.join(root, "bed", "variant_catalog_grch38.json")
+        if os.path.isfile(eh):
+            out["eh_catalog"] = eh
+        out["skip_cnv"] = settings.dark_gene_skip_cnv
+        for key in ("pon_tar", "gcnv_model", "interval_list", "hba_bed", "cyp21a2_bed", "eh_catalog", "cleanup"):
+            v = job.params.get(key)
+            if v:
+                out[key] = v
+        return out
+
     async def get_pipeline_command(self, job: Job) -> str:
         """src/run_analysis.sh 가 있으면 우선 사용, 없으면 Nextflow 직접 실행."""
         script_path = self._effective_run_analysis_script()
@@ -635,43 +700,65 @@ class CarrierScreeningPlugin(ServicePlugin):
             "run", main_nf,
         ]
 
+        prof = (settings.carrier_screening_nextflow_profile or "").strip()
+        if prof:
+            cmd_parts.extend(["-profile", prof])
+
         # config 파일
         if nf_config and os.path.isfile(nf_config):
             cmd_parts.extend(["-c", nf_config])
 
-        # 파라미터 (sample_name 은 FASTQ 상위 폴더와 맞춤; 주문 ID만 쓰면 파이프라인이 못 찾는 경우 있음)
-        params = {
-            "sample_name": carrier_sequencing_folder(job),
-            "fastq_r1": job.fastq_r1_path,
-            "fastq_r2": job.fastq_r2_path,
-            "outdir": job.analysis_dir,
-        }
+        use_dark = self._uses_dark_gene_unified(main_nf)
+        params: Dict[str, Any]
+        if use_dark and (job.fastq_r1_path or "").strip():
+            try:
+                params = self._dark_gene_unified_params(job, main_nf)
+                logger.info(
+                    "[carrier_screening] Dark gene unified Nextflow (fastq_dir=%s, outdir=%s)",
+                    params.get("fastq_dir"),
+                    params.get("outdir"),
+                )
+            except ValueError as e:
+                logger.error("[carrier_screening] %s — falling back to legacy NF params", e)
+                use_dark = False
+        if not use_dark or not (job.fastq_r1_path or "").strip():
+            if use_dark and not (job.fastq_r1_path or "").strip():
+                logger.warning(
+                    "[carrier_screening] Dark gene unified selected but fastq_r1_path missing; "
+                    "using legacy carrier params (Nextflow may fail)."
+                )
+            params = {
+                "sample_name": carrier_sequencing_folder(job),
+                "fastq_r1": job.fastq_r1_path,
+                "fastq_r2": job.fastq_r2_path,
+                "outdir": job.analysis_dir,
+            }
+            if settings.ref_fasta:
+                params["ref"] = settings.ref_fasta
+            if settings.ref_bwa_indices:
+                params["bwa_index"] = settings.ref_bwa_indices
+            backbone_bed = self._resolve_carrier_bed(
+                job,
+                "backbone_bed",
+                "backbone",
+                settings.carrier_default_backbone_bed,
+            )
+            if backbone_bed:
+                params["backbone_bed"] = backbone_bed
+            for key in ("pon_tar", "target_bed", "disease_bed", "cnv_bed"):
+                if job.params.get(key):
+                    params[key] = job.params[key]
 
-        # Reference 파일 (설정에서 가져오기)
-        if settings.ref_fasta:
-            params["ref"] = settings.ref_fasta
-        if settings.ref_bwa_indices:
-            params["bwa_index"] = settings.ref_bwa_indices
-
-        # BED 파일 (job → .env 기본값 → 여러 data/bed 트리에서 탐색)
-        backbone_bed = self._resolve_carrier_bed(
-            job,
-            "backbone_bed",
-            "backbone",
-            settings.carrier_default_backbone_bed,
-        )
-        if backbone_bed:
-            params["backbone_bed"] = backbone_bed
-
-        # 추가 파라미터 (job.params에서 오버라이드)
-        for key in ("pon_tar", "target_bed", "disease_bed", "cnv_bed"):
-            if job.params.get(key):
-                params[key] = job.params[key]
-
-        # 파라미터를 명령줄에 추가
+        # 파라미터를 명령줄에 추가 (omit None / empty string; omit False except skip_cnv)
         for key, val in params.items():
-            if val:
-                cmd_parts.append(f"--{key}")
+            if val is None or val == "":
+                continue
+            if val is False and key != "skip_cnv":
+                continue
+            cmd_parts.append(f"--{key}")
+            if isinstance(val, bool):
+                cmd_parts.append("true" if val else "false")
+            else:
                 cmd_parts.append(str(val))
 
         # 작업 디렉토리
@@ -1233,6 +1320,7 @@ class CarrierScreeningPlugin(ServicePlugin):
                 parse_stats=parse_stats,
                 output_dir=output_dir,
                 metric_image_search_roots=metric_image_roots,
+                analysis_dir=analysis_dir,
             )
 
             # ── 13. variants.tsv 생성 ──

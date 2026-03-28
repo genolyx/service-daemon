@@ -977,6 +977,7 @@
         <div class="sub-tab active" data-tab="variants" onclick="showReviewTab('variants')">Variants</div>
         <div class="sub-tab" data-tab="diseases" onclick="showReviewTab('diseases')">Disease Summary</div>
         <div class="sub-tab" data-tab="qc" onclick="showReviewTab('qc')">QC Summary</div>
+        <div class="sub-tab" data-tab="darkgenes" onclick="showReviewTab('darkgenes')">Dark genes</div>
         <div class="sub-tab" data-tab="stats" onclick="showReviewTab('stats')">Statistics</div>
         <div class="sub-tab" data-tab="report" onclick="showReviewTab('report')">Review Case</div>
         <div class="sub-tab" data-tab="genedb" onclick="showReviewTab('genedb')">Gene database</div>
@@ -1041,6 +1042,12 @@
       <div id="reviewQc" class="hidden">
         <div class="stat-grid" id="qcStats"></div>
         <div id="qcDetailTable" style="margin-top:12px"></div>
+      </div>
+
+      <!-- Dark genes (supplementary Nextflow summary/) -->
+      <div id="reviewDarkGenes" class="hidden">
+        <p class="muted" id="darkGenesHint" style="margin:0 0 10px;font-size:12px"></p>
+        <div id="darkGenesContent" class="card" style="margin:0"></div>
       </div>
 
       <!-- Statistics Tab -->
@@ -3735,6 +3742,7 @@
         // Render all tabs
         renderCarrierBanner();
         renderReviewQC();
+        renderReviewDarkGenes();
         renderReviewStats();
         renderVariantsTable();
         renderDiseaseSummary();
@@ -3829,7 +3837,7 @@
     }
 
     function showReviewTab(tab) {
-      const tabMap = { variants: 'reviewVariants', diseases: 'reviewDiseases', qc: 'reviewQc', stats: 'reviewStats', report: 'reviewReport', genedb: 'reviewGeneDb' };
+      const tabMap = { variants: 'reviewVariants', diseases: 'reviewDiseases', qc: 'reviewQc', darkgenes: 'reviewDarkGenes', stats: 'reviewStats', report: 'reviewReport', genedb: 'reviewGeneDb' };
       Object.values(tabMap).forEach(id => { const el = qs(id); if (el) el.classList.add('hidden'); });
       const target = tabMap[tab];
       if (target) qs(target).classList.remove('hidden');
@@ -4303,6 +4311,43 @@
           });
         }
       }
+    }
+
+    // ── Dark genes (supplementary unified pipeline summary/*.txt) ──
+    function renderReviewDarkGenes() {
+      const hint = qs('darkGenesHint');
+      const box = qs('darkGenesContent');
+      if (!hint || !box) return;
+      if (!reviewData) {
+        hint.textContent = '';
+        box.innerHTML = '<p class="muted">Load an order first.</p>';
+        return;
+      }
+      const dg = reviewData.dark_genes;
+      if (!dg || dg.status === 'not_found') {
+        hint.textContent = 'No supplementary dark-gene summary found. After the unified Nextflow run, expect files such as summary/*_summary_report.txt under the order analysis directory.';
+        box.innerHTML = '';
+        return;
+      }
+      const files = [];
+      if (dg.summary_file) files.push(dg.summary_file);
+      if (dg.detailed_file) files.push(dg.detailed_file);
+      hint.textContent = files.length ? `Sources: ${files.join(', ')}` : '';
+      const st = escapeHtml(dg.status || '');
+      let html = `<p style="margin:0 0 10px"><span class="badge">${st}</span></p>`;
+      if (dg.message) html += `<p class="muted">${escapeHtml(dg.message)}</p>`;
+      const txt = (dg.summary_text || '').trim();
+      if (txt) {
+        html += `<h4 style="margin:0 0 8px;font-size:13px">Summary report</h4><pre style="white-space:pre-wrap;font-size:12px;line-height:1.45;max-height:55vh;overflow:auto;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--table-bg);margin:0">${escapeHtml(txt)}</pre>`;
+      }
+      const det = (dg.detailed_text || '').trim();
+      if (det) {
+        html += `<h4 style="margin:16px 0 8px;font-size:13px">Detailed report (excerpt)</h4><pre style="white-space:pre-wrap;font-size:11px;line-height:1.45;max-height:45vh;overflow:auto;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);margin:0">${escapeHtml(det.slice(0, 120000))}</pre>`;
+      }
+      if (!txt && !det && dg.status !== 'error') {
+        html += '<p class="muted">Summary files were located but text was empty.</p>';
+      }
+      box.innerHTML = html;
     }
 
     // ── Statistics ──

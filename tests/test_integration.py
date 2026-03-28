@@ -202,6 +202,8 @@ def test_generate_result_json():
         assert data["variants"][0]["acmg_classification"] == "Pathogenic"
         assert data["variant_stats"]["pathogenic_or_likely"] == 1
         assert data["status"] == "pending_review"
+        assert "dark_genes" in data
+        assert data["dark_genes"].get("status") == "not_found"
 
 
 def test_generate_variants_tsv():

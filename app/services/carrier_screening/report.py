@@ -17,6 +17,7 @@ report.json 구조:
     - findings: couples 전용, primary+partner 병합 (carrier_couples_*.html 상세 해석)
     - genes_evaluated_count
     - carrier_status, confirmed_variants, disease_groups, qc_summary, reviewer
+    - dark_genes (optional): report_summary / report_detailed — merged from result.json for PDF
 """
 
 import os
@@ -655,6 +656,25 @@ def generate_report_json(
     # carrier_couples_*.html "Detailed Interpretations" uses data.findings (combined)
     if is_couple:
         report["findings"] = primary_findings + partner_findings
+
+    # Supplementary dark-gene pipeline narrative (from Review result.json)
+    result_json_path = os.path.join(output_dir, "result.json")
+    if os.path.isfile(result_json_path):
+        try:
+            with open(result_json_path, "r", encoding="utf-8") as rf:
+                rd = json.load(rf)
+            dg = rd.get("dark_genes")
+            if isinstance(dg, dict) and dg.get("status") not in (None, "not_found"):
+                from .dark_genes import dark_genes_for_pdf
+
+                pdf_dg = dark_genes_for_pdf(dg)
+                if pdf_dg:
+                    report["dark_genes"] = pdf_dg
+        except Exception as e:
+            logger.warning(
+                "[generate_report_json] Could not merge dark_genes from result.json: %s",
+                e,
+            )
 
     output_path = os.path.join(output_dir, "report.json")
     with open(output_path, "w", encoding="utf-8") as f:

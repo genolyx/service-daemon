@@ -321,6 +321,43 @@
       padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--card);
     }
     .dark-genes-section-title{font-size:13px;font-weight:600;margin:0 0 8px;color:var(--text)}
+    .dark-genes-stack{display:flex;flex-direction:column;gap:12px;max-height:60vh;overflow:auto;padding:2px}
+    .dark-genes-sec{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--table-bg)}
+    /* Alert/warm: light theme = paper + dark ink; dark theme = amber tint + light ink (no white slab with white text) */
+    .dark-genes-sec--warn{border-color:#f59e0b}
+    .dark-genes-sec--alert{border-width:2px}
+    body:not(.light) .dark-genes-sec--warn{background:rgba(217,119,6,.16);border-color:#fbbf24}
+    body:not(.light) .dark-genes-sec--warn .dark-genes-sec-title{color:#fde68a}
+    body:not(.light) .dark-genes-sec--warn .dark-genes-sec-body{color:#ffedd5}
+    body:not(.light) .dark-genes-sec--alert{background:rgba(180,83,9,.2);border-color:#f59e0b}
+    body:not(.light) .dark-genes-sec--alert .dark-genes-sec-title{color:#fcd34d}
+    body:not(.light) .dark-genes-sec--alert .dark-genes-sec-body{color:#fed7aa}
+    body.light .dark-genes-sec--warn{background:#fffbeb;border-color:#f59e0b}
+    body.light .dark-genes-sec--warn .dark-genes-sec-title{color:#b45309}
+    body.light .dark-genes-sec--warn .dark-genes-sec-body{color:#57534e}
+    body.light .dark-genes-sec--alert{background:#fff7ed;border-color:#d97706}
+    body.light .dark-genes-sec--alert .dark-genes-sec-title{color:#9a3412}
+    body.light .dark-genes-sec--alert .dark-genes-sec-body{color:#44403c}
+    .dark-genes-sec-title{font-weight:700;font-size:12px;margin:0 0 8px;color:var(--text)}
+    .dark-genes-sec-body{white-space:pre-wrap;font-size:11px;line-height:1.45;margin:0;font-family:ui-monospace,Consolas,monospace;overflow-x:auto;color:var(--text)}
+    .dark-genes-sec-body--kv{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;padding:2px 0 0}
+    .dark-genes-kv{display:grid;grid-template-columns:minmax(8rem,auto) 1fr;gap:8px 18px;margin:0;font-size:12px;line-height:1.5;align-items:baseline}
+    .dark-genes-kv dt{margin:0;color:var(--muted);font-weight:600}
+    .dark-genes-kv dd{margin:0;color:var(--text);font-variant-numeric:tabular-nums}
+    .dark-genes-sec-actions{
+      margin-top:12px;padding-top:10px;border-top:1px solid var(--line);
+      display:flex;flex-direction:column;gap:6px;align-items:stretch;
+    }
+    .dark-genes-sec-actions .dg-approve-btn{align-self:flex-start;font-size:12px;padding:6px 14px;border-radius:10px}
+    .dark-genes-sec-actions .dg-approve-btn.dg-approved{
+      background:rgba(34,197,94,.18);border-color:#22c55e;color:#86efac;
+    }
+    body.light .dark-genes-sec-actions .dg-approve-btn.dg-approved{
+      background:rgba(22,163,74,.14);color:#15803d;border-color:#22c55e;
+    }
+    .dark-genes-sec-actions .dg-notes-label{font-size:11px;color:var(--muted);font-weight:600}
+    .dark-genes-sec-actions .dg-sec-notes{min-height:52px;width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-size:12px;font-family:inherit;resize:vertical}
+    .dark-genes-save-row{margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
     a.omim-link{color:var(--brand);text-decoration:underline;text-underline-offset:2px}
     a.omim-link:hover{opacity:.92}
     .fb-list{border:1px solid var(--line);border-radius:12px;background:var(--table-bg);max-height:48vh;overflow:auto}
@@ -1290,10 +1327,33 @@
     // ═══════════════════════════════════════════════════════════
     // Configuration
     // ═══════════════════════════════════════════════════════════
-    // Daemon URL: same-origin when served at /portal/, else use saved or default
-    const isServedByDaemon = window.location.pathname.startsWith('/portal');
+    // Same-origin when served from daemon: /portal/, /api/portal/, or e.g. /prefix/portal/
+    const isServedByDaemon = /\/(api\/)?portal(\/|$)/.test(window.location.pathname);
     const DEFAULT_DAEMON = isServedByDaemon ? '' : 'http://100.112.118.12:8000';
-    let API_BASE = localStorage.getItem('apiBase') || DEFAULT_DAEMON;
+    /** Order/report routes are normally `/order/...` at the daemon root; some proxies only forward `/api/*` (see ORDER_API_PREFIX). */
+    function normalizeDaemonApiBase(raw) {
+      if (raw == null || raw === '') return '';
+      let s = String(raw).trim().replace(/\/+$/, '');
+      if (/\/api$/i.test(s)) s = s.replace(/\/api$/i, '');
+      if (/\/portal$/i.test(s)) s = s.replace(/\/portal$/i, '');
+      return s;
+    }
+    function resolveApiBaseFromStorage() {
+      const stored = localStorage.getItem('apiBase');
+      const defaultB = isServedByDaemon ? '' : DEFAULT_DAEMON;
+      const raw = stored !== null && stored !== '' ? stored : defaultB;
+      let n = normalizeDaemonApiBase(raw);
+      if (!n) return '';
+      try {
+        const origin = window.location.origin;
+        if (new URL(n, origin).origin === origin) {
+          try { localStorage.removeItem('apiBase'); } catch (e) { /* ignore */ }
+          return '';
+        }
+      } catch (e) { /* keep n */ }
+      return n;
+    }
+    let API_BASE = resolveApiBaseFromStorage();
     /** When set, Save sends PATCH `/order/{id}` instead of POST save */
     let editingOrderId = null;
     const qs = id => document.getElementById(id);
@@ -1310,6 +1370,33 @@
       const key = getDaemonApiKey();
       if (key) h['X-API-Key'] = key;
       return h;
+    }
+
+    /** When a reverse proxy only exposes ``/api/*``, requests use ``/api/order/...`` (server strips to ``/order/...``). */
+    let ORDER_API_PREFIX = '';
+    function apiPath(path) {
+      const p = path.startsWith('/') ? path : '/' + path;
+      const qi = p.indexOf('?');
+      const pathOnly = qi >= 0 ? p.slice(0, qi) : p;
+      const query = qi >= 0 ? p.slice(qi) : '';
+      if (pathOnly.startsWith('/api/literature') || pathOnly.startsWith('/api/fastq') || pathOnly.startsWith('/api/portal')) {
+        return p;
+      }
+      if (pathOnly.startsWith('/api/order') || pathOnly.startsWith('/api/orders') || pathOnly.startsWith('/api/queue') || pathOnly.startsWith('/api/services') || pathOnly === '/api/health') {
+        return p;
+      }
+      return (ORDER_API_PREFIX || '') + pathOnly + query;
+    }
+    async function detectOrderApiPrefix() {
+      ORDER_API_PREFIX = '';
+      try {
+        const r = await fetch(`${API_BASE}/health`, { method: 'GET', cache: 'no-store', headers: apiFetchHeaders() });
+        if (r.ok) return;
+      } catch (e) { /* fall through */ }
+      try {
+        const r = await fetch(`${API_BASE}/api/health`, { method: 'GET', cache: 'no-store', headers: apiFetchHeaders() });
+        if (r.ok) ORDER_API_PREFIX = '/api';
+      } catch (e) { /* leave '' */ }
     }
 
     let _qcImageBlobUrls = null;
@@ -1345,7 +1432,7 @@
       const urls = [];
       const parts = [];
       for (const p of paths) {
-        const url = `${API_BASE}/order/${encodeURIComponent(oid)}/file/${encodeURIComponent(p)}`;
+        const url = `${API_BASE}${apiPath(`/order/${encodeURIComponent(oid)}/file/${encodeURIComponent(p)}`)}`;
         try {
           const r = await fetch(url, { headers: apiFetchHeaders() });
           if (!r.ok) continue;
@@ -1488,10 +1575,13 @@
     // ═══════════════════════════════════════════════════════════
     // Utilities
     // ═══════════════════════════════════════════════════════════
-    function changeDaemonUrl() {
-      const url = prompt('Daemon URL:', API_BASE);
+    async function changeDaemonUrl() {
+      const url = prompt(
+        'Daemon URL (scheme + host + port only; no /api or /portal — e.g. http://127.0.0.1:8000):',
+        API_BASE
+      );
       if (!(url && url.trim())) return;
-      API_BASE = url.trim().replace(/\/+$/, '');
+      API_BASE = normalizeDaemonApiBase(url);
       localStorage.setItem('apiBase', API_BASE);
       const curKey = localStorage.getItem('daemonApiKey') || '';
       const keyAns = prompt(
@@ -1503,7 +1593,8 @@
         if (kt) localStorage.setItem('daemonApiKey', kt);
         else localStorage.removeItem('daemonApiKey');
       }
-      toast('Daemon URL changed to ' + API_BASE);
+      await detectOrderApiPrefix();
+      toast('Daemon URL changed to ' + (API_BASE || '(same origin)') + (ORDER_API_PREFIX ? ' — API under /api' : ''));
       loadDashboard();
     }
 
@@ -1600,7 +1691,10 @@
 
     async function apiGet(path) {
       try {
-        const r = await fetch(`${API_BASE}${path}`, { headers: apiFetchHeaders() });
+        const r = await fetch(`${API_BASE}${apiPath(path)}`, {
+          headers: apiFetchHeaders(),
+          cache: 'no-store',
+        });
         if (!r.ok) {
           const body = await r.json().catch(() => ({}));
           const detail = errorDetailFromResponseBody(body);
@@ -1614,7 +1708,7 @@
     }
 
     async function apiGetPlainText(path) {
-      const r = await fetch(`${API_BASE}${path}`, { headers: apiFetchHeaders() });
+      const r = await fetch(`${API_BASE}${apiPath(path)}`, { headers: apiFetchHeaders() });
       if (!r.ok) {
         const body = await r.json().catch(() => ({}));
         const detail = errorDetailFromResponseBody(body);
@@ -1674,7 +1768,7 @@
 
     async function apiPost(path, body) {
       try {
-        const r = await fetch(`${API_BASE}${path}`, {
+        const r = await fetch(`${API_BASE}${apiPath(path)}`, {
           method: 'POST',
           headers: apiFetchHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(body),
@@ -1692,7 +1786,7 @@
 
     async function apiPut(path, body) {
       try {
-        const r = await fetch(`${API_BASE}${path}`, {
+        const r = await fetch(`${API_BASE}${apiPath(path)}`, {
           method: 'PUT',
           headers: apiFetchHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(body),
@@ -1714,8 +1808,14 @@
       try {
         const res = await apiGet(`/order/${encodeURIComponent(orderId)}/files`);
         const files = res.files || [];
-        const pdfs = files.filter(f => /^Report_.*\.pdf$/i.test(f.name)).sort((a, b) => a.name.localeCompare(b.name));
-        const htmls = files.filter(f => /^Report_.*\.html$/i.test(f.name)).sort((a, b) => a.name.localeCompare(b.name));
+        const byNewest = (a, b) => {
+          const ta = typeof a.mtime_ms === 'number' ? a.mtime_ms : 0;
+          const tb = typeof b.mtime_ms === 'number' ? b.mtime_ms : 0;
+          if (tb !== ta) return tb - ta;
+          return (a.name || '').localeCompare(b.name || '');
+        };
+        const pdfs = files.filter(f => /^Report_.*\.pdf$/i.test(f.name)).sort(byNewest);
+        const htmls = files.filter(f => /^Report_.*\.html$/i.test(f.name)).sort(byNewest);
         let target = null;
         if (k === 'pdf') {
           target = pdfs[0] || files.find(f => f.name === 'report.pdf');
@@ -1726,8 +1826,11 @@
           toast(k === 'pdf' ? 'No PDF report in output folder' : 'No HTML report in output folder', false);
           return;
         }
-        const url = `${API_BASE}/order/${encodeURIComponent(orderId)}/file/${encodeURIComponent(target.name)}`;
-        const r = await fetch(url, { headers: apiFetchHeaders() });
+        const url = `${API_BASE}${apiPath(`/order/${encodeURIComponent(orderId)}/file/${encodeURIComponent(target.name)}`)}?v=${Date.now()}`;
+        const r = await fetch(url, {
+          headers: apiFetchHeaders(),
+          cache: 'no-store',
+        });
         if (!r.ok) {
           const body = await r.json().catch(() => ({}));
           throw new Error(errorDetailFromResponseBody(body) || `${r.status} ${r.statusText}`);
@@ -1756,7 +1859,7 @@
 
     async function apiPatch(path, body) {
       try {
-        const r = await fetch(`${API_BASE}${path}`, {
+        const r = await fetch(`${API_BASE}${apiPath(path)}`, {
           method: 'PATCH',
           headers: apiFetchHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(body),
@@ -3435,7 +3538,7 @@
 
     function openReview(orderId) {
       showView('review', { skipReviewRefresh: true });
-      refreshReviewOrderList().then(() => loadReviewData(orderId));
+      refreshReviewOrderList().then(() => loadReviewData(orderId, { focusTab: 'variants' }));
     }
 
     qs('trackSearch').oninput = renderOrders;
@@ -3730,7 +3833,12 @@
       } catch (e) { /* ignore */ }
     }
 
-    async function loadReviewData(overrideOrderId) {
+    /**
+     * @param {string} [overrideOrderId]
+     * @param {{ focusTab?: string }} [opts] - use `focusTab: 'variants'` when opening from Orders (not restore).
+     */
+    async function loadReviewData(overrideOrderId, opts) {
+      const opt = opts || {};
       const orderId = (overrideOrderId || qs('reviewOrderSelect').value || reviewLoadedOrderId || '').trim();
       if (!orderId) return toast('Select an order first', false);
       // Keep select in sync so subsequent actions (generate report, etc.) see the right id
@@ -3749,6 +3857,9 @@
           } catch (e) { /* ignore */ }
         }
         reviewLoadedOrderId = orderId;
+        try {
+          localStorage.setItem('reviewLastOrderId', orderId);
+        } catch (e) { /* ignore quota */ }
         ensureReviewOrderOption(orderId, reviewData.sample_name);
         qs('reviewOrderSelect').value = orderId;
 
@@ -3773,7 +3884,8 @@
         renderVariantsTable();
         renderDiseaseSummary();
         renderGeneDatabase();
-        showReviewTab('variants');
+        const sub = opt.focusTab && REVIEW_SUB_TAB_KEYS.includes(opt.focusTab) ? opt.focusTab : getSavedReviewSubTab();
+        showReviewTab(sub);
         toast(`Loaded ${(reviewData.variants || []).length} variants`);
         updateReportGenerateUi();
       } catch (e) {
@@ -3862,7 +3974,23 @@
       });
     }
 
+    const REVIEW_SUB_TAB_KEYS = ['variants', 'diseases', 'qc', 'darkgenes', 'stats', 'report', 'genedb'];
+
+    function getSavedReviewSubTab() {
+      try {
+        const t = (localStorage.getItem('reviewSubTab') || 'variants').trim();
+        return REVIEW_SUB_TAB_KEYS.includes(t) ? t : 'variants';
+      } catch (e) {
+        return 'variants';
+      }
+    }
+
     function showReviewTab(tab) {
+      if (!REVIEW_SUB_TAB_KEYS.includes(tab)) tab = 'variants';
+      try {
+        localStorage.setItem('reviewSubTab', tab);
+      } catch (e) { /* ignore */ }
+
       const tabMap = { variants: 'reviewVariants', diseases: 'reviewDiseases', qc: 'reviewQc', darkgenes: 'reviewDarkGenes', stats: 'reviewStats', report: 'reviewReport', genedb: 'reviewGeneDb' };
       Object.values(tabMap).forEach(id => { const el = qs(id); if (el) el.classList.add('hidden'); });
       const target = tabMap[tab];
@@ -4394,6 +4522,233 @@
       return `<details class="dark-genes-raw-details"><summary>${escapeHtml(label)}</summary><pre>${escapeHtml(clipped + more)}</pre></details>`;
     }
 
+    /** Drop lines that are only dashes/underscores (pipeline filler between blocks). */
+    function normalizeDarkGenesSectionBody(text) {
+      return String(text || '')
+        .split(/\r?\n/)
+        .filter(line => !/^[\s\-_–—]+$/.test(line))
+        .join('\n')
+        .trim();
+    }
+
+    /** Same rules as server ``parse_detailed_report_sections`` — used when API omits ``detailed_sections`` (stale JSON/DB). */
+    function parseDarkGenesDetailedToSections(text) {
+      const raw = String(text || '').trim();
+      if (!raw) return [];
+      const lines = raw.split(/\r?\n/);
+      const buf = [];
+      let title = 'Overview';
+      const sections = [];
+      const flush = () => {
+        const body = normalizeDarkGenesSectionBody(buf.join('\n').trim());
+        buf.length = 0;
+        if (!body) return;
+        const tl = title.toUpperCase();
+        let kind = 'normal';
+        if (tl.includes('QUALITY') && tl.includes('WARNING')) kind = 'alert';
+        else if (tl.includes('WARNING')) kind = 'warning';
+        sections.push({ title: title.trim(), body, kind });
+      };
+      const isBanner = line => {
+        const s = line.trim();
+        return s && s.startsWith('!!!') && s.endsWith('!!!') && s.length < 160;
+      };
+      const isSectionHeader = line => {
+        const s = line.trim();
+        if (!s || s.length > 130) return false;
+        if (isBanner(line)) return true;
+        if (line.startsWith('  ') || line.startsWith('\t')) return false;
+        if (!s.endsWith(':')) return false;
+        if (/^[A-Za-z0-9_]+\s*:\s*\S/.test(s)) return false;
+        return true;
+      };
+      for (const line of lines) {
+        const st = line.trim();
+        if (st.startsWith('=') && /^=+$/.test(st)) continue;
+        if (isSectionHeader(line)) {
+          flush();
+          const t = line.trim();
+          if (isBanner(line)) {
+            title = t.replace(/^!+/, '').replace(/!+$/, '').trim();
+          } else {
+            title = t.replace(/:\s*$/, '').trim();
+          }
+          continue;
+        }
+        buf.push(line);
+      }
+      flush();
+      return sections;
+    }
+
+    /**
+     * SMAca CHECK block: pipeline key=value → lab-facing labels.
+     * Cov(1,2) is shown as "Ratio" (coverage pair), not C_Ratio.
+     */
+    function tryRenderSmacaCheckSection(sec) {
+      const t = (sec.title || '').trim();
+      if (!/SMAca\s*CHECK/i.test(t)) return null;
+      const raw = String(sec.body || '');
+      const m1 = raw.match(/SMN1_CN\s*=\s*(\S+)/i);
+      const m2 = raw.match(/SMN2_CN\s*=\s*(\S+)/i);
+      const mSilent = raw.match(/SilentCarrier\s*=\s*([^\s(]+)(?:\s*\([^)]*\))?/i);
+      const mCov = raw.match(/Cov\s*\(\s*1\s*,\s*2\s*\)\s*=\s*(.+)/i);
+      if (!m1 && !m2 && !mSilent && !mCov) return null;
+      const rows = [];
+      if (m1) rows.push(['SMN1', m1[1]]);
+      if (m2) rows.push(['SMN2', m2[1]]);
+      if (mSilent) rows.push(['Silent Carrier', mSilent[1]]);
+      if (mCov) rows.push(['Ratio', mCov[1].trim().replace(/\s+/g, ' ')]);
+      const inner = rows
+        .map(([lab, val]) => `<dt>${escapeHtml(lab)}</dt><dd>${escapeHtml(val)}</dd>`)
+        .join('');
+      return `<dl class="dark-genes-kv">${inner}</dl>`;
+    }
+
+    /** True when section title is the HBA / CYP21A2 dosage block (pipeline wording varies). */
+    function dosageAnalysisTitleMatches(t) {
+      const u = (t || '').trim();
+      if (!u) return false;
+      if (/HBA\s+ANALYSIS/i.test(u)) return true;
+      if (/CYP21A2\s+ANALYSIS/i.test(u)) return true;
+      if (/Alpha\s*Thalassemia/i.test(u) && /Dosage/i.test(u)) return true;
+      if (/CYP21A2/i.test(u) && /CAH/i.test(u)) return true;
+      if (/CAH/i.test(u) && /Dosage/i.test(u) && /CYP21/i.test(u)) return true;
+      return false;
+    }
+
+    /**
+     * HBA / CYP21A2 dosage blocks: Est_CN, Ratio, WARNING line → Estimated CNV, Ratio, Warning.
+     * Line-anchored keys so `C_Ratio=…` does not satisfy `Ratio=…`.
+     */
+    function tryRenderDosageAnalysisSection(sec) {
+      const t = (sec.title || '').trim();
+      if (!dosageAnalysisTitleMatches(t)) return null;
+      const raw = String(sec.body || '');
+      const mEst = raw.match(/^\s*Est_CN\s*=\s*(\S+)/im);
+      const mRatio = raw.match(/^\s*Ratio\s*=\s*(\S+)/im);
+      const mWarn = raw.match(/^\s*WARNING:\s*(.+)/im);
+      if (!mEst && !mRatio && !mWarn) return null;
+      const rows = [];
+      if (mEst) rows.push(['Estimated CNV', mEst[1]]);
+      if (mRatio) rows.push(['Ratio', mRatio[1]]);
+      if (mWarn) rows.push(['Warning', mWarn[1].trim().replace(/\s+/g, ' ')]);
+      const inner = rows
+        .map(([lab, val]) => `<dt>${escapeHtml(lab)}</dt><dd>${escapeHtml(val)}</dd>`)
+        .join('');
+      return `<dl class="dark-genes-kv">${inner}</dl>`;
+    }
+
+    function padDarkGenesSectionReviews(rev, n) {
+      const o = Array.isArray(rev) ? rev.slice() : [];
+      while (o.length < n) o.push({ approved: false, notes: '' });
+      return o.slice(0, n);
+    }
+
+    /** Structured sections from backend (parse of *_detailed_report.txt) — lab-review layout */
+    function renderDarkGenesDetailedSections(sections, sectionReviews) {
+      if (!Array.isArray(sections) || !sections.length) return '';
+      const rev = padDarkGenesSectionReviews(sectionReviews, sections.length);
+      return sections.map((sec, i) => {
+        const title = escapeHtml(sec.title || 'Section');
+        const kind = sec.kind || 'normal';
+        const cls =
+          kind === 'alert'
+            ? 'dark-genes-sec dark-genes-sec--alert'
+            : kind === 'warning'
+              ? 'dark-genes-sec dark-genes-sec--warn'
+              : 'dark-genes-sec';
+        const bodyNorm = normalizeDarkGenesSectionBody(sec.body || '');
+        const kv =
+          tryRenderSmacaCheckSection({ ...sec, body: bodyNorm }) ||
+          tryRenderDosageAnalysisSection({ ...sec, body: bodyNorm });
+        const bodyHtml = kv
+          ? `<div class="dark-genes-sec-body dark-genes-sec-body--kv">${kv}</div>`
+          : `<pre class="dark-genes-sec-body">${escapeHtml(bodyNorm)}</pre>`;
+        const r = rev[i] || { approved: false, notes: '' };
+        const rawTitle = String(sec.title || '').trim();
+        const isQualityAlert = kind === 'alert';
+        const isOverview = /^overview$/i.test(rawTitle);
+        const skipReviewUi = isQualityAlert || isOverview;
+        let actions = '';
+        if (!skipReviewUi) {
+          const apprCls = r.approved ? ' dg-approved' : '';
+          const btnLabel = r.approved ? 'Approved ✓' : 'Approve for report';
+          actions = `
+          <div class="dark-genes-sec-actions">
+            <button type="button" class="btn dg-approve-btn${apprCls}">${btnLabel}</button>
+            <span class="dg-notes-label">Notes</span>
+            <textarea class="dg-sec-notes" rows="2" placeholder="Reviewer notes (shown in PDF when approved)">${escapeHtml(r.notes || '')}</textarea>
+          </div>`;
+        }
+        const skipAttr = skipReviewUi ? ' data-dg-skip-review="1"' : '';
+        return `<div class="${cls}" data-dg-idx="${i}"${skipAttr}><div class="dark-genes-sec-title">${title}</div>${bodyHtml}${actions}</div>`;
+      }).join('');
+    }
+
+    function wireDarkGenesSaveOnce() {
+      const box = qs('darkGenesContent');
+      if (!box || box.dataset.dgSaveBound) return;
+      box.dataset.dgSaveBound = '1';
+      box.addEventListener('click', ev => {
+        const ab = ev.target.closest('.dg-approve-btn');
+        if (ab) {
+          ev.preventDefault();
+          const on = ab.classList.toggle('dg-approved');
+          ab.textContent = on ? 'Approved ✓' : 'Approve for report';
+          return;
+        }
+        if (ev.target.closest('#btnSaveDarkGenesReviews')) {
+          ev.preventDefault();
+          saveDarkGenesSectionReviews();
+        }
+      });
+    }
+
+    async function saveDarkGenesSectionReviews() {
+      const orderId = getActiveReviewOrderId();
+      if (!orderId || !reviewData) {
+        toast('Load an order first', false);
+        return;
+      }
+      const stack = qs('darkGenesContent')?.querySelector('.dark-genes-stack');
+      if (!stack) return;
+      const secs = stack.querySelectorAll('.dark-genes-sec');
+      const section_reviews = [];
+      secs.forEach(el => {
+        if (el.getAttribute('data-dg-skip-review') === '1') {
+          section_reviews.push({ approved: false, notes: '' });
+          return;
+        }
+        const btn = el.querySelector('.dg-approve-btn');
+        const ta = el.querySelector('.dg-sec-notes');
+        section_reviews.push({
+          approved: !!(btn && btn.classList.contains('dg-approved')),
+          notes: ta && ta.value ? String(ta.value).trim() : '',
+        });
+      });
+      if (!section_reviews.length) {
+        toast('No detailed sections to save', false);
+        return;
+      }
+      try {
+        const res = await apiPost(`/order/${encodeURIComponent(orderId)}/dark-genes-review`, {
+          section_reviews,
+        });
+        if (res && res.dark_genes && typeof res.dark_genes === 'object') {
+          reviewData.dark_genes = res.dark_genes;
+        }
+        toast('Section reviews saved (Overview and quality-warning blocks are not in the customer PDF; optional notes may appear when set)');
+      } catch (e) {
+        const msg = String((e && e.message) || e);
+        const hint =
+          msg === 'Not Found' || /\b404\b/.test(msg)
+            ? ' Reload the page (portal auto-detects /api behind a proxy). Set Daemon URL (gear) to scheme+host+port only — no /api or /portal. Restart the daemon after upgrades.'
+            : '';
+        toast(msg + hint, false);
+      }
+    }
+
     // ── Dark genes (supplementary unified pipeline summary/*.txt) ──
     function renderReviewDarkGenes() {
       const hint = qs('darkGenesHint');
@@ -4420,37 +4775,45 @@
       if (dg.summary_file) files.push(dg.summary_file);
       if (dg.detailed_file) files.push(dg.detailed_file);
       hint.textContent = files.length
-        ? `Sources: ${files.join(', ')} — matrix view when the summary is tab-separated.`
+        ? `Sources: ${files.join(', ')} — detailed report below; use collapsible raw blocks for audit.`
         : '';
       const st = escapeHtml(dg.status || '');
       let html = `<p style="margin:0 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="badge">${st}</span><span class="muted" style="font-size:11px">Hard-to-sequence / supplementary pipeline</span></p>`;
       if (dg.message) html += `<p class="muted">${escapeHtml(dg.message)}</p>`;
       const txt = (dg.summary_text || '').trim();
-      if (txt) {
-        const tableHtml = parseDarkGenesTsvToTableHtml(txt);
-        html += `<h4 class="dark-genes-section-title">Summary report</h4>`;
-        if (tableHtml) {
-          html += tableHtml;
-          html += darkGenesRawDetails('Raw summary text (copy/paste)', txt, null);
-        } else {
-          html += `<pre style="white-space:pre-wrap;font-size:12px;line-height:1.45;max-height:55vh;overflow:auto;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--table-bg);margin:0">${escapeHtml(txt)}</pre>`;
-        }
-      }
       const det = (dg.detailed_text || '').trim();
-      if (det) {
-        const detTable = parseDarkGenesTsvToTableHtml(det);
+      let detSec = Array.isArray(dg.detailed_sections) ? dg.detailed_sections : [];
+      if (det && (!detSec || !detSec.length)) {
+        detSec = parseDarkGenesDetailedToSections(det);
+      }
+      if (det || detSec.length) {
         html += `<h4 class="dark-genes-section-title" style="margin-top:16px">Detailed report</h4>`;
-        if (detTable) {
-          html += detTable;
-          html += darkGenesRawDetails('Raw detailed text (excerpt)', det, 120000);
+        if (detSec.length) {
+          const srv = dg.section_reviews;
+          html += `<div class="dark-genes-stack">${renderDarkGenesDetailedSections(detSec, srv)}</div>`;
+          html += `<div class="dark-genes-save-row">
+            <button type="button" class="btn primary" id="btnSaveDarkGenesReviews">Save section reviews</button>
+            <span class="muted" style="font-size:11px">Save to persist notes and approval state. The customer PDF includes only sections you mark approved (Overview and quality-warning blocks are never included; notes optional).</span>
+          </div>`;
+          if (det) html += darkGenesRawDetails('Raw detailed text (full, for audit)', det, 120000);
         } else {
-          html += `<pre style="white-space:pre-wrap;font-size:11px;line-height:1.45;max-height:45vh;overflow:auto;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);margin:0">${escapeHtml(det.slice(0, 120000))}</pre>`;
+          const detTable = parseDarkGenesTsvToTableHtml(det);
+          if (detTable) {
+            html += detTable;
+            html += darkGenesRawDetails('Raw detailed text (excerpt)', det, 120000);
+          } else {
+            html += `<pre style="white-space:pre-wrap;font-size:11px;line-height:1.45;max-height:45vh;overflow:auto;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);margin:0">${escapeHtml(det.slice(0, 120000))}</pre>`;
+          }
         }
       }
-      if (!txt && !det && dg.status !== 'error') {
+      if (txt) {
+        html += darkGenesRawDetails('Raw summary text (pipeline TSV, audit)', txt, null);
+      }
+      if (!det && !txt && dg.status !== 'error') {
         html += '<p class="muted">Summary files were located but text was empty.</p>';
       }
       box.innerHTML = html;
+      wireDarkGenesSaveOnce();
     }
 
     // ── Statistics ──
@@ -5216,12 +5579,24 @@
       wireGlobalConfirmModal();
       wireCarrierFormEvents();
       wireFastqBrowseUi();
+      await detectOrderApiPrefix();
       let lastTab = localStorage.getItem('activeTab') || 'dash';
       if (lastTab === 'submit' || lastTab === 'track') lastTab = 'orders';
-      showView(lastTab);
+      if (lastTab === 'review') {
+        showView('review', { skipReviewRefresh: true });
+        try {
+          await refreshReviewOrderList();
+          const savedOid = (localStorage.getItem('reviewLastOrderId') || '').trim();
+          if (savedOid) await loadReviewData(savedOid);
+        } catch (e) {
+          /* loadReviewData shows toast on failure */
+        }
+      } else {
+        showView(lastTab);
+      }
       try {
         const health = await apiGet('/health');
-        qs('connStatus').innerHTML = `<span class="conn-dot ok"></span>${health.environment || 'Connected'}`;
+        qs('connStatus').innerHTML = `<span class="conn-dot ok"></span>${health.environment || 'Connected'}${ORDER_API_PREFIX ? ' · /api' : ''}`;
       } catch (e) {
         qs('connStatus').innerHTML = `<span class="conn-dot err"></span>Disconnected`;
       }

@@ -17,20 +17,198 @@ report.json 구조:
     - findings: couples 전용, primary+partner 병합 (carrier_couples_*.html 상세 해석)
     - genes_evaluated_count
     - carrier_status, confirmed_variants, disease_groups, qc_summary, reviewer
-    - dark_genes (optional): report_summary / report_detailed — merged from result.json for PDF
+    - dark_genes (optional): report_detailed_html (+ error-only report_summary) from result.json for PDF (approved detailed sections only; Overview/QC blocks omitted)
 """
 
+import html
 import os
 import re
 import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
 from ...datetime_kst import now_kst_date_iso, now_kst_iso
 
 logger = logging.getLogger(__name__)
+
+
+def _dedupe_result_json_paths(paths: Sequence[Optional[str]]) -> List[str]:
+    """Absolute, deduplicated candidate paths for result.json (order preserved)."""
+    seen: set = set()
+    out: List[str] = []
+    for p in paths:
+        if not p:
+            continue
+        ap = os.path.normpath(os.path.abspath(p))
+        if ap in seen:
+            continue
+        seen.add(ap)
+        out.append(ap)
+    return out
+
+
+def _dark_genes_result_json_paths_for_pdf(
+    primary_result_json: str,
+    extra_result_json_paths: Optional[Sequence[str]] = None,
+) -> List[str]:
+    """
+    ``result.json`` next to ``report.json`` (primary) **first** — portal saves and
+    ``section_reviews`` usually live there. Remaining candidates follow, **newest mtime first**,
+    so we still pick up fresh pipeline text when the primary path lags a duplicate copy.
+    """
+    ordered = _dedupe_result_json_paths(
+        [primary_result_json] + list(extra_result_json_paths or [])
+    )
+    existing = [p for p in ordered if os.path.isfile(p)]
+    primary_abs = os.path.normpath(os.path.abspath(primary_result_json))
+    primary_file = None
+    for p in existing:
+        if os.path.normpath(os.path.abspath(p)) == primary_abs:
+            primary_file = p
+            break
+    others = [p for p in existing if p != primary_file]
+    try:
+        others.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    except OSError:
+        pass
+    if primary_file:
+        return [primary_file] + others
+    return others
+
+
+def _build_dark_genes_for_pdf_from_result_json_candidates(
+    ordered_paths: List[str],
+    log_context: str,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str], bool]:
+    """
+    Build customer-PDF ``dark_genes`` via ``dark_genes_for_pdf`` from one or more
+    ``result.json`` paths.
+
+    **Why not "first path that returns non-empty"?** Report-adjacent ``result.json`` may be
+    older than a pipeline copy but sort first; or the newest file may have fresh
+    ``detailed_sections`` while portal ``section_reviews`` only exist on another path.
+    We take **detailed_text / detailed_sections** from the **newest mtime** usable blob, and
+    **section_reviews** from the **newest mtime** file that actually contains that key
+    (portal saves), then run ``dark_genes_for_pdf`` once on the merged dict.
+
+    Returns ``(pdf_dg, source_description, any_file_opened)``.
+    """
+    from .dark_genes import dark_genes_for_pdf
+
+    rows: List[Tuple[float, str, Dict[str, Any]]] = []
+    any_file_opened = False
+    for rp in ordered_paths:
+        if not os.path.isfile(rp):
+            continue
+        any_file_opened = True
+        try:
+            with open(rp, "r", encoding="utf-8") as f:
+                rd = json.load(f)
+        except Exception as e:
+            logger.warning("[%s] could not read %s: %s", log_context, rp, e)
+            continue
+        if not isinstance(rd, dict):
+            continue
+        dg = rd.get("dark_genes")
+        if not isinstance(dg, dict) or dg.get("status") == "not_found":
+            continue
+        try:
+            mt = os.path.getmtime(rp)
+        except OSError:
+            mt = 0.0
+        rows.append((mt, rp, dg))
+
+    if not rows:
+        return None, None, any_file_opened
+
+    rows.sort(key=lambda x: x[0], reverse=True)
+    _, base_path, base_dg = rows[0]
+
+    # Portal review state: prefer newest file among those that include section_reviews.
+    with_reviews = [(mt, p, dg) for mt, p, dg in rows if "section_reviews" in dg]
+    if with_reviews:
+        with_reviews.sort(key=lambda x: x[0], reverse=True)
+        # Prefer non-empty review lists when multiple files have the key (stale [] vs real saves).
+        non_empty = [r for r in with_reviews if isinstance(r[2].get("section_reviews"), list) and len(r[2]["section_reviews"]) > 0]
+        _mt, rev_path, rev_dg = (non_empty[0] if non_empty else with_reviews[0])
+        merged = dict(base_dg)
+        merged["section_reviews"] = rev_dg.get("section_reviews")
+        pdf_dg = dark_genes_for_pdf(merged)
+        if pdf_dg:
+            src = (
+                f"{base_path} + section_reviews:{rev_path}"
+                if os.path.normpath(base_path) != os.path.normpath(rev_path)
+                else base_path
+            )
+            return pdf_dg, src, any_file_opened
+        logger.warning(
+            "[%s] merged dark_genes (base=%s reviews=%s) produced empty PDF HTML",
+            log_context,
+            base_path,
+            rev_path,
+        )
+
+    pdf_dg = dark_genes_for_pdf(base_dg)
+    if pdf_dg:
+        return pdf_dg, base_path, any_file_opened
+
+    logger.warning(
+        "[%s] dark_genes_for_pdf returned empty after trying merge + base (%s)",
+        log_context,
+        base_path,
+    )
+    return None, None, any_file_opened
+
+
+def _merge_dark_genes_from_result_json_for_pdf(
+    report_data: Dict[str, Any],
+    report_json_path: str,
+    extra_result_json_paths: Optional[Sequence[str]] = None,
+) -> None:
+    """
+    Refresh ``report_data[\"dark_genes\"]`` from ``result.json`` next to ``report.json``.
+
+    PDF rendering only reads ``report.json``. If that snapshot omitted the supplement (stale
+    generate, old daemon, or hand-edited file), WeasyPrint would still omit the section — so we
+    always re-merge from ``result.json`` at PDF time when present.
+
+    When ``CARRIER_SCREENING_REPORT_OUTPUT_ROOT`` is set, ``report.json`` may live under that
+    tree while the pipeline still wrote ``result.json`` only under ``job.output_dir``. Pass
+    ``extra_result_json_paths`` (e.g. the work-tree ``result.json``) so the supplement still loads.
+    """
+    primary = os.path.join(os.path.dirname(os.path.abspath(report_json_path)), "result.json")
+    deduped_all = _dedupe_result_json_paths(
+        [primary] + list(extra_result_json_paths or [])
+    )
+    candidates = _dark_genes_result_json_paths_for_pdf(
+        primary, extra_result_json_paths
+    )
+    pdf_dg, src, any_file = _build_dark_genes_for_pdf_from_result_json_candidates(
+        candidates, "generate_report_pdf"
+    )
+    if pdf_dg and src:
+        report_data["dark_genes"] = pdf_dg
+        hlen = len((pdf_dg.get("report_detailed_html") or ""))
+        logger.info(
+            "[generate_report_pdf] merged dark_genes from %s (report_detailed_html chars=%s)",
+            src,
+            hlen,
+        )
+        return
+
+    report_data.pop("dark_genes", None)
+    if any_file:
+        logger.warning(
+            "[generate_report_pdf] no usable dark_genes supplement after trying (newest-first): %s",
+            candidates,
+        )
+    elif deduped_all:
+        logger.warning(
+            "[generate_report_pdf] no result.json on disk for dark_genes merge (looked for %s)",
+            deduped_all,
+        )
 
 
 # ══════════════════════════════════════════════════════════════
@@ -441,6 +619,7 @@ def generate_report_json(
     gene_knowledge_gemini_on_report: bool = True,
     gemini_api_key: Optional[str] = None,
     gene_knowledge_gemini_model: str = "gemini-2.5-flash",
+    extra_result_json_paths: Optional[Sequence[str]] = None,
 ) -> str:
     """
     리뷰어 확정 결과를 바탕으로 report.json을 생성합니다.
@@ -657,24 +836,24 @@ def generate_report_json(
     if is_couple:
         report["findings"] = primary_findings + partner_findings
 
-    # Supplementary dark-gene pipeline narrative (from Review result.json)
+    # Dark genes supplement: read disk result.json → dark_genes_for_pdf → report.json only.
+    # (Not copied from DB defaults; PDF uses detailed_sections + section_reviews when aligned.)
+    # Same path fallbacks as generate_report_pdf when report output root ≠ pipeline output_dir.
     result_json_path = os.path.join(output_dir, "result.json")
-    if os.path.isfile(result_json_path):
-        try:
-            with open(result_json_path, "r", encoding="utf-8") as rf:
-                rd = json.load(rf)
-            dg = rd.get("dark_genes")
-            if isinstance(dg, dict) and dg.get("status") not in (None, "not_found"):
-                from .dark_genes import dark_genes_for_pdf
-
-                pdf_dg = dark_genes_for_pdf(dg)
-                if pdf_dg:
-                    report["dark_genes"] = pdf_dg
-        except Exception as e:
-            logger.warning(
-                "[generate_report_json] Could not merge dark_genes from result.json: %s",
-                e,
-            )
+    candidates = _dark_genes_result_json_paths_for_pdf(
+        result_json_path, extra_result_json_paths
+    )
+    pdf_dg, src, any_file = _build_dark_genes_for_pdf_from_result_json_candidates(
+        candidates, "generate_report_json"
+    )
+    if pdf_dg and src:
+        report["dark_genes"] = pdf_dg
+    elif any_file:
+        logger.warning(
+            "[generate_report_json] no usable dark_genes from candidates (newest-first) %s — "
+            "supplement will be absent in PDF (check detailed_sections / approvals)",
+            candidates,
+        )
 
     output_path = os.path.join(output_dir, "report.json")
     with open(output_path, "w", encoding="utf-8") as f:
@@ -795,6 +974,7 @@ def generate_report_pdf(
     output_dir: str,
     template_dir: Optional[str] = None,
     languages: Optional[List[str]] = None,
+    extra_result_json_paths: Optional[Sequence[str]] = None,
 ) -> List[str]:
     """
     report.json을 바탕으로 다국어 PDF 리포트를 생성합니다.
@@ -808,6 +988,7 @@ def generate_report_pdf(
         output_dir: 출력 디렉토리
         template_dir: Jinja2 HTML 템플릿 디렉토리 (선택)
         languages: 생성할 언어 목록 (기본: ["EN"])
+        extra_result_json_paths: 추가 ``result.json`` 후보 (파이프라인 출력 디렉토리 등)
 
     Returns:
         생성된 PDF 파일 경로 리스트
@@ -821,6 +1002,35 @@ def generate_report_pdf(
     except Exception as e:
         logger.error(f"Failed to read report JSON: {e}")
         return []
+
+    _merge_dark_genes_from_result_json_for_pdf(
+        report_data, report_json_path, extra_result_json_paths=extra_result_json_paths
+    )
+
+    try:
+        from .dark_genes import sanitize_dark_genes_payload_for_pdf_render
+
+        sanitize_dark_genes_payload_for_pdf_render(report_data)
+    except Exception as e:
+        logger.warning("[generate_report_pdf] dark_genes PDF sanitize skipped: %s", e)
+
+    dg = report_data.get("dark_genes")
+    if not isinstance(dg, dict) or not (
+        (dg.get("report_detailed_html") or "").strip() or dg.get("status") == "error"
+    ):
+        logger.warning(
+            "[generate_report_pdf] dark_genes missing or empty after merge/sanitize — "
+            "PDF will have no supplementary hard-to-sequence block "
+            "(check result.json dark_genes next to %s)",
+            os.path.dirname(os.path.abspath(report_json_path)),
+        )
+
+    # Re-write report.json so on-disk JSON matches what WeasyPrint uses (merge is in-memory only above).
+    try:
+        with open(report_json_path, "w", encoding="utf-8") as f:
+            json.dump(report_data, f, ensure_ascii=False, indent=2, default=str)
+    except Exception as e:
+        logger.warning("[generate_report_pdf] could not rewrite report.json after dark_genes merge: %s", e)
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -1188,6 +1398,8 @@ def _render_builtin_html(report_data: Dict[str, Any], lang: str) -> str:
         </tbody>
     </table>
 
+    {_builtin_dark_genes_supplement_html(report_data)}
+
     <div class="disclaimer">
         {labels['disclaimer']}
     </div>
@@ -1201,6 +1413,26 @@ def _render_builtin_html(report_data: Dict[str, Any], lang: str) -> str:
 </html>"""
 
     return html
+
+
+def _builtin_dark_genes_supplement_html(report_data: Dict[str, Any]) -> str:
+    """Built-in carrier HTML (no Jinja): same supplement as carrier_EN.html when HTML is present."""
+    dg = report_data.get("dark_genes")
+    if not isinstance(dg, dict):
+        return ""
+    if dg.get("status") == "error" and (dg.get("report_summary") or "").strip():
+        return (
+            '<h2 style="page-break-before: always;">Supplementary analysis (hard-to-sequence regions)</h2>'
+            f'<p style="white-space:pre-wrap;font-size:9pt;">'
+            f"{html.escape(str(dg.get('report_summary') or ''), quote=True)}</p>"
+        )
+    html_snip = (dg.get("report_detailed_html") or "").strip()
+    if not html_snip:
+        return ""
+    return (
+        '<h2 style="page-break-before: always;">Supplementary analysis (hard-to-sequence regions)</h2>'
+        '<div style="font-size:9pt;color:#334155;">' + html_snip + "</div>"
+    )
 
 
 def _get_labels(lang: str) -> Dict[str, str]:

@@ -8,11 +8,190 @@ or *_summary_report.txt / *_detailed_report.txt in the analysis outdir root (som
 from __future__ import annotations
 
 import glob
+import html
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_approved_bool(val: Any) -> bool:
+    """
+    Normalize ``approved`` from JSON/API. Python ``bool("false")`` is True — strings must
+    be interpreted explicitly.
+    """
+    if val is True:
+        return True
+    if val is False or val is None:
+        return False
+    if isinstance(val, (int, float)):
+        return bool(val)
+    if isinstance(val, str):
+        s = val.strip().lower()
+        if s in ("", "0", "false", "no", "n", "off"):
+            return False
+        if s in ("1", "true", "yes", "y", "on"):
+            return True
+        return False
+    return False
+
+
+# Lines that are only decorative separators (e.g. runs of hyphens between blocks in *_detailed_report.txt)
+_SECTION_SEPARATOR_LINE = re.compile(r"^[\s\-_–—]+$")
+
+
+def _normalize_section_body(body: str) -> str:
+    """Remove dash/underscore-only lines from section bodies (pipeline formatting noise)."""
+    out: List[str] = []
+    for line in (body or "").splitlines():
+        if _SECTION_SEPARATOR_LINE.match(line):
+            continue
+        out.append(line)
+    return "\n".join(out).strip()
+
+
+# PDF: keep supplementary annex readable; raise if directors need more
+_PDF_DETAILED_MAX_CHARS = 14_000
+
+def _line_looks_like_summary_table_header(line: str) -> bool:
+    """Header row from *_summary_report.txt (tab-, comma-, or pipe-separated)."""
+    s = (line or "").strip()
+    if not s:
+        return False
+    low = s.lower()
+    if not (
+        re.match(r"^sample\s*[\t,|]", low)
+        or re.match(r"^sample\s{2,}\S", low)
+    ):
+        return False
+    return any(
+        x in low
+        for x in ("paraphase", "smaca", "fragile", "hba", "cyp21", "large_sv", "qc_warn")
+    )
+
+
+def _line_looks_like_summary_data_row(line: str) -> bool:
+    """Data row that belongs to the summary TSV (not SAMPLE: single-field lines)."""
+    s = (line or "").strip()
+    if not s:
+        return False
+    low = s.lower()
+    if low.startswith("sample:") and "\t" not in s:
+        return False
+    if "\t" in s and len(s) > 12:
+        return True
+    if s.count(",") >= 4 and len(s) > 25:
+        return True
+    if s.count("|") >= 6 and len(s) > 50:
+        return True
+    return False
+
+
+def _line_looks_like_summary_compact_pipeline_row(line: str) -> bool:
+    """
+    Single-line summary row (no separate header line) — some runs emit one dense row
+    with many | fields and tool columns (Paraphase, SMAca, …).
+    """
+    s = (line or "").strip()
+    if len(s) < 50:
+        return False
+    sl = s.lower()
+    if not any(
+        k in sl
+        for k in (
+            "paraphase",
+            "smaca",
+            "fragile",
+            "smn1_cn",
+            "smn2_cn",
+            "fmr1",
+            "hba",
+            "cyp21",
+            "large_sv",
+            "qc_warn",
+            "manta",
+            "error:",
+        )
+    ):
+        return False
+    if s.count("|") >= 4:
+        return True
+    if "\t" in s and len(s) > 40:
+        return True
+    return False
+
+
+def _strip_summary_tsv_from_text(text: str) -> str:
+    """
+    Remove summary TSV blocks (header + data row(s)) anywhere in the text.
+
+    The same row as *_summary_report.txt is often pasted at the top of *_detailed_report.txt
+    or embedded in the first «Overview» block; a prefix-only strip misses those cases.
+    """
+    if not (text or "").strip():
+        return ""
+    raw = (text or "").replace("\ufeff", "")
+    lines = raw.splitlines()
+    out: List[str] = []
+    i = 0
+    while i < len(lines):
+        if _line_looks_like_summary_table_header(lines[i]):
+            i += 1
+            while i < len(lines) and not lines[i].strip():
+                i += 1
+            while i < len(lines) and lines[i].strip() and _line_looks_like_summary_data_row(
+                lines[i]
+            ):
+                i += 1
+            continue
+        if _line_looks_like_summary_compact_pipeline_row(lines[i]):
+            i += 1
+            continue
+        out.append(lines[i])
+        i += 1
+    return "\n".join(out).strip()
+
+
+def _detailed_text_for_dark_genes_pdf_parse(raw_detailed: str) -> str:
+    """
+    Text to feed ``parse_detailed_report_sections`` / synthetic sections.
+
+    Prefer TSV-stripped text; if stripping removes everything (over-aggressive or file is
+    mostly TSV-shaped lines), use a bounded copy of ``raw_detailed`` so the PDF path is
+    not left with nothing to render.
+    """
+    raw = (raw_detailed or "").strip().replace("\ufeff", "")
+    if not raw:
+        return ""
+    stripped = _strip_summary_tsv_from_text(raw)
+    if stripped.strip():
+        base = stripped
+    else:
+        base = raw
+    if len(base) > _PDF_DETAILED_MAX_CHARS:
+        return base[:_PDF_DETAILED_MAX_CHARS] + "\n\n[… truncated for PDF …]"
+    return base
+
+
+def _section_body_for_pdf(body: str) -> str:
+    """Dash-only line cleanup + strip any pasted summary TSV from a section body."""
+    return _normalize_section_body(_strip_summary_tsv_from_text(body or ""))
+
+
+def sanitize_dark_genes_payload_for_pdf_render(report_data: Dict[str, Any]) -> None:
+    """
+    PDF render safety net: drop legacy ``report_summary`` / ``report_detailed`` from
+    ``report.json`` when ``status != error`` so stale JSON cannot resurrect the raw TSV block.
+    """
+    dg = report_data.get("dark_genes")
+    if not isinstance(dg, dict):
+        return
+    if dg.get("status") == "error":
+        return
+    dg.pop("report_summary", None)
+    dg.pop("report_detailed", None)
 
 _MAX_READ_BYTES = 500_000
 # Order matters: first pattern group with any match wins (prefer summary/ subfolder).
@@ -81,6 +260,253 @@ def _rglob_unique(base: str, patterns: Tuple[str, ...]) -> List[str]:
     return sorted(out)
 
 
+def parse_detailed_report_sections(text: str) -> List[Dict[str, Any]]:
+    """
+    Parse dark_gene_pipeline *_detailed_report.txt into sections for Review + PDF.
+
+    Format (see modules/summary.nf): SAMPLE line, ===, !!! QUALITY WARNINGS !!!,
+    then titled blocks ending with ':' (PARAPHASE RESULTS, SMAca CHECK, …).
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return []
+
+    lines = raw.splitlines()
+    buf: List[str] = []
+    title = "Overview"
+    sections: List[Dict[str, Any]] = []
+
+    def flush() -> None:
+        nonlocal buf, title
+        body = _normalize_section_body("\n".join(buf).strip())
+        buf = []
+        if not body:
+            return
+        tl = title.upper()
+        kind = "normal"
+        if "QUALITY" in tl and "WARNING" in tl:
+            kind = "alert"
+        elif "WARNING" in tl:
+            kind = "warning"
+        sections.append({"title": title.strip(), "body": body, "kind": kind})
+
+    def is_banner(line: str) -> bool:
+        s = line.strip()
+        return bool(s) and s.startswith("!!!") and s.endswith("!!!") and len(s) < 160
+
+    def is_section_header(line: str) -> bool:
+        s = line.strip()
+        if not s or len(s) > 130:
+            return False
+        if is_banner(line):
+            return True
+        if line.startswith("  ") or line.startswith("\t"):
+            return False
+        if not s.endswith(":"):
+            return False
+        # "KEY: value" on one line (e.g. SAMPLE: foo) — not a standalone header
+        if re.match(r"^[A-Za-z0-9_]+\s*:\s*\S", s):
+            return False
+        return True
+
+    for line in lines:
+        if line.strip().startswith("=") and set(line.strip()) <= {"="}:
+            continue
+        if is_section_header(line):
+            flush()
+            st = line.strip()
+            if is_banner(line):
+                title = st.strip("! ").strip()
+            else:
+                title = st.rstrip(":").strip()
+            continue
+        buf.append(line)
+
+    flush()
+    return sections
+
+
+def align_section_reviews(
+    prev: Optional[List[Any]],
+    n: int,
+) -> List[Dict[str, Any]]:
+    """Align portal ``section_reviews`` to ``detailed_sections`` length (index-matched)."""
+    out: List[Dict[str, Any]] = []
+    for i in range(n):
+        if prev and i < len(prev) and isinstance(prev[i], dict):
+            out.append(
+                {
+                    "approved": _coerce_approved_bool(prev[i].get("approved")),
+                    "notes": str(prev[i].get("notes") or "")[:8000],
+                }
+            )
+        else:
+            out.append({"approved": False, "notes": ""})
+    return out
+
+
+def merge_dark_genes_reviews(
+    new_block: Dict[str, Any],
+    prev_dg: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Carry forward ``section_reviews`` after reprocess when section count still matches."""
+    out = dict(new_block)
+    prev_rev = prev_dg.get("section_reviews")
+    if not isinstance(prev_rev, list):
+        return out
+    sections = out.get("detailed_sections")
+    if not isinstance(sections, list) or len(sections) == 0:
+        return out
+    out["section_reviews"] = align_section_reviews(prev_rev, len(sections))
+    return out
+
+
+def ensure_dark_genes_detailed_sections(result_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Fill ``dark_genes.detailed_sections`` from ``detailed_text`` when missing or empty.
+
+    Older ``result.json`` / DB snapshots may only have ``detailed_text``; Review and PDF
+    still need structured sections.
+    Preserves ``section_reviews`` indices when re-parsing.
+    """
+    if not isinstance(result_data, dict):
+        return result_data
+    dg = result_data.get("dark_genes")
+    if not isinstance(dg, dict):
+        return result_data
+    text = (dg.get("detailed_text") or "").strip()
+    if not text:
+        return result_data
+    existing = dg.get("detailed_sections")
+    if isinstance(existing, list) and len(existing) > 0:
+        return result_data
+    out = dict(result_data)
+    dg2 = dict(dg)
+    new_sections = parse_detailed_report_sections(text)
+    dg2["detailed_sections"] = new_sections
+    prev_rev = dg.get("section_reviews")
+    if isinstance(prev_rev, list) and new_sections:
+        dg2["section_reviews"] = align_section_reviews(prev_rev, len(new_sections))
+    out["dark_genes"] = dg2
+    return out
+
+
+def _infer_section_kind(sec: Dict[str, Any]) -> str:
+    """Match parse_detailed_report_sections when ``kind`` is missing on stored sections."""
+    k = sec.get("kind")
+    if k in ("alert", "warning", "normal"):
+        return str(k)
+    tl = (sec.get("title") or "").strip().upper()
+    if "QUALITY" in tl and "WARNING" in tl:
+        return "alert"
+    if "WARNING" in tl:
+        return "warning"
+    return "normal"
+
+
+def _section_lab_review_only(sec: Dict[str, Any]) -> bool:
+    """Pipeline QC / quality warning blocks — reviewers only; never customer PDF."""
+    k = _infer_section_kind(sec)
+    if k == "alert":
+        return True
+    t = (sec.get("title") or "").strip().lower()
+    if "quality" in t and ("warning" in t or "warnings" in t):
+        return True
+    if "qc_warn" in t.replace(" ", ""):
+        return True
+    b = (sec.get("body") or "").strip().lower()
+    # Same wording as summary QC_Warnings column / typical pipeline banner
+    if len(b) < 800 and "median depth below" in b and "15x" in b:
+        return True
+    if len(b) < 800 and "alpha-cluster" in b and "sma" in b and "warning" in b:
+        return True
+    return False
+
+
+def _section_is_entire_duplicate_summary_row(sec: Dict[str, Any]) -> bool:
+    """One-line body that is the same dense summary row as *_summary_report.txt — omit from PDF."""
+    body = (sec.get("body") or "").strip()
+    if not body or "\n" in body or "\r" in body:
+        return False
+    return _line_looks_like_summary_compact_pipeline_row(body)
+
+
+def _section_review_at(
+    section_reviews: Optional[List[Any]], i: int
+) -> Dict[str, Any]:
+    """Index ``i`` review dict, or ``{}`` if missing / not a dict (matches gate + render)."""
+    if not section_reviews or i < 0 or i >= len(section_reviews):
+        return {}
+    x = section_reviews[i]
+    return x if isinstance(x, dict) else {}
+
+
+def detailed_sections_to_pdf_html(
+    sections: List[Dict[str, Any]],
+    section_reviews: Optional[List[Dict[str, Any]]] = None,
+    *,
+    filter_by_approval: bool = False,
+) -> str:
+    """
+    Escaped HTML blocks for WeasyPrint (carrier_*.html uses |safe).
+
+    Quality warning blocks (``kind: alert``) are omitted — lab review only.
+    The **Overview** block is omitted from the customer PDF (keep it in the portal for audit only).
+    One-line duplicate summary rows are omitted.
+
+    When ``filter_by_approval=True`` (customer PDF), only sections with
+    ``section_reviews[i].approved`` are included; unapproved or missing reviews are omitted.
+    When ``filter_by_approval=False``, every eligible section is included; ``section_reviews``
+    only adds optional per-section **Notes** lines.
+    """
+    if not sections:
+        return ""
+    parts: List[str] = []
+    for i, sec in enumerate(sections):
+        if _section_lab_review_only(sec):
+            continue
+        if _section_is_entire_duplicate_summary_row(sec):
+            continue
+        title_l = (sec.get("title") or "").strip().lower()
+        if title_l == "overview":
+            continue
+        rev = _section_review_at(section_reviews, i)
+        if filter_by_approval and not _coerce_approved_bool(rev.get("approved")):
+            continue
+        notes = (rev.get("notes") or "").strip()
+        notes_html = ""
+        if notes:
+            notes_html = (
+                f'<p style="font-size:8pt;color:#475569;margin:8px 0 0;line-height:1.4;">'
+                f"<strong>Notes:</strong> {html.escape(notes, quote=True)}</p>"
+            )
+
+        t = html.escape(sec.get("title") or "Section", quote=True)
+        body_for_pdf = _section_body_for_pdf(sec.get("body") or "")
+        b = html.escape(body_for_pdf, quote=True)
+        kind = _infer_section_kind(sec)
+        if kind == "warning":
+            box = (
+                "margin-top:10px;border-radius:6px;border:1px solid #f59e0b;"
+                "background:#fffbeb;padding:10px 12px;"
+            )
+            tit = "font-weight:700;font-size:9pt;color:#b45309;margin:0 0 6px;"
+        else:
+            box = (
+                "margin-top:10px;border-radius:6px;border:1px solid #cbd5e1;"
+                "background:#f8fafc;padding:10px 12px;"
+            )
+            tit = "font-weight:700;font-size:9pt;color:#0f172a;margin:0 0 6px;"
+        parts.append(
+            f'<div style="{box}">'
+            f'<div style="{tit}">{t}</div>'
+            f'<pre style="white-space:pre-wrap;font-size:8pt;line-height:1.45;'
+            f"margin:0;color:#334155;font-family:ui-monospace,Consolas,monospace\">{b}</pre>"
+            f"{notes_html}</div>"
+        )
+    return "\n".join(parts)
+
+
 def collect_dark_genes_from_analysis_dir(
     analysis_dir: str,
     sample_name: str = "",
@@ -127,6 +553,13 @@ def collect_dark_genes_from_analysis_dir(
 
     status = "found" if summary_text else "partial"
 
+    detailed_sections: List[Dict[str, Any]] = []
+    if detailed_excerpt:
+        try:
+            detailed_sections = parse_detailed_report_sections(detailed_excerpt)
+        except Exception as e:
+            logger.warning("[dark_genes] parse_detailed_report_sections: %s", e)
+
     return {
         "status": status,
         "sample_name": (sample_name or "").strip(),
@@ -136,12 +569,19 @@ def collect_dark_genes_from_analysis_dir(
         "detailed_paths": [os.path.relpath(p, base) for p in detailed_paths],
         "summary_text": summary_text,
         "detailed_text": detailed_excerpt,
+        "detailed_sections": detailed_sections,
     }
 
 
 def dark_genes_for_pdf(report_block: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Subset + truncate for customer PDF (plain text; Jinja escapes HTML).
+    Subset for customer PDF (written into ``report.json`` — not the full ``dark_genes`` blob).
+
+    Reads ``detailed_text``, ``detailed_sections``, and ``section_reviews`` (index-aligned).
+    The customer PDF **only includes sections marked approved** in the portal; unapproved
+    sections are omitted (Overview / QC-only / duplicate summary rows are never included).
+
+    Only ``report_detailed_html`` is emitted. ``status == error`` returns a short ``report_summary``.
     """
     if not report_block or report_block.get("status") == "not_found":
         return {}
@@ -151,14 +591,68 @@ def dark_genes_for_pdf(report_block: Dict[str, Any]) -> Dict[str, Any]:
             "status": "error",
             "report_summary": f"Supplementary dark-gene analysis metadata could not be loaded: {msg}",
         }
-    summary = (report_block.get("summary_text") or "").strip()
-    if len(summary) > 12_000:
-        summary = summary[:12_000] + "\n\n[… truncated for PDF …]"
-    detailed = (report_block.get("detailed_text") or "").strip()
-    if len(detailed) > 8_000:
-        detailed = detailed[:8_000] + "\n\n[… truncated …]"
+    raw_detailed = (report_block.get("detailed_text") or "").strip().replace("\ufeff", "")
+    detailed = _detailed_text_for_dark_genes_pdf_parse(raw_detailed)
+
+    parsed = parse_detailed_report_sections(detailed) if detailed else []
+    section_reviews: Optional[List[Dict[str, Any]]] = None
+    if isinstance(report_block, dict) and "section_reviews" in report_block:
+        raw = report_block.get("section_reviews")
+        section_reviews = []
+        for x in (raw if isinstance(raw, list) else []):
+            if isinstance(x, dict):
+                section_reviews.append(
+                    {
+                        "approved": _coerce_approved_bool(x.get("approved")),
+                        "notes": str(x.get("notes") or "")[:8000],
+                    }
+                )
+            else:
+                section_reviews.append({"approved": False, "notes": ""})
+
+    stored = report_block.get("detailed_sections")
+    # Always prefer on-disk ``detailed_sections`` (same indices as portal ``section_reviews``).
+    # Falling back to re-parse from ``detailed_text`` can change section count/order and mis-apply approvals.
+    if isinstance(stored, list) and len(stored) > 0:
+        sections = stored
+    else:
+        sections = parsed
+
+    # Parser expects titled blocks (lines ending with ":"). Some runs are free-form text only.
+    if not sections and detailed:
+        sections = [
+            {
+                "title": "Supplementary detail",
+                "body": detailed,
+                "kind": "normal",
+            }
+        ]
+
+    if isinstance(section_reviews, list) and len(section_reviews) != len(sections):
+        section_reviews = align_section_reviews(section_reviews, len(sections))
+
+    report_detailed_html = (
+        detailed_sections_to_pdf_html(sections, section_reviews, filter_by_approval=True)
+        if sections
+        else ""
+    )
+
+    if not (report_detailed_html or "").strip():
+        if sections and isinstance(section_reviews, list) and len(section_reviews) == len(sections):
+            logger.info(
+                "[dark_genes_for_pdf] no approved sections for customer PDF (detailed_sections=%d)",
+                len(sections),
+            )
+        else:
+            logger.warning(
+                "[dark_genes_for_pdf] empty supplemental HTML (sections=%d, "
+                "section_reviews_len=%s, status=%s)",
+                len(sections),
+                len(section_reviews) if isinstance(section_reviews, list) else None,
+                report_block.get("status"),
+            )
+        return {}
     return {
         "status": report_block.get("status"),
-        "report_summary": summary,
-        "report_detailed": detailed if detailed else None,
+        "report_detailed_html": report_detailed_html,
     }

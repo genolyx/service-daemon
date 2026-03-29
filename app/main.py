@@ -12,12 +12,13 @@ import glob
 import hmac
 import logging
 from contextlib import asynccontextmanager
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Query, Body, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from .config import settings
 from .datetime_kst import now_kst_iso, now_kst_date_compact
@@ -30,6 +31,7 @@ from .models import (
     GeneKnowledgeSaveRequest,
     VariantKnowledgeSaveRequest,
     UpdateFastqPathsRequest,
+    DarkGenesReviewRequest,
 )
 from .queue_manager import get_queue_manager
 from .order_store import ingest_report_json_from_disk
@@ -41,6 +43,12 @@ from .services import load_plugins, get_plugin, list_service_codes, get_all_plug
 logger = logging.getLogger(__name__)
 
 _FASTQ_NAME_SUFFIXES = (".fastq.gz", ".fq.gz", ".fastq", ".fq")
+
+# Portal GET /order/{id}/result must never be served from browser/CDN cache (stale variants / dark_genes).
+_RESULT_JSON_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+    "Pragma": "no-cache",
+}
 
 
 def _fastq_root_real() -> str:
@@ -162,9 +170,40 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Behind nginx / SSH tunnels: honor X-Forwarded-* so request.url reflects the client-facing host/scheme.
+app.add_middleware(ProxyHeadersMiddleware)
 
 # 미들웨어 설정
 setup_middleware(app)
+
+
+def _strip_api_prefix_for_order_routes(path: str) -> str:
+    """
+    Reverse proxies sometimes only forward ``/api/*`` to this app. Expose the same
+    order/queue/health routes under ``/api/order/...`` etc. by rewriting to the real paths.
+    Do not strip ``/api/literature``, ``/api/fastq``, ``/api/portal`` — those are native.
+    """
+    if not path.startswith("/api/"):
+        return path
+    if path.startswith("/api/literature") or path.startswith("/api/fastq") or path.startswith("/api/portal"):
+        return path
+    if path == "/api/health":
+        return "/health"
+    for prefix in ("/api/order", "/api/orders", "/api/queue", "/api/services"):
+        if path == prefix or path.startswith(prefix + "/"):
+            return path[4:]
+    return path
+
+
+@app.middleware("http")
+async def strip_api_prefix_middleware(request: Request, call_next):
+    """Run before api_access_key_guard so paths match exemptions after rewrite."""
+    path = request.url.path
+    new_path = _strip_api_prefix_for_order_routes(path)
+    if new_path != path:
+        request.scope["path"] = new_path
+        request.scope["raw_path"] = new_path.encode("utf-8")
+    return await call_next(request)
 
 
 def _api_key_configured() -> bool:
@@ -194,7 +233,12 @@ async def api_access_key_guard(request: Request, call_next):
         return await call_next(request)
 
     path = request.url.path
-    if path == "/health" or path.startswith("/portal") or path.startswith("/static"):
+    if (
+        path == "/health"
+        or path.startswith("/portal")
+        or path.startswith("/api/portal")
+        or path.startswith("/static")
+    ):
         return await call_next(request)
 
     key = str(settings.api_key).strip()
@@ -1185,28 +1229,45 @@ async def get_order_result(order_id: str):
 
     store = queue_manager.store
     result_json_path = None
-    if job.output_dir:
+    if job.service_code == "carrier_screening":
+        from app.services.carrier_screening.plugin import carrier_result_json_path
+
+        result_json_path = carrier_result_json_path(job)
+    elif job.output_dir:
         result_json_path = os.path.join(job.output_dir, "result.json")
 
     if result_json_path and os.path.isfile(result_json_path):
         with open(result_json_path, "r", encoding="utf-8") as f:
             result_data = json.load(f)
+        if isinstance(result_data, dict):
+            from app.services.carrier_screening.dark_genes import ensure_dark_genes_detailed_sections
+
+            result_data = ensure_dark_genes_detailed_sections(dict(result_data))
         if store and isinstance(result_data, dict):
             await asyncio.to_thread(store.set_result_json, order_id, result_data)
         if isinstance(result_data, dict):
             result_data = dict(result_data)
             result_data["order_params"] = job.params or {}
-            return result_data
-        return {"data": result_data, "order_params": job.params or {}}
+            return JSONResponse(content=result_data, headers=_RESULT_JSON_CACHE_HEADERS)
+        return JSONResponse(
+            content={"data": result_data, "order_params": job.params or {}},
+            headers=_RESULT_JSON_CACHE_HEADERS,
+        )
 
     if store:
         cached = await asyncio.to_thread(store.get_result_json, order_id)
         if cached is not None:
             if isinstance(cached, dict):
-                out = dict(cached)
+                from app.services.carrier_screening.dark_genes import ensure_dark_genes_detailed_sections
+
+                out = ensure_dark_genes_detailed_sections(dict(cached))
+                out = dict(out)
                 out["order_params"] = job.params or {}
-                return out
-            return {"data": cached, "order_params": job.params or {}}
+                return JSONResponse(content=out, headers=_RESULT_JSON_CACHE_HEADERS)
+            return JSONResponse(
+                content={"data": cached, "order_params": job.params or {}},
+                headers=_RESULT_JSON_CACHE_HEADERS,
+            )
 
     raise HTTPException(
         status_code=404,
@@ -1217,10 +1278,102 @@ async def get_order_result(order_id: str):
     )
 
 
+async def _dark_genes_review_impl(order_id: str, body: DarkGenesReviewRequest) -> Dict[str, Any]:
+    """
+    Save per-section **Approve** + **Notes** for the Dark genes detailed report.
+
+    Writes ``dark_genes.section_reviews`` (index-aligned with ``detailed_sections``) into
+    the same ``result.json`` that Generate Report reads (``carrier_report_output_dir``, mirroring
+    to ``job.output_dir`` when those paths differ). Notes and workflow state are stored for the
+    portal; the customer PDF lists all eligible supplementary sections (Overview / QC-only /
+    duplicate row still omitted) and may show **Notes** when present.
+    """
+    queue_manager = get_queue_manager()
+    job = queue_manager.get_job(order_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
+    if job.service_code != "carrier_screening":
+        raise HTTPException(
+            status_code=400,
+            detail="dark-genes-review is only supported for carrier_screening",
+        )
+    from app.services.carrier_screening.plugin import (
+        carrier_result_json_path,
+        write_carrier_result_json_sync,
+    )
+
+    path = carrier_result_json_path(job)
+    if not path:
+        raise HTTPException(
+            status_code=404,
+            detail="result.json not found — run analysis / reprocess first",
+        )
+
+    def _apply() -> Dict[str, Any]:
+        from app.services.carrier_screening.dark_genes import (
+            align_section_reviews,
+            ensure_dark_genes_detailed_sections,
+        )
+
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data = ensure_dark_genes_detailed_sections(data)
+        dg = data.get("dark_genes")
+        if not isinstance(dg, dict):
+            raise ValueError("result.json has no dark_genes object")
+        sections = dg.get("detailed_sections")
+        if not isinstance(sections, list) or len(sections) == 0:
+            raise ValueError(
+                "No detailed_sections (and no detailed_text to parse) — reprocess results "
+                "so dark_genes has supplementary detailed content."
+            )
+        n = len(sections)
+        incoming = [
+            {"approved": bool(x.approved), "notes": (x.notes or "")[:8000]}
+            for x in body.section_reviews
+        ]
+        dg2 = dict(dg)
+        dg2["section_reviews"] = align_section_reviews(incoming, n)
+        data["dark_genes"] = dg2
+        write_carrier_result_json_sync(job, data)
+        return data
+
+    try:
+        data = await asyncio.to_thread(_apply)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    store = queue_manager.store
+    if store and isinstance(data, dict):
+        await asyncio.to_thread(store.set_result_json, order_id, data)
+
+    dg_out = data.get("dark_genes") if isinstance(data, dict) else {}
+    return {
+        "status": "ok",
+        "order_id": order_id,
+        "dark_genes": dg_out if isinstance(dg_out, dict) else {},
+    }
+
+
+@app.patch("/order/{order_id}/dark-genes-review")
+async def patch_dark_genes_review(order_id: str, body: DarkGenesReviewRequest):
+    return await _dark_genes_review_impl(order_id, body)
+
+
+@app.post("/order/{order_id}/dark-genes-review")
+async def post_dark_genes_review(order_id: str, body: DarkGenesReviewRequest):
+    """Same as PATCH — POST is supported for proxies that block PATCH."""
+    return await _dark_genes_review_impl(order_id, body)
+
+
 def _load_result_dict_for_gene_knowledge(order_id: str, job) -> Optional[Dict[str, Any]]:
     """Read result.json-like dict (variants list) without order_params merge."""
     result_json_path = None
-    if job.output_dir:
+    if getattr(job, "service_code", None) == "carrier_screening":
+        from app.services.carrier_screening.plugin import carrier_result_json_path
+
+        result_json_path = carrier_result_json_path(job)
+    elif job.output_dir:
         result_json_path = os.path.join(job.output_dir, "result.json")
     if result_json_path and os.path.isfile(result_json_path):
         with open(result_json_path, "r", encoding="utf-8") as f:
@@ -1569,57 +1722,24 @@ async def get_order_gene_knowledge(
     )
 
 
-@app.get("/order/{order_id}/files")
-async def list_order_files(order_id: str):
+def _order_artifact_roots(job: Job) -> List[str]:
     """
-    주문의 출력 파일 목록을 조회합니다.
+    Directories to search for order output files (same order as download resolution).
+
+    For carrier_screening, ``carrier_report_output_dir`` is listed first when set so
+    ``Report_*.pdf`` / ``report.json`` match Generate Report even when
+    ``CARRIER_SCREENING_REPORT_OUTPUT_ROOT`` differs from ``job.output_dir``.
     """
-    queue_manager = get_queue_manager()
-    job = queue_manager.get_job(order_id)
-
-    if not job:
-        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
-
-    output_dir = job.output_dir
-    if not output_dir or not os.path.isdir(output_dir):
-        return {"files": [], "total": 0}
-
-    files = []
-    for fname in os.listdir(output_dir):
-        fpath = os.path.join(output_dir, fname)
-        if os.path.isfile(fpath):
-            files.append({
-                "name": fname,
-                "size": os.path.getsize(fpath),
-                "type": _guess_file_type(fname),
-            })
-
-    return {"files": files, "total": len(files)}
-
-
-def _safe_order_file_path(root: str, rel: str) -> Optional[str]:
-    """rel 은 주문 출력 루트 아래 상대 경로 (예 qc/plot.png). 경로 탈출 방지."""
-    if not rel or not root or ".." in rel.replace("\\", "/"):
-        return None
-    rel = rel.strip().lstrip("/").replace("\\", "/")
-    try:
-        root_abs = os.path.realpath(root)
-        full = os.path.realpath(os.path.join(root, *rel.split("/")))
-    except OSError:
-        return None
-    if full != root_abs and not full.startswith(root_abs + os.sep):
-        return None
-    return full if os.path.isfile(full) else None
-
-
-def _resolve_order_artifact_path(job: Job, filename: str) -> Optional[str]:
-    """
-    artifact output_dir 우선, carrier_screening 은 layout/script output 에 동일 상대 경로 시도.
-    """
-    rel = (filename or "").strip().lstrip("/")
-    if not rel or ".." in rel.replace("\\", "/"):
-        return None
     roots: List[str] = []
+    if (job.service_code or "").strip() == "carrier_screening":
+        from .services.carrier_screening.plugin import carrier_report_output_dir
+
+        try:
+            cro = carrier_report_output_dir(job)
+            if cro:
+                roots.append(cro)
+        except Exception:
+            pass
     if job.output_dir:
         roots.append(job.output_dir)
     if (job.service_code or "").strip() == "carrier_screening":
@@ -1640,20 +1760,125 @@ def _resolve_order_artifact_path(job: Job, filename: str) -> Optional[str]:
             roots.append(os.path.join(sd, "output", wk, seq))
 
     seen: set = set()
+    out: List[str] = []
     for root in roots:
-        if not root or not os.path.isdir(root):
+        if not root:
             continue
         try:
             key = os.path.realpath(root)
         except OSError:
             continue
+        if not os.path.isdir(root):
+            continue
         if key in seen:
             continue
         seen.add(key)
+        out.append(root)
+    return out
+
+
+@app.get("/order/{order_id}/files")
+async def list_order_files(order_id: str):
+    """
+    주문의 출력 파일 목록을 조회합니다.
+    """
+    queue_manager = get_queue_manager()
+    job = queue_manager.get_job(order_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
+
+    roots = _order_artifact_roots(job)
+    if not roots:
+        return JSONResponse(
+            content={"files": [], "total": 0},
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate",
+                "Pragma": "no-cache",
+            },
+        )
+
+    # Same basename may exist under multiple roots (report output root vs job.output_dir).
+    # Prefer the newest file by mtime so the PDF button matches a freshly generated report.
+    best: Dict[str, Tuple[str, int, int]] = {}
+    for output_dir in roots:
+        try:
+            names = os.listdir(output_dir)
+        except OSError:
+            continue
+        for fname in names:
+            fpath = os.path.join(output_dir, fname)
+            if not os.path.isfile(fpath):
+                continue
+            try:
+                mtime_ms = int(round(os.path.getmtime(fpath) * 1000))
+            except OSError:
+                mtime_ms = 0
+            try:
+                sz = os.path.getsize(fpath)
+            except OSError:
+                sz = 0
+            prev = best.get(fname)
+            if prev is None or mtime_ms > prev[1]:
+                best[fname] = (fpath, mtime_ms, sz)
+
+    files: List[Dict[str, Any]] = []
+    for fname in sorted(best.keys()):
+        fpath, mtime_ms, sz = best[fname]
+        files.append({
+            "name": fname,
+            "size": sz,
+            "mtime_ms": mtime_ms,
+            "type": _guess_file_type(fname),
+        })
+
+    return JSONResponse(
+        content={"files": files, "total": len(files)},
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+        },
+    )
+
+
+def _safe_order_file_path(root: str, rel: str) -> Optional[str]:
+    """rel 은 주문 출력 루트 아래 상대 경로 (예 qc/plot.png). 경로 탈출 방지."""
+    if not rel or not root or ".." in rel.replace("\\", "/"):
+        return None
+    rel = rel.strip().lstrip("/").replace("\\", "/")
+    try:
+        root_abs = os.path.realpath(root)
+        full = os.path.realpath(os.path.join(root, *rel.split("/")))
+    except OSError:
+        return None
+    if full != root_abs and not full.startswith(root_abs + os.sep):
+        return None
+    return full if os.path.isfile(full) else None
+
+
+def _resolve_order_artifact_path(job: Job, filename: str) -> Optional[str]:
+    """
+    Resolve a file under the same roots as ``list_order_files`` (see ``_order_artifact_roots``).
+
+    If the same relative path exists in more than one root, return the path with the
+    **newest** modification time (matches ``list_order_files`` mtime-based merge).
+    """
+    rel = (filename or "").strip().lstrip("/")
+    if not rel or ".." in rel.replace("\\", "/"):
+        return None
+    hits: List[str] = []
+    for root in _order_artifact_roots(job):
         hit = _safe_order_file_path(root, rel)
         if hit:
-            return hit
-    return None
+            hits.append(hit)
+    if not hits:
+        return None
+    if len(hits) == 1:
+        return hits[0]
+    try:
+        return max(hits, key=lambda p: os.path.getmtime(p))
+    except OSError:
+        return hits[0]
 
 
 @app.get("/order/{order_id}/file/{filename:path}")
@@ -1677,6 +1902,10 @@ async def download_order_file(order_id: str, filename: str):
         path=file_path,
         filename=base_name,
         media_type=_guess_content_type(filename),
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+        },
     )
 
 
@@ -1812,9 +2041,23 @@ async def list_services():
 
 # ─── Dashboard ─────────────────────────────────────────────
 
+def _accept_prefers_json(accept: str) -> bool:
+    if not accept or not accept.strip():
+        return False
+    first = accept.split(",")[0].strip().split(";")[0].strip().lower()
+    return first == "application/json"
+
+
 @app.get("/")
-async def dashboard():
-    """간단한 대시보드 정보"""
+async def dashboard(request: Request):
+    """
+    JSON dashboard for API clients and curl. Browsers (Accept: text/html first or present)
+    are redirected to the portal unless JSON is explicitly preferred.
+    """
+    accept = request.headers.get("accept") or ""
+    if not _accept_prefers_json(accept) and "text/html" in accept.lower():
+        return RedirectResponse("/portal/", status_code=302)
+
     queue_manager = get_queue_manager()
     summary = queue_manager.get_summary()
     plugins = get_all_plugins()
@@ -2006,3 +2249,18 @@ def literature_list_searches(
     """변이별 검색 캐시 목록 (어떤 변이가 검색되었는지 확인)."""
     from .services.carrier_screening.literature import list_cached_searches
     return list_cached_searches(gene=gene, cursor=cursor, count=count)
+
+
+# ─── Portal under /api/portal (proxies that only forward /api/* to this app) ───
+_portal_dir_api = os.path.join(os.path.dirname(__file__), "..", "portal")
+if os.path.isdir(_portal_dir_api):
+
+    @app.get("/api/portal", include_in_schema=False)
+    def portal_under_api_redirect():
+        return RedirectResponse("/api/portal/")
+
+    app.mount(
+        "/api/portal",
+        StaticFiles(directory=_portal_dir_api, html=True),
+        name="portal_under_api",
+    )

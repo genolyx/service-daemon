@@ -339,17 +339,19 @@
         </div>
         {% endif %}
 
-    {% if data.dark_genes and data.dark_genes.report_summary %}
+    {% if data.dark_genes and (data.dark_genes.report_detailed_html or data.dark_genes.status == 'error') %}
     <div class="new-page">
         <div class="section-title">Supplementary analysis (hard-to-sequence regions)</div>
+        {% if data.dark_genes.status == 'error' %}
         <p class="detail-text" style="white-space:pre-wrap;font-size:8.5pt;">
             {{ data.dark_genes.report_summary }}
         </p>
-        {% if data.dark_genes.report_detailed %}
-        <div class="sub-label" style="margin-top:14px;">Additional detail (excerpt)</div>
-        <p class="detail-text" style="white-space:pre-wrap;font-size:8pt;color:#475569;">
-            {{ data.dark_genes.report_detailed }}
-        </p>
+        {% endif %}
+        {% if data.dark_genes.report_detailed_html %}
+        <div class="sub-label" style="margin-top:14px;">Additional detail (structured excerpt)</div>
+        <div class="detail-text" style="font-size:8pt;color:#334155;">
+            {{ data.dark_genes.report_detailed_html|safe }}
+        </div>
         {% endif %}
     </div>
     {% endif %}

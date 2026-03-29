@@ -402,6 +402,43 @@ def test_report_endpoint():
     assert resp.status_code in (200, 500), f"Unexpected status: {resp.status_code}"
 
 
+def test_dark_genes_pdf_only_approved_sections():
+    from app.services.carrier_screening.dark_genes import dark_genes_for_pdf
+
+    block = {
+        "status": "found",
+        "detailed_text": "PARAPHASE RESULTS:\nalpha line\n\nOTHER:\nbeta line\n",
+        "detailed_sections": [
+            {"title": "PARAPHASE RESULTS", "body": "alpha line", "kind": "normal"},
+            {"title": "OTHER", "body": "beta line", "kind": "normal"},
+        ],
+        "section_reviews": [
+            {"approved": True, "notes": "ok"},
+            {"approved": False, "notes": ""},
+        ],
+    }
+    out = dark_genes_for_pdf(block)
+    html_out = out.get("report_detailed_html") or ""
+    assert "alpha" in html_out
+    assert "beta" not in html_out
+
+    none_approved = dict(block)
+    none_approved["section_reviews"] = [
+        {"approved": False, "notes": ""},
+        {"approved": False, "notes": ""},
+    ]
+    assert dark_genes_for_pdf(none_approved) == {}
+
+    string_false = dict(block)
+    string_false["section_reviews"] = [
+        {"approved": "false", "notes": ""},
+        {"approved": "true", "notes": ""},
+    ]
+    out_sf = dark_genes_for_pdf(string_false)
+    h2 = out_sf.get("report_detailed_html") or ""
+    assert "beta" in h2 and "alpha" not in h2
+
+
 test("GET /health", test_health_endpoint)
 test("GET /services", test_services_endpoint)
 test("GET / (dashboard)", test_dashboard_endpoint)
@@ -410,6 +447,7 @@ test("GET /order/{order_id}/status", test_order_status)
 test("GET /queue/summary", test_queue_summary)
 test("POST /order/unknown_service/submit (400)", test_unknown_service)
 test("POST /order/{order_id}/report", test_report_endpoint)
+test("dark_genes PDF only approved sections", test_dark_genes_pdf_only_approved_sections)
 
 
 # ═══════════════════════════════════════════════════════════

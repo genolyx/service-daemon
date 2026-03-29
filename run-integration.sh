@@ -56,8 +56,8 @@ if [ ! -d .venv ]; then
 fi
 
 # nipt-daemon: 8000, 8001 / service-daemon: 8002, 8003...
-PORT=${APP_PORT:-8003}
-for p in 8003 8002 8080 8888; do
+PORT=${APP_PORT:-8000}
+for p in 8000 8003 8002 8080 8888; do
   if ! ss -tlnp 2>/dev/null | grep -q ":$p "; then
     PORT=$p
     break

@@ -128,6 +128,22 @@ class UpdateFastqPathsRequest(BaseModel):
     fastq_r2_path: Optional[str] = Field(default=None, description="R2 절대 경로; 빈 문자열이면 제거")
 
 
+class DarkGenesSectionReviewItem(BaseModel):
+    """Index-aligned with ``dark_genes.detailed_sections`` (Portal Dark genes tab)."""
+
+    approved: bool = Field(default=False, description="Include this block in PDF/report supplement")
+    notes: str = Field(default="", description="Reviewer notes; shown in PDF when approved")
+
+
+class DarkGenesReviewRequest(BaseModel):
+    """Persist per-section approval + notes into ``result.json`` → ``dark_genes.section_reviews``."""
+
+    section_reviews: List[DarkGenesSectionReviewItem] = Field(
+        default_factory=list,
+        description="One entry per detailed section, same order as detailed_sections",
+    )
+
+
 # ─── Internal Job Model ───────────────────────────────────
 
 class Job(BaseModel):

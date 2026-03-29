@@ -56,6 +56,65 @@ def carrier_report_output_dir(job: Job) -> str:
     return carrier_report_generation_paths(job)[0]
 
 
+def _extra_result_json_paths_for_carrier_report(job: Job) -> List[str]:
+    """
+    When report output root differs from pipeline ``job.output_dir``, ``result.json`` may only
+    exist under the work tree. Try that path after the report-directory result.json.
+    """
+    out: List[str] = []
+    primary = os.path.normpath(
+        os.path.abspath(os.path.join(carrier_report_output_dir(job), "result.json"))
+    )
+    if job.output_dir:
+        alt = os.path.join(job.output_dir, "result.json")
+        if os.path.normpath(os.path.abspath(alt)) != primary:
+            out.append(alt)
+    return out
+
+
+def carrier_result_json_path(job: Job) -> Optional[str]:
+    """
+    Disk path to ``result.json`` for portal + PDF (must match ``generate_report_json``).
+
+    When ``CARRIER_SCREENING_REPORT_OUTPUT_ROOT`` is set, report generation reads
+    ``<root>/output/<work>/<sample>/result.json``, while ``job.output_dir`` may still
+    point at the work tree under ``carrier_screening_work_root``. Prefer the same
+    directory as ``carrier_report_output_dir`` so dark-genes PATCH and Generate Report
+    see one file; fall back to ``job.output_dir`` if only that path exists.
+    """
+    primary = os.path.join(carrier_report_output_dir(job), "result.json")
+    if os.path.isfile(primary):
+        return primary
+    if job.output_dir:
+        alt = os.path.join(job.output_dir, "result.json")
+        if os.path.isfile(alt):
+            return alt
+    return None
+
+
+def write_carrier_result_json_sync(job: Job, data: Dict[str, Any]) -> List[str]:
+    """
+    Write ``result.json`` under ``carrier_report_output_dir`` and mirror to
+    ``job.output_dir`` when it differs, so both locations stay aligned.
+    Returns paths written.
+    """
+    primary = os.path.join(carrier_report_output_dir(job), "result.json")
+    text = json.dumps(data, ensure_ascii=False, indent=2, default=str)
+    os.makedirs(os.path.dirname(primary), exist_ok=True)
+    written: List[str] = []
+    with open(primary, "w", encoding="utf-8") as f:
+        f.write(text)
+    written.append(primary)
+    if job.output_dir:
+        alt = os.path.join(job.output_dir, "result.json")
+        if os.path.normpath(alt) != os.path.normpath(primary):
+            os.makedirs(os.path.dirname(alt), exist_ok=True)
+            with open(alt, "w", encoding="utf-8") as f:
+                f.write(text)
+            written.append(alt)
+    return written
+
+
 def _project_root_dir() -> str:
     """Repo root (parent of the `app` package)."""
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -1519,6 +1578,7 @@ class CarrierScreeningPlugin(ServicePlugin):
                 gene_knowledge_gemini_model=getattr(
                     settings, "gene_knowledge_gemini_model", "gemini-2.5-flash"
                 ),
+                extra_result_json_paths=_extra_result_json_paths_for_carrier_report(job),
             )
             logger.info(f"  Generated report.json: {report_json_path}")
 
@@ -1528,6 +1588,7 @@ class CarrierScreeningPlugin(ServicePlugin):
                 output_dir=output_dir,
                 template_dir=template_dir,
                 languages=languages,
+                extra_result_json_paths=_extra_result_json_paths_for_carrier_report(job),
             )
 
             for pdf_path in pdf_paths:

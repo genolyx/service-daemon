@@ -18,7 +18,9 @@ result.json 구조:
     - disease_panel: BED 기반 질환 패널 정보
     - filter_summary: 적용된 필터 요약
     - igv_snapshots: 변이별 IGV 스냅샷 매핑
-    - dark_genes: supplementary unified-pipeline summary (summary/*.txt under analysis_dir)
+    - dark_genes: supplementary unified-pipeline summary (summary/*.txt under analysis_dir);
+      optional section_reviews[] (index-aligned with detailed_sections: approved, notes) from Portal;
+      customer PDF includes only approved sections
     - metadata: 파이프라인/annotation DB 버전 정보
 """
 
@@ -1620,6 +1622,19 @@ def generate_result_json(
     except Exception as e:
         logger.warning("[generate_result_json] dark_genes collection failed: %s", e)
         dark_genes_block = {"status": "error", "message": str(e)}
+
+    try:
+        prev_path = os.path.join(output_dir, "result.json")
+        if os.path.isfile(prev_path):
+            from .dark_genes import merge_dark_genes_reviews
+
+            with open(prev_path, "r", encoding="utf-8") as rf:
+                prev = json.load(rf)
+            prev_dg = prev.get("dark_genes") if isinstance(prev, dict) else None
+            if isinstance(prev_dg, dict):
+                dark_genes_block = merge_dark_genes_reviews(dark_genes_block, prev_dg)
+    except Exception as e:
+        logger.warning("[generate_result_json] dark_genes section_reviews merge skipped: %s", e)
 
     # 변이 + ACMG 결합
     variants_for_review = []

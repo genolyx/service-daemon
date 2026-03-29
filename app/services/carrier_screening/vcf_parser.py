@@ -736,6 +736,42 @@ def parse_vcf_variants(
                     # VEP에서 유전자/전사체 정보 보완 (BED 필터용)
                     if not gene and ann.get("gene"):
                         gene = ann["gene"]
+                    # Pre-parsed CSQ row can lack SYMBOL/HGVSc (wrong transcript picked, header drift).
+                    # Merge missing fields from per-record CSQ/ANN so review table is not blank.
+                    if use_vep_path and layout_tag:
+                        g2, t2, hc2, hp2, ef2 = extract_variant_info(
+                            rec,
+                            layout_tag,
+                            layout_gi,
+                            layout_ti,
+                            layout_ci,
+                            layout_pi,
+                            layout_ei,
+                            gene_interval_lookup=gene_interval_lookup,
+                        )
+                        if g2 and not (ann.get("gene") or "").strip():
+                            ann["gene"] = g2
+                        if t2 and not (ann.get("transcript") or "").strip():
+                            ann["transcript"] = t2
+                        if hc2 and not (ann.get("hgvsc") or "").strip():
+                            ann["hgvsc"] = hc2
+                        if hp2 and not (ann.get("hgvsp") or "").strip():
+                            ann["hgvsp"] = hp2
+                        if ef2 and not (ann.get("effect") or "").strip():
+                            ann["effect"] = ef2
+                    if ann.get("gnomad_af") is None and hasattr(annotator, "gnomad") and annotator.gnomad:
+                        try:
+                            gm = annotator.gnomad.lookup(rec.chrom, rec.pos, rec.ref, alt_str)
+                            if gm and gm.get("af") is not None:
+                                ann["gnomad_af"] = gm.get("af")
+                                if ann.get("gnomad_exomes_af") is None:
+                                    ann["gnomad_exomes_af"] = gm.get("exomes_af")
+                                if ann.get("gnomad_genomes_af") is None:
+                                    ann["gnomad_genomes_af"] = gm.get("genomes_af")
+                                if not (ann.get("gnomad_source") or "").strip():
+                                    ann["gnomad_source"] = "local_vcf"
+                        except Exception:
+                            pass
                 else:
                     g2, t2, hc2, hp2, ef2 = gene, transcript, hgvsc, hgvsp, effect
                     # VEP pre-parse missed this row (key mismatch) or non-VEP VCF: parse ANN/CSQ inline

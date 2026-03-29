@@ -321,8 +321,28 @@
       padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--card);
     }
     .dark-genes-section-title{font-size:13px;font-weight:600;margin:0 0 8px;color:var(--text)}
-    .dark-genes-stack{display:flex;flex-direction:column;gap:12px;max-height:60vh;overflow:auto;padding:2px}
-    .dark-genes-sec{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--table-bg)}
+    .dark-genes-stack{
+      display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px;align-items:start;
+      max-height:min(78vh,980px);overflow:auto;padding:0;
+    }
+    /* Empty top-right cell when QUALITY WARNINGS sits top-left (Overview hidden) */
+    .dark-genes-stack-spacer{min-width:0;pointer-events:none}
+    .dark-genes-stack > .dark-genes-sec:only-child{grid-column:1 / -1}
+    @media (max-width:900px){
+      .dark-genes-stack{grid-template-columns:1fr}
+      .dark-genes-stack-spacer{display:none}
+    }
+    .dg-report-details{border:1px solid var(--line);border-radius:12px;background:var(--table-bg);margin-top:12px;overflow:hidden}
+    .dg-report-summary{
+      cursor:pointer;list-style:none;font-size:13px;font-weight:600;padding:10px 12px;margin:0;
+      display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--text);
+      border-bottom:1px solid var(--line);
+    }
+    .dg-report-summary::-webkit-details-marker{display:none}
+    .dg-report-summary::marker{content:''}
+    .dg-report-summary-hint{font-size:11px;font-weight:500;color:var(--muted)}
+    .dg-report-details-body{padding:10px 12px 12px}
+    .dark-genes-sec{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--table-bg);min-width:0}
     /* Alert/warm: light theme = paper + dark ink; dark theme = amber tint + light ink (no white slab with white text) */
     .dark-genes-sec--warn{border-color:#f59e0b}
     .dark-genes-sec--alert{border-width:2px}
@@ -338,12 +358,19 @@
     body.light .dark-genes-sec--alert{background:#fff7ed;border-color:#d97706}
     body.light .dark-genes-sec--alert .dark-genes-sec-title{color:#9a3412}
     body.light .dark-genes-sec--alert .dark-genes-sec-body{color:#44403c}
-    .dark-genes-sec-title-wrap{margin:0 0 8px;padding:4px 0 4px 12px;border-left:6px solid #be123c;background:#fff1f2;border-radius:0 8px 8px 0}
+    .dark-genes-sec-title-wrap{margin:0 0 6px;padding:3px 0 3px 10px;border-left:6px solid #be123c;background:#fff1f2;border-radius:0 8px 8px 0}
     .dark-genes-sec-title-wrap--low{border-left-color:#15803d;background:#f0fdf4}
     .dark-genes-sec-title-wrap--high{border-left-color:#be123c;background:#fff1f2}
     body:not(.light) .dark-genes-sec-title-wrap--high{background:rgba(190,18,60,.14);border-left-color:#fb7185}
     body:not(.light) .dark-genes-sec-title-wrap--low{background:rgba(21,128,61,.18);border-left-color:#4ade80}
     .dark-genes-sec-title-wrap .dark-genes-sec-title{margin:0}
+    .dark-genes-sec-title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    .dark-genes-sec-title-row .dark-genes-sec-title{flex:1;min-width:0}
+    .dark-genes-sec-title-row .dg-sec-visual{
+      flex-shrink:0;font-size:11px;padding:5px 12px;border-radius:8px;white-space:nowrap;
+      border:1px solid var(--line);background:var(--card);color:var(--brand);cursor:pointer;font-weight:600;
+    }
+    .dark-genes-sec-title-row .dg-sec-visual:hover{filter:brightness(1.08)}
     .dark-genes-sec-title{font-weight:700;font-size:12px;margin:0 0 8px;color:var(--text)}
     .dark-genes-sec-body{white-space:pre-wrap;font-size:11px;line-height:1.45;margin:0;font-family:ui-monospace,Consolas,monospace;overflow-x:auto;color:var(--text)}
     .dark-genes-sec-body--kv{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;padding:2px 0 0}
@@ -351,21 +378,39 @@
     .dark-genes-kv dt{margin:0;color:var(--muted);font-weight:600}
     .dark-genes-kv dd{margin:0;color:var(--text);font-variant-numeric:tabular-nums}
     .dark-genes-sec-actions{
-      margin-top:12px;padding-top:10px;border-top:1px solid var(--line);
-      display:flex;flex-direction:column;gap:6px;align-items:stretch;
+      margin-top:8px;padding-top:8px;border-top:1px solid var(--line);
     }
-    .dark-genes-sec-actions .dg-approve-btn{align-self:flex-start;font-size:12px;padding:6px 14px;border-radius:10px}
+    .dg-actions-toolbar{
+      display:flex;flex-direction:column;align-items:stretch;gap:8px;
+    }
+    .dark-genes-sec-actions .dg-risk-approve-group{align-self:flex-start}
+    .dg-risk-approve-group{
+      display:inline-flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:nowrap;
+    }
+    .dark-genes-sec-actions .dg-approve-btn{flex-shrink:0;font-size:12px;padding:5px 12px;border-radius:8px;align-self:center}
     .dark-genes-sec-actions .dg-approve-btn.dg-approved{
       background:rgba(34,197,94,.18);border-color:#22c55e;color:#86efac;
     }
     body.light .dark-genes-sec-actions .dg-approve-btn.dg-approved{
       background:rgba(22,163,74,.14);color:#15803d;border-color:#22c55e;
     }
-    .dark-genes-sec-actions .dg-risk-label{font-size:11px;color:var(--muted);font-weight:600;align-self:center}
-    .dark-genes-sec-actions .dg-sec-risk{font-size:12px;padding:6px 10px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);min-width:100px}
-    .dark-genes-sec-actions .dg-notes-label{font-size:11px;color:var(--muted);font-weight:600}
-    .dark-genes-sec-actions .dg-sec-notes{min-height:52px;width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-size:12px;font-family:inherit;resize:vertical}
-    .dark-genes-save-row{margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    /* Override global input,select,textarea{width:100%} — compact Low/High next to Approve */
+    .dark-genes-sec-actions .dg-sec-risk{
+      width:auto;min-width:4.5rem;max-width:9rem;flex-shrink:0;
+      font-size:12px;padding:4px 8px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);
+    }
+    .dg-notes-wrap{flex:1;min-width:0;width:100%;display:flex;flex-direction:column;gap:3px}
+    .dg-notes-wrap .dg-notes-label{font-size:11px;color:var(--muted);font-weight:600}
+    .dark-genes-sec-actions .dg-sec-notes{
+      width:100%;min-height:8.5rem;max-height:min(50vh,22rem);padding:6px 8px;border-radius:8px;border:1px solid var(--input-bd);
+      background:var(--input-bg);color:var(--text);font-size:12px;font-family:inherit;resize:vertical;line-height:1.4;
+    }
+    .dark-genes-save-row{margin-top:10px;display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
+    .dark-genes-visual-evidence{margin:12px 0 18px;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--table-bg)}
+    .dark-genes-visual-evidence .dg-visual-iframe{width:100%;min-height:480px;border:1px solid var(--line);border-radius:10px;background:#fff}
+    .dark-genes-visual-evidence .dg-visual-sub{margin:10px 0 6px;font-size:12px;font-weight:600;color:var(--text)}
+    .dark-genes-visual-evidence .dg-repeat-row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start}
+    .dark-genes-visual-evidence .dg-repeat-svg,.dark-genes-visual-evidence .dg-snap-png{max-width:100%;max-height:520px;border-radius:8px;border:1px solid var(--line);background:var(--card)}
     a.omim-link{color:var(--brand);text-decoration:underline;text-underline-offset:2px}
     a.omim-link:hover{opacity:.92}
     .fb-list{border:1px solid var(--line);border-radius:12px;background:var(--table-bg);max-height:48vh;overflow:auto}
@@ -1088,6 +1133,7 @@
               <tr>
                 <th style="width:44px;text-align:center"><input type="checkbox" id="chkAll" onchange="toggleAllCheckboxes(this)" /></th>
                 <th class="sortable" data-key="gene">Gene</th>
+                <th class="sortable" data-key="transcript_nm_sort" title="MANE RefSeq (NM_…); may show ENST if NM unavailable">Transcript (NM)</th>
                 <th class="sortable" data-key="hgvsc">HGVSc</th>
                 <th class="sortable" data-key="hgvsp">HGVSp</th>
                 <th class="sortable" data-key="effect">Effect</th>
@@ -1456,6 +1502,91 @@
       body.innerHTML = parts.length ? parts.join('') : '<span class="muted">Could not load image(s).</span>';
     }
 
+    /** Relative path under order roots (e.g. snapshots/sample_visual_report.html) — use with apiFetchHeaders. */
+    function orderArtifactFileUrl(orderId, relPath) {
+      if (!orderId || !relPath) return '';
+      const p = String(relPath).replace(/^\/+/, '');
+      return `${API_BASE}${apiPath(`/order/${encodeURIComponent(orderId)}/file/${encodeURIComponent(p)}`)}`;
+    }
+
+    async function mountDarkGenesVisualEvidence(host, ve, orderId) {
+      if (!host || !ve || !orderId) return;
+      if (window._darkGenesVisualBlobUrls) {
+        window._darkGenesVisualBlobUrls.forEach(u => {
+          try {
+            URL.revokeObjectURL(u);
+          } catch (e) { /* ignore */ }
+        });
+      }
+      window._darkGenesVisualBlobUrls = [];
+      const pushBlob = u => {
+        window._darkGenesVisualBlobUrls.push(u);
+        return u;
+      };
+      const igvHost = host.querySelector('.dg-visual-evidence-igv');
+      const repHost = host.querySelector('.dg-visual-evidence-repeat');
+      const pngHost = host.querySelector('.dg-visual-evidence-png');
+
+      if (ve.igv_report_html && igvHost) {
+        igvHost.innerHTML = '<span class="muted">Loading IGV report…</span>';
+        try {
+          const url = orderArtifactFileUrl(orderId, ve.igv_report_html);
+          const r = await fetch(url, { headers: apiFetchHeaders() });
+          if (!r.ok) throw new Error('igv');
+          const blob = await r.blob();
+          const blobUrl = pushBlob(URL.createObjectURL(blob));
+          igvHost.innerHTML = `<iframe title="IGV visual evidence" class="dg-visual-iframe" src="${blobUrl}"></iframe>`;
+        } catch (e) {
+          igvHost.innerHTML =
+            '<p class="muted">Could not load IGV report. Reprocess results after the pipeline finishes, or check daemon access to analysis_dir/snapshots.</p>';
+        }
+      } else if (igvHost) {
+        igvHost.innerHTML = '';
+      }
+
+      if (repHost && ve.repeat_svgs && ve.repeat_svgs.length) {
+        repHost.innerHTML = '<div class="dg-visual-sub">Repeat expansion (e.g. FMR1)</div><span class="muted">Loading…</span>';
+        const parts = [];
+        for (const rel of ve.repeat_svgs) {
+          try {
+            const url = orderArtifactFileUrl(orderId, rel);
+            const r = await fetch(url, { headers: apiFetchHeaders() });
+            if (!r.ok) continue;
+            const blob = await r.blob();
+            const blobUrl = pushBlob(URL.createObjectURL(blob));
+            parts.push(`<img class="dg-repeat-svg" src="${blobUrl}" alt="${escapeHtml(rel)}" />`);
+          } catch (e) {
+            /* skip */
+          }
+        }
+        repHost.innerHTML =
+          (parts.length ? `<div class="dg-visual-sub">Repeat expansion (e.g. FMR1)</div><div class="dg-repeat-row">${parts.join('')}</div>` : '');
+      } else if (repHost) {
+        repHost.innerHTML = '';
+      }
+
+      if (pngHost && ve.snapshots_png && ve.snapshots_png.length) {
+        const parts = [];
+        for (const rel of ve.snapshots_png) {
+          try {
+            const url = orderArtifactFileUrl(orderId, rel);
+            const r = await fetch(url, { headers: apiFetchHeaders() });
+            if (!r.ok) continue;
+            const blob = await r.blob();
+            const blobUrl = pushBlob(URL.createObjectURL(blob));
+            parts.push(`<img class="dg-snap-png" src="${blobUrl}" alt="${escapeHtml(rel)}" />`);
+          } catch (e) {
+            /* skip */
+          }
+        }
+        pngHost.innerHTML = parts.length
+          ? `<div class="dg-visual-sub">Snapshot images</div><div class="dg-repeat-row">${parts.join('')}</div>`
+          : '';
+      } else if (pngHost) {
+        pngHost.innerHTML = '';
+      }
+    }
+
     let _globalConfirmResolve = null;
 
     function wireGlobalConfirmModal() {
@@ -1650,6 +1781,41 @@
       const n = parseFloat(af);
       return isNaN(n) ? '-' : n < 0.0001 ? n.toExponential(2) : n.toFixed(4);
     };
+
+    /** Align with server ``normalize_variants_for_portal`` — alternate keys + gnomAD fallback */
+    function normalizeVariantForReview(v) {
+      if (!v || typeof v !== 'object') return v;
+      const o = { ...v };
+      if (!o.gene) o.gene = o.Gene || o.GENE_SYMBOL || '';
+      if (!o.hgvsc) o.hgvsc = o.HGVSc || o.c_hgvs || '';
+      if (!o.hgvsp) o.hgvsp = o.HGVSp || o.p_hgvs || '';
+      if (!o.effect) o.effect = o.Consequence || '';
+      if (o.gnomad_af === null || o.gnomad_af === undefined || o.gnomad_af === '') {
+        if (o.gnomad_exomes_af != null && o.gnomad_exomes_af !== '') o.gnomad_af = o.gnomad_exomes_af;
+        else if (o.gnomad_genomes_af != null && o.gnomad_genomes_af !== '') o.gnomad_af = o.gnomad_genomes_af;
+      }
+      let clinical = (o.clinical_nm || '').trim();
+      if (!clinical && /^NM_/i.test((o.mane_select || '').trim())) clinical = (o.mane_select || '').trim();
+      o.clinical_nm = clinical;
+      const tx = (o.transcript || '').trim();
+      const enst = (o.canonical_enst || '').trim();
+      o.transcript_nm_sort = clinical || (/^NM_/i.test(tx) ? tx : '') || enst || tx || '';
+      return o;
+    }
+
+    /** Table cell: RefSeq NM (clinical_nm / MANE) or NM in transcript; else ENST in muted. */
+    function variantTranscriptNmCellHtml(v) {
+      const nm = (v.clinical_nm || '').trim();
+      const tx = (v.transcript || '').trim();
+      const enst = (v.canonical_enst || '').trim();
+      if (nm) return nm;
+      if (/^NM_/i.test(tx)) return tx;
+      const fb = enst || tx;
+      if (fb) {
+        return `<span class="muted" title="No MANE NM in result; Ensembl transcript">${fb}</span>`;
+      }
+      return '-';
+    }
 
     // Get primary disease name for a variant
     function getVariantDisease(v) {
@@ -3855,6 +4021,9 @@
 
       try {
         reviewData = await apiGet(`/order/${orderId}/result`);
+        if (Array.isArray(reviewData.variants)) {
+          reviewData.variants = reviewData.variants.map(normalizeVariantForReview);
+        }
         if (!reviewData.order_params || Object.keys(reviewData.order_params).length === 0) {
           try {
             const list = await apiGet('/orders?service_code=carrier_screening');
@@ -4591,8 +4760,25 @@
 
     /**
      * SMAca CHECK block: pipeline key=value → lab-facing labels.
-     * Cov(1,2) is shown as "Ratio" (coverage pair), not C_Ratio.
+     * C_Ratio = SMN1 cov / (SMN1+SMN2 cov) from pipeline; Cov(1,2) = raw avg coverages.
+     * SNP C,T counts: CT_counts=, C_T=, SMN_C_T=, C_reads/T_reads lines, or loose g.27134 AD/depth.
+     * CT_Ratio = optional SNP ratio line (not the same as C_Ratio).
      */
+    function extractSmacaSnpCtCounts(raw) {
+      const s = String(raw || '');
+      let m = s.match(/CT_counts\s*=\s*(\d+)\s*,\s*(\d+)/i);
+      if (m) return [m[1], m[2]];
+      m = s.match(/C_T\s*=\s*(\d+)\s*,\s*(\d+)/i);
+      if (m) return [m[1], m[2]];
+      m = s.match(/SMN_C_T\s*=\s*(\d+)\s*,\s*(\d+)/i);
+      if (m) return [m[1], m[2]];
+      const mc = s.match(/^\s*C_reads\s*=\s*(\d+)\s*$/im);
+      const mt = s.match(/^\s*T_reads\s*=\s*(\d+)\s*$/im);
+      if (mc && mt) return [mc[1], mt[1]];
+      m = s.match(/27134[^\n]{0,220}?(?:AD|DP|depth|counts?)\s*[=:]\s*(\d+)\s*[,;/]\s*(\d+)/i);
+      return m ? [m[1], m[2]] : null;
+    }
+
     function tryRenderSmacaCheckSection(sec) {
       const t = (sec.title || '').trim();
       if (!/SMAca\s*CHECK/i.test(t)) return null;
@@ -4600,13 +4786,19 @@
       const m1 = raw.match(/SMN1_CN\s*=\s*(\S+)/i);
       const m2 = raw.match(/SMN2_CN\s*=\s*(\S+)/i);
       const mSilent = raw.match(/SilentCarrier\s*=\s*([^\s(]+)(?:\s*\([^)]*\))?/i);
+      const mCr = raw.match(/C_Ratio\s*=\s*(\S+)/i);
       const mCov = raw.match(/Cov\s*\(\s*1\s*,\s*2\s*\)\s*=\s*(.+)/i);
-      if (!m1 && !m2 && !mSilent && !mCov) return null;
+      const mCtRatio = raw.match(/CT_Ratio\s*=\s*(\S+)/i);
+      const ctPair = extractSmacaSnpCtCounts(raw);
+      if (!m1 && !m2 && !mSilent && !mCr && !mCov && !mCtRatio && !ctPair) return null;
       const rows = [];
       if (m1) rows.push(['SMN1', m1[1]]);
       if (m2) rows.push(['SMN2', m2[1]]);
       if (mSilent) rows.push(['Silent Carrier', mSilent[1]]);
-      if (mCov) rows.push(['Ratio', mCov[1].trim().replace(/\s+/g, ' ')]);
+      if (mCr) rows.push(['SMN1 cov fraction', mCr[1]]);
+      if (ctPair) rows.push(['SNP C,T counts', `${ctPair[0]} / ${ctPair[1]}`]);
+      if (mCtRatio) rows.push(['SNP C/T ratio', mCtRatio[1]]);
+      if (mCov) rows.push(['Cov(1,2)', mCov[1].trim().replace(/\s+/g, ' ')]);
       const inner = rows
         .map(([lab, val]) => `<dt>${escapeHtml(lab)}</dt><dd>${escapeHtml(val)}</dd>`)
         .join('');
@@ -4647,6 +4839,17 @@
       return `<dl class="dark-genes-kv">${inner}</dl>`;
     }
 
+    /** Same rules as server ``_infer_pipeline_section_high_risk`` — default low unless pipeline warns. */
+    function inferPipelineDangerForSection(sec) {
+      if (!sec || typeof sec !== 'object') return false;
+      const kind = sec.kind || 'normal';
+      if (kind === 'warning') return true;
+      const title = String(sec.title || '').toUpperCase();
+      if (title.includes('WARNING') && !title.includes('QUALITY')) return true;
+      const body = String(sec.body || '');
+      return /^\s*WARNING:\s*\S/im.test(body);
+    }
+
     /** Same mapping as server ``dark_genes_display_title`` — pipeline title → report title. */
     function darkGenesDisplayTitle(raw) {
       const t = String(raw || '').trim();
@@ -4663,21 +4866,96 @@
       return map[k] || t;
     }
 
-    function padDarkGenesSectionReviews(rev, n) {
+    function padDarkGenesSectionReviews(rev, n, sections) {
       const o = Array.isArray(rev) ? rev.slice() : [];
-      while (o.length < n) o.push({ approved: false, notes: '', risk: 'high' });
-      return o.slice(0, n).map(e => ({
-        approved: !!e.approved,
-        notes: String(e.notes || ''),
-        risk: e && e.risk === 'low' ? 'low' : 'high',
-      }));
+      while (o.length < n) o.push({ approved: false, notes: '' });
+      return o.slice(0, n).map((e, i) => {
+        const sec = sections && sections[i];
+        const approved = !!e.approved;
+        const notes = String(e.notes || '');
+        let risk;
+        if (e && Object.prototype.hasOwnProperty.call(e, 'risk') && e.risk != null && e.risk !== '') {
+          risk = e.risk === 'low' ? 'low' : 'high';
+        } else {
+          risk = inferPipelineDangerForSection(sec) ? 'high' : 'low';
+        }
+        return { approved, notes, risk };
+      });
+    }
+
+    /**
+     * Map section title → which block in #dark-genes-visual-evidence to scroll to (pipeline outputs).
+     * Returns { target, label } or null when no files or non-analysis section.
+     */
+    function darkGenesSectionVisualTarget(sec, ve) {
+      ve = ve || {};
+      const hasIgv = !!ve.igv_report_html;
+      const hasRep = ve.repeat_svgs && ve.repeat_svgs.length;
+      const hasPng = ve.snapshots_png && ve.snapshots_png.length;
+      if (!hasIgv && !hasRep && !hasPng) return null;
+
+      const raw = String(sec.title || '');
+      const tl = raw.toLowerCase();
+      const kind = sec.kind || 'normal';
+      if (kind === 'alert') return null;
+      if (/^overview$/i.test(raw.trim())) return null;
+
+      if (/expansion\s*hunter|fragile|fmr1/i.test(raw)) {
+        if (hasRep) return { target: 'repeat', label: 'Repeat plots' };
+        if (hasIgv) return { target: 'igv', label: 'FMR1 IGV' };
+        return null;
+      }
+      if (/smaca|smn|paraphase/i.test(tl)) {
+        if (hasIgv) return { target: 'igv', label: 'SMN / SMA IGV' };
+        return null;
+      }
+      if (/hba|alpha\s*thal/i.test(tl)) {
+        if (hasIgv) return { target: 'igv', label: 'HBA IGV' };
+        return null;
+      }
+      if (/cyp21|ca\s*h/i.test(tl)) {
+        if (hasIgv) return { target: 'igv', label: 'CYP21A2 IGV' };
+        return null;
+      }
+      if (/\bdmd\b/i.test(tl)) {
+        if (hasIgv) return { target: 'igv', label: 'DMD IGV' };
+        return null;
+      }
+      if (/large\s*sv|manta|gcnv/i.test(tl)) {
+        if (hasPng) return { target: 'png', label: 'SV images' };
+        if (hasIgv) return { target: 'igv', label: 'IGV' };
+        return null;
+      }
+      if (hasIgv) return { target: 'igv', label: 'IGV report' };
+      if (hasRep) return { target: 'repeat', label: 'Repeat plots' };
+      if (hasPng) return { target: 'png', label: 'Images' };
+      return null;
+    }
+
+    function scrollToDarkGenesVisual(target) {
+      const root = document.getElementById('dark-genes-visual-evidence');
+      if (!root) {
+        toast('No visual evidence files for this order (check analysis_dir/snapshots and reprocess).', false);
+        return;
+      }
+      let el = root;
+      if (target === 'repeat') el = root.querySelector('.dg-visual-evidence-repeat') || root;
+      else if (target === 'png') el = root.querySelector('.dg-visual-evidence-png') || root;
+      else if (target === 'igv') el = root.querySelector('.dg-visual-evidence-igv') || root;
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     /** Structured sections from backend (parse of *_detailed_report.txt) — lab-review layout */
-    function renderDarkGenesDetailedSections(sections, sectionReviews) {
+    function renderDarkGenesDetailedSections(sections, sectionReviews, ve) {
       if (!Array.isArray(sections) || !sections.length) return '';
-      const rev = padDarkGenesSectionReviews(sectionReviews, sections.length);
-      return sections.map((sec, i) => {
+      const rev = padDarkGenesSectionReviews(sectionReviews, sections.length, sections);
+      const chunks = [];
+      let firstRendered = true;
+      for (let i = 0; i < sections.length; i++) {
+        const sec = sections[i];
+        const rawTitle = String(sec.title || '').trim();
+        if (/^overview$/i.test(rawTitle)) continue;
+
         const title = escapeHtml(darkGenesDisplayTitle(sec.title));
         const kind = sec.kind || 'normal';
         const cls =
@@ -4693,14 +4971,12 @@
         const bodyHtml = kv
           ? `<div class="dark-genes-sec-body dark-genes-sec-body--kv">${kv}</div>`
           : `<pre class="dark-genes-sec-body">${escapeHtml(bodyNorm)}</pre>`;
-        const r = rev[i] || { approved: false, notes: '', risk: 'high' };
+        const r = rev[i] || { approved: false, notes: '', risk: 'low' };
         const risk = r.risk === 'low' ? 'low' : 'high';
         const riskWrapCls =
           risk === 'low' ? 'dark-genes-sec-title-wrap--low' : 'dark-genes-sec-title-wrap--high';
-        const rawTitle = String(sec.title || '').trim();
         const isQualityAlert = kind === 'alert';
-        const isOverview = /^overview$/i.test(rawTitle);
-        const skipReviewUi = isQualityAlert || isOverview;
+        const skipReviewUi = isQualityAlert;
         let actions = '';
         if (!skipReviewUi) {
           const apprCls = r.approved ? ' dg-approved' : '';
@@ -4709,20 +4985,37 @@
           const selHigh = risk === 'high' ? ' selected' : '';
           actions = `
           <div class="dark-genes-sec-actions">
-            <span class="dg-risk-label">Risk (PDF accent)</span>
-            <select class="dg-sec-risk" aria-label="Section risk for PDF accent">
-              <option value="high"${selHigh}>High</option>
-              <option value="low"${selLow}>Low</option>
-            </select>
-            <button type="button" class="btn dg-approve-btn${apprCls}">${btnLabel}</button>
-            <span class="dg-notes-label">Notes</span>
-            <textarea class="dg-sec-notes" rows="2" placeholder="Reviewer notes (shown in PDF when approved)">${escapeHtml(r.notes || '')}</textarea>
+            <div class="dg-actions-toolbar">
+              <div class="dg-risk-approve-group">
+                <select class="dg-sec-risk" aria-label="PDF section title color (green low, red high)">
+                  <option value="low"${selLow}>Low</option>
+                  <option value="high"${selHigh}>High</option>
+                </select>
+                <button type="button" class="btn dg-approve-btn${apprCls}">${btnLabel}</button>
+              </div>
+              <div class="dg-notes-wrap">
+                <label class="dg-notes-label" for="dg-sec-notes-${i}">Notes</label>
+                <textarea id="dg-sec-notes-${i}" class="dg-sec-notes" rows="6" placeholder="Optional — shown in PDF when section is approved">${escapeHtml(r.notes || '')}</textarea>
+              </div>
+            </div>
           </div>`;
         }
         const skipAttr = skipReviewUi ? ' data-dg-skip-review="1"' : '';
-        const titleBlock = `<div class="dark-genes-sec-title-wrap ${riskWrapCls}"><div class="dark-genes-sec-title">${title}</div></div>`;
-        return `<div class="${cls}" data-dg-idx="${i}"${skipAttr}>${titleBlock}${bodyHtml}${actions}</div>`;
-      }).join('');
+        const vis = darkGenesSectionVisualTarget(sec, ve);
+        const visBtn =
+          vis
+            ? `<button type="button" class="dg-sec-visual" data-dg-visual-target="${escapeHtml(vis.target)}" title="Jump to pipeline visuals below">${escapeHtml(vis.label)}</button>`
+            : '';
+        const titleBlock = `<div class="dark-genes-sec-title-wrap ${riskWrapCls}"><div class="dark-genes-sec-title-row"><div class="dark-genes-sec-title">${title}</div>${visBtn}</div></div>`;
+        chunks.push(
+          `<div class="${cls}" data-dg-idx="${i}"${skipAttr}>${titleBlock}${bodyHtml}${actions}</div>`
+        );
+        if (firstRendered && kind === 'alert') {
+          chunks.push('<div class="dark-genes-stack-spacer" aria-hidden="true"></div>');
+        }
+        firstRendered = false;
+      }
+      return chunks.join('');
     }
 
     function wireDarkGenesSaveOnce() {
@@ -4741,6 +5034,13 @@
         );
       });
       box.addEventListener('click', ev => {
+        const vb = ev.target.closest('.dg-sec-visual');
+        if (vb) {
+          ev.preventDefault();
+          const t = vb.getAttribute('data-dg-visual-target');
+          if (t) scrollToDarkGenesVisual(t);
+          return;
+        }
         const ab = ev.target.closest('.dg-approve-btn');
         if (ab) {
           ev.preventDefault();
@@ -4763,12 +5063,20 @@
       }
       const stack = qs('darkGenesContent')?.querySelector('.dark-genes-stack');
       if (!stack) return;
-      const secs = stack.querySelectorAll('.dark-genes-sec');
+      const dg = reviewData.dark_genes;
+      const detailed = Array.isArray(dg && dg.detailed_sections) ? dg.detailed_sections : [];
+      const n = detailed.length;
+      const byIdx = new Map();
+      stack.querySelectorAll('.dark-genes-sec[data-dg-idx]').forEach(el => {
+        const idx = parseInt(el.getAttribute('data-dg-idx'), 10);
+        if (!Number.isNaN(idx)) byIdx.set(idx, el);
+      });
       const section_reviews = [];
-      secs.forEach(el => {
-        if (el.getAttribute('data-dg-skip-review') === '1') {
-          section_reviews.push({ approved: false, notes: '', risk: 'high' });
-          return;
+      for (let i = 0; i < n; i++) {
+        const el = byIdx.get(i);
+        if (!el || el.getAttribute('data-dg-skip-review') === '1') {
+          section_reviews.push({ approved: false, notes: '', risk: 'low' });
+          continue;
         }
         const btn = el.querySelector('.dg-approve-btn');
         const ta = el.querySelector('.dg-sec-notes');
@@ -4779,7 +5087,7 @@
           notes: ta && ta.value ? String(ta.value).trim() : '',
           risk,
         });
-      });
+      }
       if (!section_reviews.length) {
         toast('No detailed sections to save', false);
         return;
@@ -4839,14 +5147,31 @@
       if (det && (!detSec || !detSec.length)) {
         detSec = parseDarkGenesDetailedToSections(det);
       }
+      const ve = dg.visual_evidence || {};
+      const hasVe = !!(
+        ve.igv_report_html ||
+        (ve.repeat_svgs && ve.repeat_svgs.length) ||
+        (ve.snapshots_png && ve.snapshots_png.length)
+      );
+      if (hasVe && reviewData.order_id) {
+        html += `<div id="dark-genes-visual-evidence" class="dark-genes-visual-evidence">
+          <h4 class="dark-genes-section-title" style="margin-top:0">Visual evidence (IGV)</h4>
+          <p class="muted" style="font-size:11px;margin:0 0 10px">Unified igv-reports output includes SMN1/SMN2/SMA, HBA, CYP21A2, Fragile X (FMR1), and other loci. ExpansionHunter repeat plots (SVG) are listed when present.</p>
+          <div class="dg-visual-evidence-igv"></div>
+          <div class="dg-visual-evidence-repeat"></div>
+          <div class="dg-visual-evidence-png"></div>
+        </div>`;
+      }
       if (det || detSec.length) {
-        html += `<h4 class="dark-genes-section-title" style="margin-top:16px">Detailed report</h4>`;
+        html += `<details class="dg-report-details" open>
+          <summary class="dg-report-summary">Detailed report <span class="dg-report-summary-hint">Supplementary blocks · collapse to save space</span></summary>
+          <div class="dg-report-details-body">`;
         if (detSec.length) {
           const srv = dg.section_reviews;
-          html += `<div class="dark-genes-stack">${renderDarkGenesDetailedSections(detSec, srv)}</div>`;
+          html += `<div class="dark-genes-stack">${renderDarkGenesDetailedSections(detSec, srv, ve)}</div>`;
           html += `<div class="dark-genes-save-row">
             <button type="button" class="btn primary" id="btnSaveDarkGenesReviews">Save section reviews</button>
-            <span class="muted" style="font-size:11px">Save to persist notes, risk (green vs red title accent in PDF), and approval. The customer PDF uses the same section titles and lab-facing values as here (SMAca/HBA/CYP21A2-style labels), then your notes below — not raw pipeline monospaced text. Overview and quality-warning blocks are never included.</span>
+            <span class="muted" style="font-size:11px;line-height:1.45;max-width:52rem">Persists approval, PDF tone, and notes. Default tone is low (green) unless the pipeline flagged a warning. Customer PDF uses the same labels as below. Overview / quality-alert blocks are excluded from the PDF.</span>
           </div>`;
           if (det) html += darkGenesRawDetails('Raw detailed text (full, for audit)', det, 120000);
         } else {
@@ -4858,6 +5183,7 @@
             html += `<pre style="white-space:pre-wrap;font-size:11px;line-height:1.45;max-height:45vh;overflow:auto;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);margin:0">${escapeHtml(det.slice(0, 120000))}</pre>`;
           }
         }
+        html += `</div></details>`;
       }
       if (txt) {
         html += darkGenesRawDetails('Raw summary text (pipeline TSV, audit)', txt, null);
@@ -4867,6 +5193,10 @@
       }
       box.innerHTML = html;
       wireDarkGenesSaveOnce();
+      if (hasVe && reviewData.order_id) {
+        const vhost = box.querySelector('#dark-genes-visual-evidence');
+        void mountDarkGenesVisualEvidence(vhost, ve, reviewData.order_id);
+      }
     }
 
     // ── Statistics ──
@@ -4916,6 +5246,10 @@
           (v.variant_id || '').toLowerCase().includes(q) ||
           (v.hgvsc || '').toLowerCase().includes(q) ||
           (v.hgvsp || '').toLowerCase().includes(q) ||
+          (v.clinical_nm || '').toLowerCase().includes(q) ||
+          (v.transcript || '').toLowerCase().includes(q) ||
+          (v.canonical_enst || '').toLowerCase().includes(q) ||
+          (v.mane_select || '').toLowerCase().includes(q) ||
           (v.acmg_classification || '').toLowerCase().includes(q) ||
           (`${v.chrom}:${v.pos}`).includes(q) ||
           getVariantDisease(v).toLowerCase().includes(q)
@@ -4968,9 +5302,11 @@
         const disease = getVariantDisease(v);
         const tr = document.createElement('tr');
         tr.className = 'variant-row' + (isSelected ? ' selected' : '');
+        const txTitle = [v.clinical_nm && `NM: ${v.clinical_nm}`, v.transcript && `ENST: ${v.transcript}`, v.canonical_enst && `MANE ENST: ${v.canonical_enst}`].filter(Boolean).join(' · ');
         tr.innerHTML = `
           <td><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleVariant('${v.variant_id}', this.checked)" /></td>
           <td style="font-weight:600">${v.gene || '-'}</td>
+          <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px" title="${txTitle || ''}">${variantTranscriptNmCellHtml(v)}</td>
           <td class="muted" style="max-width:150px;overflow:hidden;text-overflow:ellipsis" title="${v.hgvsc || ''}">${v.hgvsc || '-'}</td>
           <td class="muted" style="max-width:150px;overflow:hidden;text-overflow:ellipsis" title="${v.hgvsp || ''}">${v.hgvsp || '-'}</td>
           <td>${v.effect || '-'}</td>
@@ -4997,8 +5333,6 @@
       checkboxes.forEach(cb => {
         cb.checked = masterCb.checked;
         const row = cb.closest('tr');
-        const gene = row.querySelector('td:nth-child(2)').textContent.trim();
-        // Find variant_id by matching gene and other info
         const vid = findVariantIdFromRow(row);
         if (vid) {
           if (masterCb.checked) selectedVariants.add(vid);
@@ -5010,10 +5344,10 @@
     }
 
     function findVariantIdFromRow(row) {
-      // Extract gene and hgvsc from row to find variant_id
+      // Extract gene and hgvsc from row to find variant_id (checkbox, gene, transcript NM, HGVSc, …)
       const cells = row.querySelectorAll('td');
       const gene = cells[1]?.textContent.trim();
-      const hgvsc = cells[2]?.textContent.trim();
+      const hgvsc = cells[3]?.textContent.trim();
       if (!reviewData) return null;
       const v = (reviewData.variants || []).find(v => v.gene === gene && (v.hgvsc || '-') === hgvsc);
       return v ? v.variant_id : null;
@@ -5061,7 +5395,8 @@
         </div>
         <div class="detail-grid">
           <div class="detail-item"><div class="detail-label">Position</div><div class="detail-value">${v.chrom}:${v.pos} ${v.ref}>${v.alt}</div></div>
-          <div class="detail-item"><div class="detail-label">Gene / Transcript</div><div class="detail-value">${v.gene} / ${v.transcript || v.canonical_enst || '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">RefSeq (NM)</div><div class="detail-value">${v.clinical_nm || '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">Transcript (Ensembl)</div><div class="detail-value">${v.transcript || v.canonical_enst || '-'}</div></div>
           <div class="detail-item"><div class="detail-label">HGVSc</div><div class="detail-value">${v.hgvsc || '-'}</div></div>
           <div class="detail-item"><div class="detail-label">HGVSp</div><div class="detail-value">${v.hgvsp || '-'}</div></div>
           <div class="detail-item"><div class="detail-label">Effect</div><div class="detail-value">${v.effect || '-'}</div></div>

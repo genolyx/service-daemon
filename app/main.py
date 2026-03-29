@@ -1240,15 +1240,36 @@ async def get_order_result(order_id: str):
         with open(result_json_path, "r", encoding="utf-8") as f:
             result_data = json.load(f)
         if isinstance(result_data, dict):
-            from app.services.carrier_screening.dark_genes import ensure_dark_genes_detailed_sections
+            from app.services import get_plugin
+            from app.services.carrier_screening.dark_genes import (
+                ensure_dark_genes_detailed_sections,
+                merge_visual_evidence_across_roots,
+            )
 
             result_data = ensure_dark_genes_detailed_sections(dict(result_data))
+            if job.service_code == "carrier_screening":
+                pl = get_plugin("carrier_screening")
+                dg = result_data.get("dark_genes")
+                if (
+                    pl is not None
+                    and hasattr(pl, "dark_genes_search_roots")
+                    and isinstance(dg, dict)
+                    and dg.get("status") not in ("not_found", "error")
+                ):
+                    roots = pl.dark_genes_search_roots(job)
+                    dg2 = dict(dg)
+                    dg2["visual_evidence"] = merge_visual_evidence_across_roots(roots)
+                    result_data = {**result_data, "dark_genes": dg2}
         if store and isinstance(result_data, dict):
             await asyncio.to_thread(store.set_result_json, order_id, result_data)
         if isinstance(result_data, dict):
-            result_data = dict(result_data)
-            result_data["order_params"] = job.params or {}
-            return JSONResponse(content=result_data, headers=_RESULT_JSON_CACHE_HEADERS)
+            from app.services.carrier_screening.review import normalize_variants_for_portal
+
+            payload = dict(result_data)
+            payload["order_params"] = job.params or {}
+            if isinstance(payload.get("variants"), list):
+                payload["variants"] = normalize_variants_for_portal(payload["variants"])
+            return JSONResponse(content=payload, headers=_RESULT_JSON_CACHE_HEADERS)
         return JSONResponse(
             content={"data": result_data, "order_params": job.params or {}},
             headers=_RESULT_JSON_CACHE_HEADERS,
@@ -1258,12 +1279,33 @@ async def get_order_result(order_id: str):
         cached = await asyncio.to_thread(store.get_result_json, order_id)
         if cached is not None:
             if isinstance(cached, dict):
-                from app.services.carrier_screening.dark_genes import ensure_dark_genes_detailed_sections
+                from app.services import get_plugin
+                from app.services.carrier_screening.dark_genes import (
+                    ensure_dark_genes_detailed_sections,
+                    merge_visual_evidence_across_roots,
+                )
 
                 out = ensure_dark_genes_detailed_sections(dict(cached))
-                out = dict(out)
-                out["order_params"] = job.params or {}
-                return JSONResponse(content=out, headers=_RESULT_JSON_CACHE_HEADERS)
+                if job.service_code == "carrier_screening":
+                    pl = get_plugin("carrier_screening")
+                    dg = out.get("dark_genes")
+                    if (
+                        pl is not None
+                        and hasattr(pl, "dark_genes_search_roots")
+                        and isinstance(dg, dict)
+                        and dg.get("status") not in ("not_found", "error")
+                    ):
+                        roots = pl.dark_genes_search_roots(job)
+                        dg2 = dict(dg)
+                        dg2["visual_evidence"] = merge_visual_evidence_across_roots(roots)
+                        out = {**out, "dark_genes": dg2}
+                from app.services.carrier_screening.review import normalize_variants_for_portal
+
+                payload = dict(out)
+                payload["order_params"] = job.params or {}
+                if isinstance(payload.get("variants"), list):
+                    payload["variants"] = normalize_variants_for_portal(payload["variants"])
+                return JSONResponse(content=payload, headers=_RESULT_JSON_CACHE_HEADERS)
             return JSONResponse(
                 content={"data": cached, "order_params": job.params or {}},
                 headers=_RESULT_JSON_CACHE_HEADERS,
@@ -1313,6 +1355,7 @@ async def _dark_genes_review_impl(order_id: str, body: DarkGenesReviewRequest) -
         from app.services.carrier_screening.dark_genes import (
             align_section_reviews,
             ensure_dark_genes_detailed_sections,
+            _coerce_risk_level,
         )
 
         with open(path, "r", encoding="utf-8") as f:
@@ -1328,16 +1371,17 @@ async def _dark_genes_review_impl(order_id: str, body: DarkGenesReviewRequest) -
                 "so dark_genes has supplementary detailed content."
             )
         n = len(sections)
-        incoming = [
-            {
+        incoming = []
+        for x in body.section_reviews:
+            item = {
                 "approved": bool(x.approved),
                 "notes": (x.notes or "")[:8000],
-                "risk": x.risk,
             }
-            for x in body.section_reviews
-        ]
+            if x.risk is not None:
+                item["risk"] = _coerce_risk_level(x.risk)
+            incoming.append(item)
         dg2 = dict(dg)
-        dg2["section_reviews"] = align_section_reviews(incoming, n)
+        dg2["section_reviews"] = align_section_reviews(incoming, n, sections)
         data["dark_genes"] = dg2
         write_carrier_result_json_sync(job, data)
         return data
@@ -1744,6 +1788,14 @@ def _order_artifact_roots(job: Job) -> List[str]:
                 roots.append(cro)
         except Exception:
             pass
+        # Nextflow outdir (IGV html, repeat SVGs under snapshots/ / repeat/)
+        ad = (job.analysis_dir or "").strip()
+        if ad:
+            try:
+                if os.path.isdir(ad):
+                    roots.append(ad)
+            except OSError:
+                pass
     if job.output_dir:
         roots.append(job.output_dir)
     if (job.service_code or "").strip() == "carrier_screening":

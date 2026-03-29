@@ -311,6 +311,43 @@ class CarrierScreeningPlugin(ServicePlugin):
             out.append(cand)
         return out
 
+    def dark_genes_search_roots(self, job: Job) -> List[str]:
+        """
+        Same directories as ``generate_result_json`` uses for dark-gene text + visual scans
+        (analysis, output, layout extras). Used to merge IGV/repeat paths across roots.
+        """
+        dirs = self._get_dirs(job)
+        analysis_dir = dirs["analysis"]
+        output_dir = dirs["output"]
+        ad = (analysis_dir or output_dir or "").strip()
+        od = (output_dir or "").strip()
+        search_roots: List[str] = []
+        seen_real: set = set()
+
+        def _add_dark_root(path: Optional[str]) -> None:
+            if not path or not str(path).strip():
+                return
+            p = str(path).strip()
+            if not os.path.isdir(p):
+                return
+            try:
+                r = os.path.realpath(p)
+            except OSError:
+                return
+            if r in seen_real:
+                return
+            seen_real.add(r)
+            search_roots.append(os.path.abspath(p))
+
+        try:
+            _add_dark_root(ad)
+            _add_dark_root(od)
+            for extra in self._qc_extra_search_dirs(job, analysis_dir):
+                _add_dark_root(extra)
+        except OSError:
+            pass
+        return search_roots
+
     def _qc_more_roots_from_outputs(self, job: Job) -> List[str]:
         """
         alignment QC(flagstat, MultiQC, Picard)가 analysis 트리가 아니라
@@ -1379,6 +1416,12 @@ class CarrierScreeningPlugin(ServicePlugin):
                 metric_image_search_roots=metric_image_roots,
                 analysis_dir=analysis_dir,
                 dark_genes_extra_roots=dark_roots,
+                review_build_metadata={
+                    "main_vcf": main_vcf,
+                    "annotated_vcf": annotated_vcf,
+                    "vep_preparsed_keys": len(vep_annotations) if vep_annotations else 0,
+                    "vep_annotation_enabled": bool(is_vep_vcf),
+                },
             )
 
             # ── 13. variants.tsv 생성 ──

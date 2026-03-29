@@ -122,6 +122,17 @@ def parse_csq_record(
     transcripts.sort(key=lambda t: impact_order.get(t.get("IMPACT", "MODIFIER"), 3))
     best = transcripts[0]
 
+    def _sym_ok(t: Dict[str, str]) -> bool:
+        s = (t.get("SYMBOL") or "").strip()
+        return bool(s and s != ".")
+
+    # Top hit can be intergenic / regulatory with empty SYMBOL; prefer a gene-bearing CSQ row.
+    if transcripts and not _sym_ok(best):
+        with_sym = [t for t in transcripts if _sym_ok(t)]
+        if with_sym:
+            with_sym.sort(key=lambda t: impact_order.get(t.get("IMPACT", "MODIFIER"), 3))
+            best = with_sym[0]
+
     return _normalize_csq_record(best)
 
 
@@ -182,7 +193,8 @@ def _normalize_csq_record(record: Dict[str, str]) -> Dict[str, Any]:
 
     return {
         # 유전자/전사체 정보 (annotator.py 호환 키)
-        "gene": _clean(record.get("SYMBOL", "")),
+        # SYMBOL empty: fall back to VEP Gene (Ensembl gene id, e.g. ENSG…) for review visibility
+        "gene": _clean(record.get("SYMBOL", "")) or _clean(record.get("Gene", "")),
         "transcript": transcript,
         "hgvsc": hgvsc,
         "hgvsp": hgvsp,

@@ -37,6 +37,44 @@ from ...datetime_kst import now_kst_iso
 logger = logging.getLogger(__name__)
 
 
+def normalize_variants_for_portal(variants: Any) -> Any:
+    """
+    Coalesce alternate JSON keys and gnomAD fallbacks for the review table.
+
+    Some pipelines or cached snapshots may use ``Gene``/``HGVSc`` or omit ``gnomad_af``
+    when exomes/genomes AF are present.
+    """
+    if not isinstance(variants, list):
+        return variants
+    out: List[Dict[str, Any]] = []
+    for raw in variants:
+        if not isinstance(raw, dict):
+            out.append(raw)  # type: ignore[arg-type]
+            continue
+        v = dict(raw)
+        if not (v.get("gene") or "").strip():
+            v["gene"] = (v.get("Gene") or v.get("GENE_SYMBOL") or "").strip()
+        if not (v.get("hgvsc") or "").strip():
+            v["hgvsc"] = (v.get("HGVSc") or v.get("c_hgvs") or "").strip()
+        if not (v.get("hgvsp") or "").strip():
+            v["hgvsp"] = (v.get("HGVSp") or v.get("p_hgvs") or "").strip()
+        if not (v.get("effect") or "").strip():
+            v["effect"] = (v.get("Consequence") or "").strip()
+        if not (v.get("clinical_nm") or "").strip():
+            ms = (v.get("mane_select") or "").strip()
+            if ms.startswith("NM_"):
+                v["clinical_nm"] = ms
+        if v.get("gnomad_af") is None or v.get("gnomad_af") == "":
+            ex = v.get("gnomad_exomes_af")
+            gn = v.get("gnomad_genomes_af")
+            if ex is not None and ex != "":
+                v["gnomad_af"] = ex
+            elif gn is not None and gn != "":
+                v["gnomad_af"] = gn
+        out.append(v)
+    return out
+
+
 # ══════════════════════════════════════════════════════════════
 # QC Summary Extraction
 # ══════════════════════════════════════════════════════════════
@@ -1521,6 +1559,30 @@ def _build_disease_groups_for_portal(
     return out
 
 
+def _carrier_result_metadata_block(
+    review_build_metadata: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Fixed metadata + optional ``review_build`` (VCF paths used for variant table)."""
+    meta: Dict[str, Any] = {
+        "pipeline_version": "carrier-screening-v2.0",
+        "annotation_databases": {
+            "clinvar": True,
+            "gnomad": True,
+            "snpeff": True,
+            "clingen": True,
+            "mane": True,
+            "hpo": True,
+            "hgmd": False,  # 라이선스 필요
+            "curated_db": True,
+            "disease_gene": True,
+        },
+        "acmg_mode": "rule_based",
+    }
+    if review_build_metadata:
+        meta["review_build"] = dict(review_build_metadata)
+    return meta
+
+
 def generate_result_json(
     annotated_variants: List[Dict[str, Any]],
     acmg_results: List[Dict[str, Any]],
@@ -1534,6 +1596,7 @@ def generate_result_json(
     metric_image_search_roots: Optional[List[str]] = None,
     analysis_dir: Optional[str] = None,
     dark_genes_extra_roots: Optional[List[str]] = None,
+    review_build_metadata: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Portal 리뷰 페이지용 result.json을 생성합니다.
@@ -1618,6 +1681,12 @@ def generate_result_json(
                     "No dark_genes summary/detailed report under Nextflow outdir "
                     "(expected summary/*_summary_report.txt or *_summary_report.txt in outdir root). "
                     f"Tried: {search_roots}"
+                )
+            else:
+                from .dark_genes import merge_visual_evidence_across_roots
+
+                dark_genes_block["visual_evidence"] = merge_visual_evidence_across_roots(
+                    search_roots
                 )
     except Exception as e:
         logger.warning("[generate_result_json] dark_genes collection failed: %s", e)
@@ -1783,21 +1852,7 @@ def generate_result_json(
         "dark_genes": dark_genes_block,
 
         # 메타데이터
-        "metadata": {
-            "pipeline_version": "carrier-screening-v2.0",
-            "annotation_databases": {
-                "clinvar": True,
-                "gnomad": True,
-                "snpeff": True,
-                "clingen": True,
-                "mane": True,
-                "hpo": True,
-                "hgmd": False,  # 라이선스 필요
-                "curated_db": True,
-                "disease_gene": True,
-            },
-            "acmg_mode": "rule_based",
-        },
+        "metadata": _carrier_result_metadata_block(review_build_metadata),
     }
 
     output_path = os.path.join(output_dir, "result.json")

@@ -133,9 +133,9 @@ class DarkGenesSectionReviewItem(BaseModel):
 
     approved: bool = Field(default=False, description="Include this block in PDF/report supplement")
     notes: str = Field(default="", description="Reviewer notes; shown in PDF when approved")
-    risk: Literal["low", "high"] = Field(
-        default="high",
-        description="Reviewer risk level: PDF/portal title accent is green (low) or red (high)",
+    risk: Optional[Literal["low", "high"]] = Field(
+        default=None,
+        description="PDF/portal title accent; omit to use pipeline default (low unless WARNING / warning-kind)",
     )
 
 

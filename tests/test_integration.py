@@ -411,7 +411,7 @@ def test_dark_genes_pdf_only_approved_sections():
         "detailed_sections": [
             {
                 "title": "SMAca CHECK (Silent Carrier + Coverage)",
-                "body": "SMN1_CN=3\nSMN2_CN=3\nCov(1,2)=2.82, 3.06\nSilentCarrier=False",
+                "body": "SMN1_CN=3\nSMN2_CN=3\nCov(1,2)=2.82, 3.06\nSilentCarrier=False\nCT_Ratio=1:1\nC_T=51,49",
                 "kind": "normal",
             },
             {"title": "OTHER SECTION", "body": "beta line", "kind": "normal"},
@@ -425,10 +425,28 @@ def test_dark_genes_pdf_only_approved_sections():
     html_out = out.get("report_detailed_html") or ""
     assert "Spinal Muscular Atrophy" in html_out
     assert "SMN1" in html_out
+    assert "SNP C/T ratio" in html_out
+    assert "1:1" in html_out
+    assert "51 / 49" in html_out
     assert "ok" in html_out
     assert "SMN1_CN" not in html_out
     assert "OTHER SECTION" not in html_out
-    assert "#be123c" in html_out  # default high-risk PDF title accent
+    assert "#15803d" in html_out  # no pipeline WARNING → low-risk green accent by default
+
+    block_warn = {
+        "status": "found",
+        "detailed_text": "",
+        "detailed_sections": [
+            {
+                "title": "HBA ANALYSIS (Alpha Thalassemia - Dosage)",
+                "body": "Est_CN=2\nRatio=1\nWARNING: allele imbalance",
+                "kind": "normal",
+            },
+        ],
+        "section_reviews": [{"approved": True, "notes": ""}],
+    }
+    html_warn = (dark_genes_for_pdf(block_warn).get("report_detailed_html") or "")
+    assert "#be123c" in html_warn  # pipeline WARNING line → high-risk red accent
 
     block_low = dict(block)
     block_low["section_reviews"] = [

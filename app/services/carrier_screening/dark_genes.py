@@ -39,11 +39,47 @@ def _coerce_approved_bool(val: Any) -> bool:
 
 
 def _coerce_risk_level(val: Any) -> str:
-    """``low`` (green accent) vs ``high`` (red accent); default high for legacy JSON."""
+    """``low`` (green accent) vs ``high`` (red accent); explicit strings only."""
     s = str(val).strip().lower() if val is not None else ""
     if s == "low":
         return "low"
     return "high"
+
+
+def _infer_pipeline_section_high_risk(sec: Dict[str, Any]) -> bool:
+    """
+    True when the pipeline marked this block as risky (``WARNING:`` line or warning-kind section).
+    Used when ``section_reviews[i].risk`` is absent — default is **low** unless this is true.
+    """
+    if not sec or not isinstance(sec, dict):
+        return False
+    k = _infer_section_kind(sec)
+    if k == "warning":
+        return True
+    tl = (sec.get("title") or "").strip().upper()
+    if "WARNING" in tl and "QUALITY" not in tl:
+        return True
+    body = (sec.get("body") or "")
+    if re.search(r"(?im)^\s*WARNING:\s*\S", body):
+        return True
+    return False
+
+
+def effective_risk_for_section(
+    rev: Dict[str, Any],
+    sec: Optional[Dict[str, Any]],
+) -> str:
+    """
+    Stored ``risk`` when set (reviewer override). When missing/empty, infer from pipeline
+    (high if WARNING / warning-kind, else low).
+    """
+    if rev:
+        r = rev.get("risk")
+        if r is not None and str(r).strip() != "":
+            return _coerce_risk_level(r)
+    if sec is not None:
+        return "high" if _infer_pipeline_section_high_risk(sec) else "low"
+    return "low"
 
 
 def _risk_heading_colors(risk_level: str) -> Tuple[str, str]:
@@ -232,6 +268,87 @@ def sanitize_dark_genes_payload_for_pdf_render(report_data: Dict[str, Any]) -> N
     dg.pop("report_summary", None)
     dg.pop("report_detailed", None)
 
+def discover_dark_gene_visual_evidence(analysis_dir: str) -> Dict[str, Any]:
+    """
+    Find IGV ``igv-reports`` HTML and ExpansionHunter REViewer SVGs under the Nextflow outdir.
+
+    Paths are **relative to analysis_dir** for use with ``/order/{id}/file/...`` (after adding
+    ``analysis_dir`` to artifact roots). SMN1/SMN2/SMA loci live inside the unified HTML report.
+    """
+    base = (analysis_dir or "").strip()
+    out: Dict[str, Any] = {
+        "igv_report_html": None,
+        "repeat_svgs": [],
+        "snapshots_png": [],
+    }
+    if not base or not os.path.isdir(base):
+        return out
+
+    snap_roots = (
+        os.path.join(base, "snapshots"),
+        os.path.join(base, "results", "snapshots"),
+    )
+    igv_html: Optional[str] = None
+    for snap in snap_roots:
+        if not os.path.isdir(snap):
+            continue
+        htmls = sorted(glob.glob(os.path.join(snap, "*_visual_report.html")))
+        if not htmls:
+            htmls = sorted(glob.glob(os.path.join(snap, "*.html")))
+        if htmls and not igv_html:
+            igv_html = os.path.relpath(htmls[0], base)
+        for png in sorted(glob.glob(os.path.join(snap, "*.png"))):
+            rel = os.path.relpath(png, base)
+            if rel not in out["snapshots_png"]:
+                out["snapshots_png"].append(rel)
+    out["igv_report_html"] = igv_html
+
+    rep_roots = (
+        os.path.join(base, "repeat"),
+        os.path.join(base, "results", "repeat"),
+    )
+    for rep in rep_roots:
+        if not os.path.isdir(rep):
+            continue
+        for svg in sorted(glob.glob(os.path.join(rep, "*.svg"))):
+            rel = os.path.relpath(svg, base)
+            if rel not in out["repeat_svgs"]:
+                out["repeat_svgs"].append(rel)
+
+    return out
+
+
+def merge_visual_evidence_across_roots(search_roots: List[str]) -> Dict[str, Any]:
+    """
+    IGV HTML / repeat SVGs may live under a different directory than the first root that
+    yielded ``summary/*.txt`` (e.g. Nextflow ``outdir`` vs mirrored ``output/``). Merge
+    discoveries so relative paths like ``snapshots/foo.html`` resolve via
+    ``/order/{id}/file/...`` (artifact roots include analysis + output).
+    """
+    out: Dict[str, Any] = {
+        "igv_report_html": None,
+        "repeat_svgs": [],
+        "snapshots_png": [],
+    }
+    seen_svg: set = set()
+    seen_png: set = set()
+    for root in search_roots:
+        if not root or not os.path.isdir(root):
+            continue
+        ev = discover_dark_gene_visual_evidence(root)
+        if ev.get("igv_report_html") and not out["igv_report_html"]:
+            out["igv_report_html"] = ev["igv_report_html"]
+        for p in ev.get("repeat_svgs") or []:
+            if p not in seen_svg:
+                seen_svg.add(p)
+                out["repeat_svgs"].append(p)
+        for p in ev.get("snapshots_png") or []:
+            if p not in seen_png:
+                seen_png.add(p)
+                out["snapshots_png"].append(p)
+    return out
+
+
 _MAX_READ_BYTES = 500_000
 # Order matters: first pattern group with any match wins (prefer summary/ subfolder).
 _SUMMARY_GLOBS = (
@@ -368,20 +485,39 @@ def parse_detailed_report_sections(text: str) -> List[Dict[str, Any]]:
 def align_section_reviews(
     prev: Optional[List[Any]],
     n: int,
+    sections: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
-    """Align portal ``section_reviews`` to ``detailed_sections`` length (index-matched)."""
+    """Align portal ``section_reviews`` to ``detailed_sections`` length (index-matched).
+
+    ``risk`` defaults from the pipeline when missing: **low** unless the section has a
+    ``WARNING:`` line or warning-kind title; reviewer-stored ``risk`` always wins.
+    """
     out: List[Dict[str, Any]] = []
     for i in range(n):
+        sec_i = sections[i] if sections and i < len(sections) else None
         if prev and i < len(prev) and isinstance(prev[i], dict):
+            p = prev[i]
+            pr = p.get("risk")
+            if pr is not None and str(pr).strip() != "":
+                risk = _coerce_risk_level(pr)
+            else:
+                risk = (
+                    "high"
+                    if (sec_i and _infer_pipeline_section_high_risk(sec_i))
+                    else "low"
+                )
             out.append(
                 {
-                    "approved": _coerce_approved_bool(prev[i].get("approved")),
-                    "notes": str(prev[i].get("notes") or "")[:8000],
-                    "risk": _coerce_risk_level(prev[i].get("risk")),
+                    "approved": _coerce_approved_bool(p.get("approved")),
+                    "notes": str(p.get("notes") or "")[:8000],
+                    "risk": risk,
                 }
             )
         else:
-            out.append({"approved": False, "notes": "", "risk": "high"})
+            risk = (
+                "high" if (sec_i and _infer_pipeline_section_high_risk(sec_i)) else "low"
+            )
+            out.append({"approved": False, "notes": "", "risk": risk})
     return out
 
 
@@ -397,7 +533,7 @@ def merge_dark_genes_reviews(
     sections = out.get("detailed_sections")
     if not isinstance(sections, list) or len(sections) == 0:
         return out
-    out["section_reviews"] = align_section_reviews(prev_rev, len(sections))
+    out["section_reviews"] = align_section_reviews(prev_rev, len(sections), sections)
     return out
 
 
@@ -426,7 +562,7 @@ def ensure_dark_genes_detailed_sections(result_data: Dict[str, Any]) -> Dict[str
     dg2["detailed_sections"] = new_sections
     prev_rev = dg.get("section_reviews")
     if isinstance(prev_rev, list) and new_sections:
-        dg2["section_reviews"] = align_section_reviews(prev_rev, len(new_sections))
+        dg2["section_reviews"] = align_section_reviews(prev_rev, len(new_sections), new_sections)
     out["dark_genes"] = dg2
     return out
 
@@ -498,6 +634,38 @@ def _dl_kv_pdf_rows(rows: List[Tuple[str, str]]) -> str:
     )
 
 
+def _smaca_extract_snp_ct_counts(raw: str) -> Optional[Tuple[str, str]]:
+    """
+    Best-effort SMN1/SMN2-discriminating SNP read counts from pipeline text.
+
+    Tries several ``key=value`` styles (and a loose g.27134 depth line) so the
+    portal/PDF can show C/T next to ``C_Ratio`` when the detailed report includes them.
+    """
+    if not (raw or "").strip():
+        return None
+    patterns = (
+        r"CT_counts\s*=\s*(\d+)\s*,\s*(\d+)",
+        r"C_T\s*=\s*(\d+)\s*,\s*(\d+)",
+        r"SMN_C_T\s*=\s*(\d+)\s*,\s*(\d+)",
+    )
+    for pat in patterns:
+        m = re.search(pat, raw, re.I)
+        if m:
+            return (m.group(1), m.group(2))
+    mc = re.search(r"(?im)^\s*C_reads\s*=\s*(\d+)\s*$", raw)
+    mt = re.search(r"(?im)^\s*T_reads\s*=\s*(\d+)\s*$", raw)
+    if mc and mt:
+        return (mc.group(1), mt.group(1))
+    m = re.search(
+        r"27134[^\n]{0,220}?(?:AD|DP|depth|counts?)\s*[=:]\s*(\d+)\s*[,;/]\s*(\d+)",
+        raw,
+        re.I,
+    )
+    if m:
+        return (m.group(1), m.group(2))
+    return None
+
+
 def _try_smaca_kv_html(title: str, body: str) -> Optional[str]:
     """Match portal ``tryRenderSmacaCheckSection`` (SMN1/SMN2/Silent Carrier/Ratio)."""
     if not re.search(r"SMAca\s*CHECK", title, re.I):
@@ -506,8 +674,13 @@ def _try_smaca_kv_html(title: str, body: str) -> Optional[str]:
     m1 = re.search(r"SMN1_CN\s*=\s*(\S+)", raw, re.I)
     m2 = re.search(r"SMN2_CN\s*=\s*(\S+)", raw, re.I)
     m_silent = re.search(r"SilentCarrier\s*=\s*([^\s(]+)(?:\s*\([^)]*\))?", raw, re.I)
+    # Pipeline: C_Ratio = avg_cov_SMN1 / (avg_cov_SMN1 + avg_cov_SMN2), not allele C/T.
+    m_cr = re.search(r"C_Ratio\s*=\s*(\S+)", raw, re.I)
     m_cov = re.search(r"Cov\s*\(\s*1\s*,\s*2\s*\)\s*=\s*(.+)", raw, re.I)
-    if not m1 and not m2 and not m_silent and not m_cov:
+    # Optional: g.27134-style SNP read split (emit from pipeline as key=value).
+    m_ct_ratio = re.search(r"CT_Ratio\s*=\s*(\S+)", raw, re.I)
+    ct_pair = _smaca_extract_snp_ct_counts(raw)
+    if not m1 and not m2 and not m_silent and not m_cr and not m_cov and not m_ct_ratio and not ct_pair:
         return None
     rows: List[Tuple[str, str]] = []
     if m1:
@@ -516,8 +689,14 @@ def _try_smaca_kv_html(title: str, body: str) -> Optional[str]:
         rows.append(("SMN2", m2.group(1)))
     if m_silent:
         rows.append(("Silent Carrier", m_silent.group(1)))
+    if m_cr:
+        rows.append(("SMN1 cov fraction", m_cr.group(1)))
+    if ct_pair:
+        rows.append(("SNP C,T counts", f"{ct_pair[0]} / {ct_pair[1]}"))
+    if m_ct_ratio:
+        rows.append(("SNP C/T ratio", m_ct_ratio.group(1)))
     if m_cov:
-        rows.append(("Ratio", re.sub(r"\s+", " ", m_cov.group(1).strip())))
+        rows.append(("Cov(1,2)", re.sub(r"\s+", " ", m_cov.group(1).strip())))
     return _dl_kv_pdf_rows(rows)
 
 
@@ -689,7 +868,8 @@ def detailed_sections_to_pdf_html(
 
     When ``filter_by_approval=True`` (customer PDF), only sections with
     ``section_reviews[i].approved`` are included. Title accent is **green** if
-    ``section_reviews[i].risk`` is ``low``, **red** if ``high`` (reviewer). Each block
+    effective risk is ``low``, **red** if ``high`` (reviewer override, or pipeline
+    ``WARNING:`` / warning-kind section). Each block
     matches **Detailed Interpretations** layout (**Test analysis** + **Interpretation**
     sub-labels, dashed separators).
     When ``filter_by_approval=False``, every eligible section includes full body text and
@@ -740,7 +920,7 @@ def detailed_sections_to_pdf_html(
                     portal_block,
                     notes,
                     margin_top=mt,
-                    risk_level=_coerce_risk_level(rev.get("risk")),
+                    risk_level=effective_risk_for_section(rev, sec),
                 )
             )
             continue
@@ -824,6 +1004,7 @@ def collect_dark_genes_from_analysis_dir(
         "summary_text": summary_text,
         "detailed_text": detailed_excerpt,
         "detailed_sections": detailed_sections,
+        "visual_evidence": discover_dark_gene_visual_evidence(base),
     }
 
 
@@ -858,15 +1039,16 @@ def dark_genes_for_pdf(report_block: Dict[str, Any]) -> Dict[str, Any]:
         section_reviews = []
         for x in (raw if isinstance(raw, list) else []):
             if isinstance(x, dict):
-                section_reviews.append(
-                    {
-                        "approved": _coerce_approved_bool(x.get("approved")),
-                        "notes": str(x.get("notes") or "")[:8000],
-                        "risk": _coerce_risk_level(x.get("risk")),
-                    }
-                )
+                item: Dict[str, Any] = {
+                    "approved": _coerce_approved_bool(x.get("approved")),
+                    "notes": str(x.get("notes") or "")[:8000],
+                }
+                xr = x.get("risk")
+                if xr is not None and str(xr).strip() != "":
+                    item["risk"] = _coerce_risk_level(xr)
+                section_reviews.append(item)
             else:
-                section_reviews.append({"approved": False, "notes": "", "risk": "high"})
+                section_reviews.append({"approved": False, "notes": ""})
 
     stored = report_block.get("detailed_sections")
     # Always prefer on-disk ``detailed_sections`` (same indices as portal ``section_reviews``).
@@ -886,8 +1068,16 @@ def dark_genes_for_pdf(report_block: Dict[str, Any]) -> Dict[str, Any]:
             }
         ]
 
-    if isinstance(section_reviews, list) and len(section_reviews) != len(sections):
-        section_reviews = align_section_reviews(section_reviews, len(sections))
+    if (
+        section_reviews is None
+        or not isinstance(section_reviews, list)
+        or len(section_reviews) != len(sections)
+    ):
+        section_reviews = align_section_reviews(
+            section_reviews if isinstance(section_reviews, list) else None,
+            len(sections),
+            sections,
+        )
 
     report_detailed_html = (
         detailed_sections_to_pdf_html(sections, section_reviews, filter_by_approval=True)

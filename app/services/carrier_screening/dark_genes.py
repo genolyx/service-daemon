@@ -38,6 +38,45 @@ def _coerce_approved_bool(val: Any) -> bool:
     return False
 
 
+def _coerce_risk_level(val: Any) -> str:
+    """``low`` (green accent) vs ``high`` (red accent); default high for legacy JSON."""
+    s = str(val).strip().lower() if val is not None else ""
+    if s == "low":
+        return "low"
+    return "high"
+
+
+def _risk_heading_colors(risk_level: str) -> Tuple[str, str]:
+    """(border_hex, background_hex) for customer PDF / portal title bar."""
+    if risk_level == "low":
+        return "#15803d", "#f0fdf4"
+    return "#be123c", "#fff1f2"
+
+
+# Pipeline section titles (``detailed_sections[].title``) → customer-facing report titles.
+# Keys: lowercase, whitespace-collapsed for robust matching.
+_DARK_GENES_DISPLAY_TITLE: Dict[str, str] = {
+    "smaca check (silent carrier + coverage)": "Spinal Muscular Atrophy",
+    "hba analysis (alpha thalassemia - dosage)": "Alpha Thalassemia",
+    "cyp21a2 analysis (cah - dosage)": "Congenital Adrenal Hyperplasia (CAH)",
+    "expansion hunter (fragile x / fmr1)": "Fragile X",
+    "dmd analysis (chrx:31.1m-33.3m)": "Duchenne Muscular Dystrophy (DMD)",
+    "large svs (manta/gcnv - rest)": "Large Structural Variants and Copy Number Variants",
+}
+
+
+def dark_genes_display_title(raw: Optional[str]) -> str:
+    """
+    Map pipeline dark-gene section titles to report-facing names (PDF + portal).
+    Unknown titles pass through unchanged.
+    """
+    t = (raw or "").strip()
+    if not t:
+        return "Section"
+    key = " ".join(t.lower().split())
+    return _DARK_GENES_DISPLAY_TITLE.get(key, t)
+
+
 # Lines that are only decorative separators (e.g. runs of hyphens between blocks in *_detailed_report.txt)
 _SECTION_SEPARATOR_LINE = re.compile(r"^[\s\-_–—]+$")
 
@@ -338,10 +377,11 @@ def align_section_reviews(
                 {
                     "approved": _coerce_approved_bool(prev[i].get("approved")),
                     "notes": str(prev[i].get("notes") or "")[:8000],
+                    "risk": _coerce_risk_level(prev[i].get("risk")),
                 }
             )
         else:
-            out.append({"approved": False, "notes": ""})
+            out.append({"approved": False, "notes": "", "risk": "high"})
     return out
 
 
@@ -441,6 +481,199 @@ def _section_review_at(
     return x if isinstance(x, dict) else {}
 
 
+def _dl_kv_pdf_rows(rows: List[Tuple[str, str]]) -> str:
+    """Portal-style label/value rows for WeasyPrint (inline styles; no portal CSS)."""
+    parts: List[str] = []
+    for lab, val in rows:
+        parts.append(
+            "<tr>"
+            f'<td style="padding:3px 12px 3px 0;font-size:8pt;color:#64748b;'
+            f'vertical-align:top;white-space:nowrap;">{html.escape(lab)}</td>'
+            f'<td style="padding:3px 0;font-size:8pt;color:#0f172a;">{html.escape(val)}</td>'
+            "</tr>"
+        )
+    return (
+        '<table style="margin:4px 0 0;border-collapse:collapse;width:100%;">'
+        f'{"".join(parts)}</table>'
+    )
+
+
+def _try_smaca_kv_html(title: str, body: str) -> Optional[str]:
+    """Match portal ``tryRenderSmacaCheckSection`` (SMN1/SMN2/Silent Carrier/Ratio)."""
+    if not re.search(r"SMAca\s*CHECK", title, re.I):
+        return None
+    raw = body or ""
+    m1 = re.search(r"SMN1_CN\s*=\s*(\S+)", raw, re.I)
+    m2 = re.search(r"SMN2_CN\s*=\s*(\S+)", raw, re.I)
+    m_silent = re.search(r"SilentCarrier\s*=\s*([^\s(]+)(?:\s*\([^)]*\))?", raw, re.I)
+    m_cov = re.search(r"Cov\s*\(\s*1\s*,\s*2\s*\)\s*=\s*(.+)", raw, re.I)
+    if not m1 and not m2 and not m_silent and not m_cov:
+        return None
+    rows: List[Tuple[str, str]] = []
+    if m1:
+        rows.append(("SMN1", m1.group(1)))
+    if m2:
+        rows.append(("SMN2", m2.group(1)))
+    if m_silent:
+        rows.append(("Silent Carrier", m_silent.group(1)))
+    if m_cov:
+        rows.append(("Ratio", re.sub(r"\s+", " ", m_cov.group(1).strip())))
+    return _dl_kv_pdf_rows(rows)
+
+
+def _dosage_title_matches(title: str) -> bool:
+    """Match portal ``dosageAnalysisTitleMatches``."""
+    u = (title or "").strip()
+    if not u:
+        return False
+    if re.search(r"HBA\s+ANALYSIS", u, re.I):
+        return True
+    if re.search(r"CYP21A2\s+ANALYSIS", u, re.I):
+        return True
+    if re.search(r"Alpha\s*Thalassemia", u, re.I) and re.search(r"Dosage", u, re.I):
+        return True
+    if re.search(r"CYP21A2", u, re.I) and re.search(r"CAH", u, re.I):
+        return True
+    if re.search(r"CAH", u, re.I) and re.search(r"Dosage", u, re.I) and re.search(r"CYP21", u, re.I):
+        return True
+    return False
+
+
+def _try_dosage_kv_html(title: str, body: str) -> Optional[str]:
+    """Match portal ``tryRenderDosageAnalysisSection`` (Estimated CNV, Ratio, Warning)."""
+    if not _dosage_title_matches(title):
+        return None
+    raw = body or ""
+    m_est = re.search(r"^\s*Est_CN\s*=\s*(\S+)", raw, re.I | re.M)
+    m_ratio = re.search(r"^\s*Ratio\s*=\s*(\S+)", raw, re.I | re.M)
+    m_warn = re.search(r"^\s*WARNING:\s*(.+)", raw, re.I | re.M)
+    if not m_est and not m_ratio and not m_warn:
+        return None
+    rows: List[Tuple[str, str]] = []
+    if m_est:
+        rows.append(("Estimated CNV", m_est.group(1)))
+    if m_ratio:
+        rows.append(("Ratio", m_ratio.group(1)))
+    if m_warn:
+        rows.append(("Warning", re.sub(r"\s+", " ", m_warn.group(1).strip())))
+    return _dl_kv_pdf_rows(rows)
+
+
+def _try_generic_pipeline_kv_html(body: str) -> Optional[str]:
+    """
+    Fallback: KEY=value lines, WARNING:, or single-line prose / ``Gene:value`` (e.g. FMR1:13/13).
+    Keeps PDF readable without raw monospaced pipeline dumps when SMA/dosage matchers miss.
+    """
+    raw = (body or "").strip()
+    if not raw:
+        return None
+    lines = [
+        ln.strip()
+        for ln in raw.splitlines()
+        if ln.strip() and not re.match(r"^[\s\-_–—]+$", ln)
+    ]
+    if not lines:
+        return None
+    rows: List[Tuple[str, str]] = []
+    leftover: List[str] = []
+    for ln in lines:
+        if re.match(r"^WARNING:\s*", ln, re.I):
+            rows.append(("Warning", re.sub(r"^WARNING:\s*", "", ln, flags=re.I).strip()))
+            continue
+        m_eq = re.match(r"^([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.+)$", ln)
+        if m_eq:
+            key, val = m_eq.group(1), m_eq.group(2).strip()
+            rows.append((key.replace("_", " "), val))
+            continue
+        m_colon = re.match(r"^([A-Za-z0-9]+):(.+)$", ln)
+        if m_colon and len(m_colon.group(1)) <= 12:
+            rows.append((m_colon.group(1), m_colon.group(2).strip()))
+            continue
+        leftover.append(ln)
+    if rows and not leftover:
+        return _dl_kv_pdf_rows(rows)
+    if rows and leftover:
+        return _dl_kv_pdf_rows(rows) + (
+            '<p style="white-space:pre-wrap;font-size:8pt;margin:6px 0 0;line-height:1.45;'
+            f'color:#334155;">{html.escape(chr(10).join(leftover))}</p>'
+        )
+    if len(lines) == 1:
+        return (
+            f'<p style="font-size:8pt;color:#334155;margin:8px 0 0;line-height:1.45;">'
+            f"{html.escape(lines[0])}</p>"
+        )
+    return (
+        '<p style="white-space:pre-wrap;font-size:8pt;margin:8px 0 0;line-height:1.45;'
+        f'color:#334155;">{html.escape(chr(10).join(lines))}</p>'
+    )
+
+
+def _section_body_portal_html_for_pdf(sec: Dict[str, Any]) -> str:
+    """
+    Same lab-facing labels as the portal Review tab (``tryRenderSmacaCheckSection`` /
+    ``tryRenderDosageAnalysisSection``), not raw ``*_detailed_report.txt`` monospaced lines.
+    """
+    title = (sec.get("title") or "").strip()
+    body = _section_body_for_pdf(sec.get("body") or "")
+    h = _try_smaca_kv_html(title, body)
+    if h:
+        return h
+    h = _try_dosage_kv_html(title, body)
+    if h:
+        return h
+    gh = _try_generic_pipeline_kv_html(body)
+    return gh or ""
+
+
+def _dark_genes_finding_card_html(
+    title_escaped: str,
+    analysis_inner_html: str,
+    notes_plain: str,
+    *,
+    margin_top: str = "25px",
+    risk_level: str = "high",
+) -> str:
+    """
+    Match ``carrier_EN.html`` Detailed Interpretations: left accent bar (green if ``risk_level``
+    is ``low``, red if ``high`` — reviewer-set), uppercase sub-labels, dashed separator.
+    """
+    border, bg = _risk_heading_colors(_coerce_risk_level(risk_level))
+    head = (
+        f'<div style="font-size:11pt;font-weight:500;color:#0f172a;margin-bottom:15px;'
+        f'padding:4px 0 4px 12px;border-left:6px solid {border};line-height:1.2;'
+        f'background-color:{bg};display:block;">{title_escaped}</div>'
+    )
+    analysis_wrap = ""
+    inner = (analysis_inner_html or "").strip()
+    if inner:
+        sub_test = (
+            '<div style="font-size:8pt;font-weight:500;color:#64748b;text-transform:uppercase;'
+            'letter-spacing:0.02em;margin-top:10px;">Test analysis</div>'
+        )
+        analysis_wrap = (
+            f'<div style="margin-bottom:12px;">{sub_test}'
+            f'<div style="margin-top:2px;">{analysis_inner_html}</div></div>'
+        )
+    notes_block = ""
+    notes = (notes_plain or "").strip()
+    if notes:
+        sub_int = (
+            '<div style="font-size:8pt;font-weight:500;color:#64748b;text-transform:uppercase;'
+            'letter-spacing:0.02em;margin-top:10px;">Interpretation</div>'
+        )
+        esc = html.escape(notes, quote=True)
+        notes_block = (
+            f'<div>{sub_int}'
+            f'<p style="font-size:8pt;color:#334155;margin:2px 0 0 0;text-align:justify;'
+            f'line-height:1.3;white-space:pre-wrap;">{esc}</p></div>'
+        )
+    return (
+        f'<div style="margin-top:{margin_top};padding:10px 0;page-break-inside:avoid;'
+        'border-bottom:1px dashed #e2e8f0;">'
+        f"{head}{analysis_wrap}{notes_block}</div>"
+    )
+
+
 def detailed_sections_to_pdf_html(
     sections: List[Dict[str, Any]],
     section_reviews: Optional[List[Dict[str, Any]]] = None,
@@ -455,13 +688,17 @@ def detailed_sections_to_pdf_html(
     One-line duplicate summary rows are omitted.
 
     When ``filter_by_approval=True`` (customer PDF), only sections with
-    ``section_reviews[i].approved`` are included; unapproved or missing reviews are omitted.
-    When ``filter_by_approval=False``, every eligible section is included; ``section_reviews``
-    only adds optional per-section **Notes** lines.
+    ``section_reviews[i].approved`` are included. Title accent is **green** if
+    ``section_reviews[i].risk`` is ``low``, **red** if ``high`` (reviewer). Each block
+    matches **Detailed Interpretations** layout (**Test analysis** + **Interpretation**
+    sub-labels, dashed separators).
+    When ``filter_by_approval=False``, every eligible section includes full body text and
+    optional **Notes** lines beneath.
     """
     if not sections:
         return ""
     parts: List[str] = []
+    first_approved_card = True
     for i, sec in enumerate(sections):
         if _section_lab_review_only(sec):
             continue
@@ -474,14 +711,8 @@ def detailed_sections_to_pdf_html(
         if filter_by_approval and not _coerce_approved_bool(rev.get("approved")):
             continue
         notes = (rev.get("notes") or "").strip()
-        notes_html = ""
-        if notes:
-            notes_html = (
-                f'<p style="font-size:8pt;color:#475569;margin:8px 0 0;line-height:1.4;">'
-                f"<strong>Notes:</strong> {html.escape(notes, quote=True)}</p>"
-            )
 
-        t = html.escape(sec.get("title") or "Section", quote=True)
+        t = html.escape(dark_genes_display_title(sec.get("title")), quote=True)
         body_for_pdf = _section_body_for_pdf(sec.get("body") or "")
         b = html.escape(body_for_pdf, quote=True)
         kind = _infer_section_kind(sec)
@@ -497,6 +728,29 @@ def detailed_sections_to_pdf_html(
                 "background:#f8fafc;padding:10px 12px;"
             )
             tit = "font-weight:700;font-size:9pt;color:#0f172a;margin:0 0 6px;"
+
+        if filter_by_approval:
+            # Customer PDF: same layout as Detailed Interpretations (condition-heading + sub-labels).
+            portal_block = _section_body_portal_html_for_pdf(sec)
+            mt = "12px" if first_approved_card else "25px"
+            first_approved_card = False
+            parts.append(
+                _dark_genes_finding_card_html(
+                    t,
+                    portal_block,
+                    notes,
+                    margin_top=mt,
+                    risk_level=_coerce_risk_level(rev.get("risk")),
+                )
+            )
+            continue
+
+        notes_html = ""
+        if notes:
+            notes_html = (
+                f'<p style="font-size:8pt;color:#475569;margin:8px 0 0;line-height:1.4;">'
+                f"<strong>Notes:</strong> {html.escape(notes, quote=True)}</p>"
+            )
         parts.append(
             f'<div style="{box}">'
             f'<div style="{tit}">{t}</div>'
@@ -580,6 +834,9 @@ def dark_genes_for_pdf(report_block: Dict[str, Any]) -> Dict[str, Any]:
     Reads ``detailed_text``, ``detailed_sections``, and ``section_reviews`` (index-aligned).
     The customer PDF **only includes sections marked approved** in the portal; unapproved
     sections are omitted (Overview / QC-only / duplicate summary rows are never included).
+    For each approved section, ``report_detailed_html`` contains the **portal section title**,
+    **portal-style parsed content** from the pipeline body (KV / labels like the Review tab),
+    then **reviewer notes** — not a raw monospaced pipeline block.
 
     Only ``report_detailed_html`` is emitted. ``status == error`` returns a short ``report_summary``.
     """
@@ -605,10 +862,11 @@ def dark_genes_for_pdf(report_block: Dict[str, Any]) -> Dict[str, Any]:
                     {
                         "approved": _coerce_approved_bool(x.get("approved")),
                         "notes": str(x.get("notes") or "")[:8000],
+                        "risk": _coerce_risk_level(x.get("risk")),
                     }
                 )
             else:
-                section_reviews.append({"approved": False, "notes": ""})
+                section_reviews.append({"approved": False, "notes": "", "risk": "high"})
 
     stored = report_block.get("detailed_sections")
     # Always prefer on-disk ``detailed_sections`` (same indices as portal ``section_reviews``).

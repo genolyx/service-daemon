@@ -424,8 +424,8 @@
         </p>
         {% endif %}
         {% if data.dark_genes.report_detailed_html %}
-        <div class="sub-label" style="margin-top:14px;">Additional detail (structured excerpt)</div>
-        <div class="detail-text" style="font-size:8pt;color:#334155;">
+        {# report_detailed_html: one card per approved test (condition-heading + Test analysis + Interpretation) #}
+        <div>
             {{ data.dark_genes.report_detailed_html|safe }}
         </div>
         {% endif %}

@@ -6,7 +6,7 @@ Service Daemon Data Models
 """
 
 from enum import Enum
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Literal
 from pydantic import BaseModel, Field
 
 from .datetime_kst import now_kst_iso
@@ -133,10 +133,14 @@ class DarkGenesSectionReviewItem(BaseModel):
 
     approved: bool = Field(default=False, description="Include this block in PDF/report supplement")
     notes: str = Field(default="", description="Reviewer notes; shown in PDF when approved")
+    risk: Literal["low", "high"] = Field(
+        default="high",
+        description="Reviewer risk level: PDF/portal title accent is green (low) or red (high)",
+    )
 
 
 class DarkGenesReviewRequest(BaseModel):
-    """Persist per-section approval + notes into ``result.json`` → ``dark_genes.section_reviews``."""
+    """Persist per-section approval, notes, and risk into ``result.json`` → ``dark_genes.section_reviews``."""
 
     section_reviews: List[DarkGenesSectionReviewItem] = Field(
         default_factory=list,

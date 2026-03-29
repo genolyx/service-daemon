@@ -407,10 +407,14 @@ def test_dark_genes_pdf_only_approved_sections():
 
     block = {
         "status": "found",
-        "detailed_text": "PARAPHASE RESULTS:\nalpha line\n\nOTHER:\nbeta line\n",
+        "detailed_text": "",
         "detailed_sections": [
-            {"title": "PARAPHASE RESULTS", "body": "alpha line", "kind": "normal"},
-            {"title": "OTHER", "body": "beta line", "kind": "normal"},
+            {
+                "title": "SMAca CHECK (Silent Carrier + Coverage)",
+                "body": "SMN1_CN=3\nSMN2_CN=3\nCov(1,2)=2.82, 3.06\nSilentCarrier=False",
+                "kind": "normal",
+            },
+            {"title": "OTHER SECTION", "body": "beta line", "kind": "normal"},
         ],
         "section_reviews": [
             {"approved": True, "notes": "ok"},
@@ -419,8 +423,20 @@ def test_dark_genes_pdf_only_approved_sections():
     }
     out = dark_genes_for_pdf(block)
     html_out = out.get("report_detailed_html") or ""
-    assert "alpha" in html_out
-    assert "beta" not in html_out
+    assert "Spinal Muscular Atrophy" in html_out
+    assert "SMN1" in html_out
+    assert "ok" in html_out
+    assert "SMN1_CN" not in html_out
+    assert "OTHER SECTION" not in html_out
+    assert "#be123c" in html_out  # default high-risk PDF title accent
+
+    block_low = dict(block)
+    block_low["section_reviews"] = [
+        {"approved": True, "notes": "ok", "risk": "low"},
+        {"approved": False, "notes": ""},
+    ]
+    html_low = (dark_genes_for_pdf(block_low).get("report_detailed_html") or "")
+    assert "#15803d" in html_low  # reviewer low-risk green accent
 
     none_approved = dict(block)
     none_approved["section_reviews"] = [
@@ -432,11 +448,13 @@ def test_dark_genes_pdf_only_approved_sections():
     string_false = dict(block)
     string_false["section_reviews"] = [
         {"approved": "false", "notes": ""},
-        {"approved": "true", "notes": ""},
+        {"approved": "true", "notes": "Second section note"},
     ]
     out_sf = dark_genes_for_pdf(string_false)
     h2 = out_sf.get("report_detailed_html") or ""
-    assert "beta" in h2 and "alpha" not in h2
+    assert "OTHER" in h2
+    assert "Second section note" in h2
+    assert "alpha line" not in h2 and "beta line" not in h2
 
 
 test("GET /health", test_health_endpoint)

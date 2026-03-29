@@ -1280,7 +1280,7 @@ async def get_order_result(order_id: str):
 
 async def _dark_genes_review_impl(order_id: str, body: DarkGenesReviewRequest) -> Dict[str, Any]:
     """
-    Save per-section **Approve** + **Notes** for the Dark genes detailed report.
+    Save per-section **Approve**, **Notes**, and **Risk** (PDF title accent) for the Dark genes detailed report.
 
     Writes ``dark_genes.section_reviews`` (index-aligned with ``detailed_sections``) into
     the same ``result.json`` that Generate Report reads (``carrier_report_output_dir``, mirroring
@@ -1329,7 +1329,11 @@ async def _dark_genes_review_impl(order_id: str, body: DarkGenesReviewRequest) -
             )
         n = len(sections)
         incoming = [
-            {"approved": bool(x.approved), "notes": (x.notes or "")[:8000]}
+            {
+                "approved": bool(x.approved),
+                "notes": (x.notes or "")[:8000],
+                "risk": x.risk,
+            }
             for x in body.section_reviews
         ]
         dg2 = dict(dg)

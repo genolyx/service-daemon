@@ -338,6 +338,12 @@
     body.light .dark-genes-sec--alert{background:#fff7ed;border-color:#d97706}
     body.light .dark-genes-sec--alert .dark-genes-sec-title{color:#9a3412}
     body.light .dark-genes-sec--alert .dark-genes-sec-body{color:#44403c}
+    .dark-genes-sec-title-wrap{margin:0 0 8px;padding:4px 0 4px 12px;border-left:6px solid #be123c;background:#fff1f2;border-radius:0 8px 8px 0}
+    .dark-genes-sec-title-wrap--low{border-left-color:#15803d;background:#f0fdf4}
+    .dark-genes-sec-title-wrap--high{border-left-color:#be123c;background:#fff1f2}
+    body:not(.light) .dark-genes-sec-title-wrap--high{background:rgba(190,18,60,.14);border-left-color:#fb7185}
+    body:not(.light) .dark-genes-sec-title-wrap--low{background:rgba(21,128,61,.18);border-left-color:#4ade80}
+    .dark-genes-sec-title-wrap .dark-genes-sec-title{margin:0}
     .dark-genes-sec-title{font-weight:700;font-size:12px;margin:0 0 8px;color:var(--text)}
     .dark-genes-sec-body{white-space:pre-wrap;font-size:11px;line-height:1.45;margin:0;font-family:ui-monospace,Consolas,monospace;overflow-x:auto;color:var(--text)}
     .dark-genes-sec-body--kv{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;padding:2px 0 0}
@@ -355,6 +361,8 @@
     body.light .dark-genes-sec-actions .dg-approve-btn.dg-approved{
       background:rgba(22,163,74,.14);color:#15803d;border-color:#22c55e;
     }
+    .dark-genes-sec-actions .dg-risk-label{font-size:11px;color:var(--muted);font-weight:600;align-self:center}
+    .dark-genes-sec-actions .dg-sec-risk{font-size:12px;padding:6px 10px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);min-width:100px}
     .dark-genes-sec-actions .dg-notes-label{font-size:11px;color:var(--muted);font-weight:600}
     .dark-genes-sec-actions .dg-sec-notes{min-height:52px;width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-size:12px;font-family:inherit;resize:vertical}
     .dark-genes-save-row{margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
@@ -4639,10 +4647,30 @@
       return `<dl class="dark-genes-kv">${inner}</dl>`;
     }
 
+    /** Same mapping as server ``dark_genes_display_title`` — pipeline title → report title. */
+    function darkGenesDisplayTitle(raw) {
+      const t = String(raw || '').trim();
+      if (!t) return 'Section';
+      const k = t.toLowerCase().replace(/\s+/g, ' ').trim();
+      const map = {
+        'smaca check (silent carrier + coverage)': 'Spinal Muscular Atrophy',
+        'hba analysis (alpha thalassemia - dosage)': 'Alpha Thalassemia',
+        'cyp21a2 analysis (cah - dosage)': 'Congenital Adrenal Hyperplasia (CAH)',
+        'expansion hunter (fragile x / fmr1)': 'Fragile X',
+        'dmd analysis (chrx:31.1m-33.3m)': 'Duchenne Muscular Dystrophy (DMD)',
+        'large svs (manta/gcnv - rest)': 'Large Structural Variants and Copy Number Variants',
+      };
+      return map[k] || t;
+    }
+
     function padDarkGenesSectionReviews(rev, n) {
       const o = Array.isArray(rev) ? rev.slice() : [];
-      while (o.length < n) o.push({ approved: false, notes: '' });
-      return o.slice(0, n);
+      while (o.length < n) o.push({ approved: false, notes: '', risk: 'high' });
+      return o.slice(0, n).map(e => ({
+        approved: !!e.approved,
+        notes: String(e.notes || ''),
+        risk: e && e.risk === 'low' ? 'low' : 'high',
+      }));
     }
 
     /** Structured sections from backend (parse of *_detailed_report.txt) — lab-review layout */
@@ -4650,7 +4678,7 @@
       if (!Array.isArray(sections) || !sections.length) return '';
       const rev = padDarkGenesSectionReviews(sectionReviews, sections.length);
       return sections.map((sec, i) => {
-        const title = escapeHtml(sec.title || 'Section');
+        const title = escapeHtml(darkGenesDisplayTitle(sec.title));
         const kind = sec.kind || 'normal';
         const cls =
           kind === 'alert'
@@ -4665,7 +4693,10 @@
         const bodyHtml = kv
           ? `<div class="dark-genes-sec-body dark-genes-sec-body--kv">${kv}</div>`
           : `<pre class="dark-genes-sec-body">${escapeHtml(bodyNorm)}</pre>`;
-        const r = rev[i] || { approved: false, notes: '' };
+        const r = rev[i] || { approved: false, notes: '', risk: 'high' };
+        const risk = r.risk === 'low' ? 'low' : 'high';
+        const riskWrapCls =
+          risk === 'low' ? 'dark-genes-sec-title-wrap--low' : 'dark-genes-sec-title-wrap--high';
         const rawTitle = String(sec.title || '').trim();
         const isQualityAlert = kind === 'alert';
         const isOverview = /^overview$/i.test(rawTitle);
@@ -4674,15 +4705,23 @@
         if (!skipReviewUi) {
           const apprCls = r.approved ? ' dg-approved' : '';
           const btnLabel = r.approved ? 'Approved ✓' : 'Approve for report';
+          const selLow = risk === 'low' ? ' selected' : '';
+          const selHigh = risk === 'high' ? ' selected' : '';
           actions = `
           <div class="dark-genes-sec-actions">
+            <span class="dg-risk-label">Risk (PDF accent)</span>
+            <select class="dg-sec-risk" aria-label="Section risk for PDF accent">
+              <option value="high"${selHigh}>High</option>
+              <option value="low"${selLow}>Low</option>
+            </select>
             <button type="button" class="btn dg-approve-btn${apprCls}">${btnLabel}</button>
             <span class="dg-notes-label">Notes</span>
             <textarea class="dg-sec-notes" rows="2" placeholder="Reviewer notes (shown in PDF when approved)">${escapeHtml(r.notes || '')}</textarea>
           </div>`;
         }
         const skipAttr = skipReviewUi ? ' data-dg-skip-review="1"' : '';
-        return `<div class="${cls}" data-dg-idx="${i}"${skipAttr}><div class="dark-genes-sec-title">${title}</div>${bodyHtml}${actions}</div>`;
+        const titleBlock = `<div class="dark-genes-sec-title-wrap ${riskWrapCls}"><div class="dark-genes-sec-title">${title}</div></div>`;
+        return `<div class="${cls}" data-dg-idx="${i}"${skipAttr}>${titleBlock}${bodyHtml}${actions}</div>`;
       }).join('');
     }
 
@@ -4690,6 +4729,17 @@
       const box = qs('darkGenesContent');
       if (!box || box.dataset.dgSaveBound) return;
       box.dataset.dgSaveBound = '1';
+      box.addEventListener('change', ev => {
+        const sel = ev.target.closest('.dg-sec-risk');
+        if (!sel) return;
+        const sec = sel.closest('.dark-genes-sec');
+        const wrap = sec && sec.querySelector('.dark-genes-sec-title-wrap');
+        if (!wrap) return;
+        wrap.classList.remove('dark-genes-sec-title-wrap--low', 'dark-genes-sec-title-wrap--high');
+        wrap.classList.add(
+          sel.value === 'low' ? 'dark-genes-sec-title-wrap--low' : 'dark-genes-sec-title-wrap--high'
+        );
+      });
       box.addEventListener('click', ev => {
         const ab = ev.target.closest('.dg-approve-btn');
         if (ab) {
@@ -4717,14 +4767,17 @@
       const section_reviews = [];
       secs.forEach(el => {
         if (el.getAttribute('data-dg-skip-review') === '1') {
-          section_reviews.push({ approved: false, notes: '' });
+          section_reviews.push({ approved: false, notes: '', risk: 'high' });
           return;
         }
         const btn = el.querySelector('.dg-approve-btn');
         const ta = el.querySelector('.dg-sec-notes');
+        const riskSel = el.querySelector('.dg-sec-risk');
+        const risk = riskSel && riskSel.value === 'low' ? 'low' : 'high';
         section_reviews.push({
           approved: !!(btn && btn.classList.contains('dg-approved')),
           notes: ta && ta.value ? String(ta.value).trim() : '',
+          risk,
         });
       });
       if (!section_reviews.length) {
@@ -4793,7 +4846,7 @@
           html += `<div class="dark-genes-stack">${renderDarkGenesDetailedSections(detSec, srv)}</div>`;
           html += `<div class="dark-genes-save-row">
             <button type="button" class="btn primary" id="btnSaveDarkGenesReviews">Save section reviews</button>
-            <span class="muted" style="font-size:11px">Save to persist notes and approval state. The customer PDF includes only sections you mark approved (Overview and quality-warning blocks are never included; notes optional).</span>
+            <span class="muted" style="font-size:11px">Save to persist notes, risk (green vs red title accent in PDF), and approval. The customer PDF uses the same section titles and lab-facing values as here (SMAca/HBA/CYP21A2-style labels), then your notes below — not raw pipeline monospaced text. Overview and quality-warning blocks are never included.</span>
           </div>`;
           if (det) html += darkGenesRawDetails('Raw detailed text (full, for audit)', det, 120000);
         } else {

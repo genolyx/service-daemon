@@ -1086,6 +1086,7 @@
           <button class="btn" onclick="loadReviewData()">Load</button>
         </div>
       </div>
+      <p id="reviewResultMeta" class="muted hidden" style="margin:0 0 10px;font-size:13px;line-height:1.5"></p>
 
       <!-- Carrier Status Banner -->
       <div id="carrierBanner" class="hidden"></div>
@@ -3078,9 +3079,29 @@
       if (!ok) return;
       try {
         const res = await apiPost(`/order/${encodeURIComponent(oid)}/reprocess-results`, {});
-        toast((res && res.message) || 'Reprocess completed', true);
         loadOrders();
         loadDashboard();
+        const cur = reviewLoadedOrderId ? String(reviewLoadedOrderId).trim() : '';
+        if (cur === oid) {
+          try {
+            await loadReviewData(oid, { quietToast: true });
+            toast(
+              (res && res.message)
+                ? `${res.message} Review tab reloaded (check snapshot time below).`
+                : 'Reprocess completed. Review tab reloaded (check snapshot time below).',
+              true,
+            );
+          } catch (e) {
+            toast((res && res.message) || 'Reprocess completed', true);
+          }
+        } else {
+          toast(
+            (res && res.message)
+              ? `${res.message} Open Review → Load this order to see updates.`
+              : 'Reprocess completed. Open Review → Load this order to see updates.',
+            true,
+          );
+        }
       } catch (e) {
         toast(e.message || 'Reprocess failed', false);
       }
@@ -4027,7 +4048,7 @@
 
     /**
      * @param {string} [overrideOrderId]
-     * @param {{ focusTab?: string }} [opts] - use `focusTab: 'variants'` when opening from Orders (not restore).
+     * @param {{ focusTab?: string, quietToast?: boolean }} [opts] - `quietToast` skips the “Loaded N variants” toast (e.g. after Reprocess).
      */
     async function loadReviewData(overrideOrderId, opts) {
       const opt = opts || {};
@@ -4038,6 +4059,7 @@
       qs('reviewOrderSelect').value = orderId;
 
       try {
+        const quietToast = !!opt.quietToast;
         reviewData = await apiGet(`/order/${orderId}/result`);
         if (Array.isArray(reviewData.variants)) {
           reviewData.variants = reviewData.variants.map(normalizeVariantForReview);
@@ -4081,7 +4103,8 @@
         renderGeneDatabase();
         const sub = opt.focusTab && REVIEW_SUB_TAB_KEYS.includes(opt.focusTab) ? opt.focusTab : getSavedReviewSubTab();
         showReviewTab(sub);
-        toast(`Loaded ${(reviewData.variants || []).length} variants`);
+        updateReviewResultMeta();
+        if (!quietToast) toast(`Loaded ${(reviewData.variants || []).length} variants`);
         updateReportGenerateUi();
       } catch (e) {
         toast('Failed to load result: ' + e.message, false);
@@ -4445,6 +4468,24 @@
             ${canEdit ? `<button type="button" class="btn" style="padding:4px 8px;font-size:10px;margin-right:4px" onclick='geneDbEditOpen(${JSON.stringify(r.g)})' title="Edit shared gene row">Gene</button><button type="button" class="btn" style="padding:4px 8px;font-size:10px" onclick='variantDbEditOpen(${JSON.stringify(r.vk)})' title="Edit variant-specific notes (same HGVS in future orders)">Notes</button>` : '—'}
           </td>
         </tr>`).join('') : '<tr><td colspan="10" class="muted">No matching variants</td></tr>';
+    }
+
+    /** result.json generated_at — Reprocess 후 스냅샷 시각 확인용 */
+    function updateReviewResultMeta() {
+      const el = qs('reviewResultMeta');
+      if (!el) return;
+      if (!reviewData) {
+        el.textContent = '';
+        el.classList.add('hidden');
+        return;
+      }
+      const ga = reviewData.generated_at != null ? String(reviewData.generated_at).trim() : '';
+      const n = (reviewData.variants || []).length;
+      const parts = [];
+      if (ga) parts.push(`Snapshot (result.json): ${ga}`);
+      parts.push(`${n} variant row(s)`);
+      el.textContent = parts.join(' · ');
+      el.classList.remove('hidden');
     }
 
     // ── Carrier Status Banner ──

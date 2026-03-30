@@ -266,9 +266,14 @@ def extract_vep_annotations_from_vcf(
             # CSQ 필드 목록을 헤더에서 추출
             if "CSQ" in vcf.header.info:
                 csq_desc = vcf.header.info["CSQ"].description or ""
-                fmt_match = re.search(r"Format:\s*(.+)$", csq_desc)
-                if fmt_match:
-                    csq_fields = [f.strip() for f in fmt_match.group(1).split("|")]
+                idxfmt = csq_desc.lower().find("format:")
+                if idxfmt >= 0:
+                    tail = csq_desc[idxfmt + len("format:") :].strip()
+                    if tail.startswith('"'):
+                        tail = tail[1:]
+                    fields_part = tail.split('"')[0].strip()
+                    if fields_part:
+                        csq_fields = [f.strip() for f in fields_part.split("|")]
 
             if not csq_fields:
                 logger.warning(

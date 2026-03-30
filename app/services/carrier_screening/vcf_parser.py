@@ -28,7 +28,8 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
-# ─── VCF FORMAT 문제 필드 정리 ─────────────────────────────
+# 표준 VEP CSQ 열 순서 (헤더 Format 파싱 실패 시 fall back)
+_VEP_CSQ_DEFAULT_INDICES = (3, 6, 10, 11, 1)  # SYMBOL, Feature, HGVSc, HGVSp, Consequence
 
 TROUBLE_FORMATS = {"GQ", "SB"}
 
@@ -176,7 +177,13 @@ def get_annotation_layout(vcf) -> Tuple:
 
     if "CSQ" in header_info:
         desc = header_info["CSQ"].description or ""
-        fields_part = desc.split("Format:")[-1].strip().strip('"')
+        fields_part = ""
+        idxfmt = desc.lower().find("format:")
+        if idxfmt >= 0:
+            tail = desc[idxfmt + len("format:") :].strip()
+            if tail.startswith('"'):
+                tail = tail[1:]
+            fields_part = tail.split('"')[0].strip()
         fields = [f.strip() for f in fields_part.split("|")] if fields_part else []
         uf = [f.upper() for f in fields]
 
@@ -191,9 +198,62 @@ def get_annotation_layout(vcf) -> Tuple:
         c_idx = idx({"HGVSC", "HGVS_C"})
         p_idx = idx({"HGVSP", "HGVS_P"})
         eff_idx = idx({"CONSEQUENCE"})
+        dg, dt, dc, dp, de = _VEP_CSQ_DEFAULT_INDICES
+        if gene_idx is None:
+            gene_idx = dg
+        if tx_idx is None:
+            tx_idx = dt
+        if c_idx is None:
+            c_idx = dc
+        if p_idx is None:
+            p_idx = dp
+        if eff_idx is None:
+            eff_idx = de
         return "CSQ", gene_idx, tx_idx, c_idx, p_idx, eff_idx
 
     return None, None, None, None, None, None
+
+
+def _annotation_from_pipe_parts(
+    parts: List[str],
+    gi: Optional[int],
+    ti: Optional[int],
+    ci: Optional[int],
+    pi: Optional[int],
+    ei: Optional[int],
+) -> Tuple[str, str, str, str, str]:
+    """One CSQ/ANN pipe field list → gene, transcript, hgvsc, hgvsp, effect."""
+    gene = transcript = hgvsc = hgvsp = effect = ""
+    if gi is not None and gi < len(parts):
+        g = parts[gi].strip()
+        if g and g != ".":
+            gene = g
+    if ti is not None and ti < len(parts):
+        t = parts[ti].strip()
+        if t and t != ".":
+            transcript = t
+    if ci is not None and ci < len(parts):
+        cv = parts[ci].strip()
+        if cv and cv != ".":
+            if ":" in cv:
+                tx, cval = cv.split(":", 1)
+                if not transcript:
+                    transcript = tx.strip()
+                hgvsc = cval.strip()
+            else:
+                hgvsc = cv
+    if pi is not None and pi < len(parts):
+        pv = parts[pi].strip()
+        if pv and pv != ".":
+            if ":" in pv:
+                hgvsp = pv.split(":", 1)[1].strip()
+            else:
+                hgvsp = pv
+    if ei is not None and ei < len(parts):
+        ev = parts[ei].strip()
+        if ev and ev != ".":
+            effect = ev
+    return gene, transcript, hgvsc, hgvsp, effect
 
 
 def extract_variant_info(rec, tag, gi, ti, ci, pi, ei, gene_interval_lookup=None) -> Tuple[str, str, str, str, str]:
@@ -212,43 +272,35 @@ def extract_variant_info(rec, tag, gi, ti, ci, pi, ei, gene_interval_lookup=None
 
     if tag and tag in rec.info:
         raw = rec.info[tag]
-        if isinstance(raw, (list, tuple)):
-            raw = raw[0]
-        parts = str(raw).split("|")
-
-        if gi is not None and gi < len(parts):
-            g = parts[gi].strip()
-            if g and g != ".":
-                gene = g
-
-        if ti is not None and ti < len(parts):
-            t = parts[ti].strip()
-            if t and t != ".":
-                transcript = t
-
-        if ci is not None and ci < len(parts):
-            cv = parts[ci].strip()
-            if cv and cv != ".":
-                if ":" in cv:
-                    tx, cval = cv.split(":", 1)
-                    if not transcript:
-                        transcript = tx.strip()
-                    hgvsc = cval.strip()
-                else:
-                    hgvsc = cv
-
-        if pi is not None and pi < len(parts):
-            pv = parts[pi].strip()
-            if pv and pv != ".":
-                if ":" in pv:
-                    hgvsp = pv.split(":", 1)[1].strip()
-                else:
-                    hgvsp = pv
-
-        if ei is not None and ei < len(parts):
-            ev = parts[ei].strip()
-            if ev and ev != ".":
-                effect = ev
+        if tag == "CSQ":
+            if isinstance(raw, (list, tuple)):
+                csq_joined = ",".join(str(x) for x in raw)
+            else:
+                csq_joined = str(raw)
+            picked = False
+            for entry in csq_joined.split(","):
+                entry = entry.strip()
+                if not entry:
+                    continue
+                parts = entry.split("|")
+                g, t, hc, hp, ef = _annotation_from_pipe_parts(parts, gi, ti, ci, pi, ei)
+                if g:
+                    gene, transcript, hgvsc, hgvsp, effect = g, t, hc, hp, ef
+                    picked = True
+                    break
+            if not picked and csq_joined:
+                first = csq_joined.split(",")[0].strip()
+                if first:
+                    gene, transcript, hgvsc, hgvsp, effect = _annotation_from_pipe_parts(
+                        first.split("|"), gi, ti, ci, pi, ei
+                    )
+        else:
+            if isinstance(raw, (list, tuple)):
+                raw = raw[0]
+            parts = str(raw).split("|")
+            gene, transcript, hgvsc, hgvsp, effect = _annotation_from_pipe_parts(
+                parts, gi, ti, ci, pi, ei
+            )
 
     # 유전자를 찾지 못한 경우 위치 기반 조회
     if not gene and gene_interval_lookup:
@@ -576,12 +628,29 @@ def _lookup_vep_annotations(
 
     Keys from extract_vep_annotations_from_vcf use rec.chrom as in file (chr1 vs 1).
     """
-    keys = [f"{chrom}:{pos}:{ref}:{alt}"]
-    if chrom.startswith("chr") and len(chrom) > 3:
-        keys.append(f"{chrom[3:]}:{pos}:{ref}:{alt}")
+    chroms: List[str] = [chrom]
+    if str(chrom).startswith("chr") and len(str(chrom)) > 3:
+        chroms.append(str(chrom)[3:])
     elif chrom and not str(chrom).startswith("chr"):
-        keys.append(f"chr{chrom}:{pos}:{ref}:{alt}")
-    for k in keys:
+        chroms.append(f"chr{chrom}")
+
+    def _ralt(x: str) -> List[str]:
+        if not x:
+            return [x]
+        if x.startswith("<"):
+            return [x]
+        out = [x]
+        u = x.upper()
+        if u != x:
+            out.append(u)
+        return out
+
+    keys: List[str] = []
+    for c in chroms:
+        for r in _ralt(str(ref)):
+            for a in _ralt(str(alt)):
+                keys.append(f"{c}:{pos}:{r}:{a}")
+    for k in dict.fromkeys(keys):
         hit = vep_annotations.get(k)
         if hit:
             return hit
@@ -650,8 +719,20 @@ def parse_vcf_variants(
     layout_tag, layout_gi, layout_ti, layout_ci, layout_pi, layout_ei = get_annotation_layout(vcf)
     if use_vep_path:
         logger.info("VEP annotation mode: using pre-parsed CSQ data (%d variants)", len(vep_annotations))
-        # Per-record pass still skips ANN/CSQ here; per-alt loop falls back to layout_* if lookup misses.
-        tag, gi, ti, ci, pi, ei = None, None, None, None, None, None
+        # Still use header CSQ/ANN layout for the *per-record* pass so gene / effect are populated
+        # before HPO and gene_filter_set. Previously tag was cleared here, leaving gene="" and dropping
+        # every record when those filters were configured (dark-gene / phenotype orders).
+        if layout_tag:
+            tag, gi, ti, ci, pi, ei = (
+                layout_tag,
+                layout_gi,
+                layout_ti,
+                layout_ci,
+                layout_pi,
+                layout_ei,
+            )
+        else:
+            tag, gi, ti, ci, pi, ei = None, None, None, None, None, None
     else:
         tag, gi, ti, ci, pi, ei = (
             layout_tag,

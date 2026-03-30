@@ -947,8 +947,8 @@ class CarrierScreeningPlugin(ServicePlugin):
 
     def _carrier_main_vcf_sort_key(self, path: str, tokens: List[str]) -> Tuple:
         """
-        소형 변이용 메인 VCF 우선: .../vcf/*filtered* > genotyped > 기타,
-        SV(manta)·repeat 등은 후순위.
+        소형 변이용 메인 VCF 우선: 이름에 *annotated* (VEP CSQ 등) > *filtered* (주석 없을 수 있음)
+        > *genotyped* > 기타. SV(manta)·repeat 등은 후순위.
         """
         norm = path.replace("\\", "/")
         base = os.path.basename(norm)
@@ -957,14 +957,16 @@ class CarrierScreeningPlugin(ServicePlugin):
         in_vcf = "/vcf/" in ll or ll.rstrip("/").endswith("/vcf")
         in_sv = "/sv/" in ll
         in_rep = "/repeat/" in ll
-        has_filt = "filtered" in bl
+        has_ann = "annotated" in bl   # VEP CSQ 포함 → 최우선
+        has_filt = "filtered" in bl and not has_ann  # annotation 없는 filtered만 후순위
         has_gen = "genotyped" in bl
         has_manta = "manta" in bl
         token_hit = any(t.lower() in bl for t in tokens)
-        filt_rank = 0 if has_filt else (1 if has_gen else 2)
+        # annotated(0) > filtered(1) > genotyped(2) > 기타(3)
+        ann_rank = 0 if has_ann else (1 if has_filt else (2 if has_gen else 3))
         return (
             0 if in_vcf else 1,
-            filt_rank,
+            ann_rank,
             1 if (in_sv or in_rep) else 0,
             1 if has_manta else 0,
             0 if token_hit else 1,
@@ -1065,8 +1067,17 @@ class CarrierScreeningPlugin(ServicePlugin):
                 except Exception:
                     pass
 
-            is_vep_vcf = vep_enabled_from_pipeline or is_vep_annotated_vcf(main_vcf)
+            has_csq_header = is_vep_annotated_vcf(main_vcf)
+            is_vep_vcf = vep_enabled_from_pipeline or has_csq_header
             logger.info(f"  VEP annotation detected: {is_vep_vcf}")
+            logger.info(
+                "[process_results] main_vcf fingerprint — path=%s basename=%s "
+                "##INFO_CSQ_header=%s pipeline_complete.vep_annotation_enabled=%s",
+                main_vcf,
+                os.path.basename(main_vcf),
+                has_csq_header,
+                vep_enabled_from_pipeline,
+            )
 
             # ── 2. FORMAT 문제 필드 정리 (동기 I/O → to_thread) ──
             cleaned_vcf = os.path.join(analysis_dir, f"{job.sample_name}.cleaned.vcf")
@@ -1229,6 +1240,11 @@ class CarrierScreeningPlugin(ServicePlugin):
                     vep_annotations = None
 
             # ── 7. 통합 VCF 파싱 파이프라인 실행 (CPU+I/O 블로킹 → to_thread) ──
+            logger.info(
+                "[process_results] parse_vcf_variants input (variants→result.json): %s | main_vcf was: %s",
+                annotated_vcf,
+                main_vcf,
+            )
             logger.info(f"  Starting integrated VCF parsing pipeline...")
             annotated_variants, acmg_results, parse_stats = await asyncio.to_thread(
                 parse_vcf_variants,
@@ -1248,6 +1264,14 @@ class CarrierScreeningPlugin(ServicePlugin):
             if parse_stats.get("warnings"):
                 for w in parse_stats["warnings"]:
                     logger.warning(f"  VCF parse warning: {w}")
+
+            if parse_stats.get("total_records", 0) > 0 and parse_stats.get("final_count", 0) == 0:
+                logger.warning(
+                    "  VCF parse retained 0 variants (%s records, protein_altering prefilter=%s). "
+                    "Often BED/HPO/gene_filter, max_af, ClinVar filter, or missing CSQ; check parse_stats.",
+                    parse_stats.get("total_records"),
+                    parse_stats.get("protein_altering_count"),
+                )
 
             if _job_stop_requested(job.order_id):
                 logger.info("[process_results] User stop requested after VCF parse")

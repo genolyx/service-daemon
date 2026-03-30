@@ -50,7 +50,10 @@ class OrderSubmitRequest(BaseModel):
     """주문 접수 요청"""
     order_id: str = Field(..., description="Platform에서 발급한 주문 ID")
     service_code: str = Field(..., description="서비스 코드 (nipt, carrier_screening, sgnipt)")
-    sample_name: str = Field(..., description="샘플 이름")
+    sample_name: Optional[str] = Field(
+        default=None,
+        description="레거시 전용: 비어 있으면 파이프라인 폴더명은 order_id와 동일",
+    )
     work_dir: Optional[str] = Field(default=None, description="작업 디렉토리명 (예: 2601)")
     
     # FASTQ 입력 (URL 또는 로컬 경로)
@@ -66,7 +69,6 @@ class OrderSubmitRequest(BaseModel):
     )
     
     priority: str = Field(default="normal", description="우선순위: urgent, normal, low")
-    callback_url: Optional[str] = Field(default=None, description="완료 시 콜백 URL")
 
 
 class OrderStatusResponse(BaseModel):
@@ -112,7 +114,6 @@ class OrderUpdateRequest(BaseModel):
     fastq_r2_path: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
     priority: Optional[str] = None
-    callback_url: Optional[str] = None
 
 
 class OrderUpdateResponse(BaseModel):
@@ -177,7 +178,6 @@ class Job(BaseModel):
     progress: int = 0
     message: str = ""
     priority: str = "normal"
-    callback_url: Optional[str] = None
     
     # 타임스탬프
     created_at: str = Field(default_factory=now_kst_iso)

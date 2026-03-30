@@ -52,10 +52,9 @@ print(f"  [OK] GET /queue/summary -> queued={data['total_queued']}, running={dat
 order_payload = {
     "order_id": "CS-2026-001",
     "service_code": "carrier_screening",
-    "sample_name": "SAMPLE_CS_001",
     "work_dir": "260227",
-    "fastq_r1_path": "/data/fastq/SAMPLE_CS_001_R1.fastq.gz",
-    "fastq_r2_path": "/data/fastq/SAMPLE_CS_001_R2.fastq.gz",
+    "fastq_r1_path": "/data/fastq/260227/CS-2026-001/CS-2026-001_R1.fastq.gz",
+    "fastq_r2_path": "/data/fastq/260227/CS-2026-001/CS-2026-001_R2.fastq.gz",
     "params": {},
     "priority": "normal"
 }
@@ -70,10 +69,9 @@ print(f"  [OK] POST /order/carrier_screening/submit -> {data['status']} (queue_p
 nipt_payload = {
     "order_id": "NIPT-2026-001",
     "service_code": "nipt",
-    "sample_name": "SAMPLE_NIPT_001",
     "work_dir": "260227",
-    "fastq_r1_path": "/data/fastq/SAMPLE_NIPT_001_R1.fastq.gz",
-    "fastq_r2_path": "/data/fastq/SAMPLE_NIPT_001_R2.fastq.gz"
+    "fastq_r1_path": "/data/fastq/260227/NIPT-2026-001/NIPT-2026-001_R1.fastq.gz",
+    "fastq_r2_path": "/data/fastq/260227/NIPT-2026-001/NIPT-2026-001_R2.fastq.gz"
 }
 resp = client.post("/order/nipt/submit", json=nipt_payload)
 assert resp.status_code == 200
@@ -98,7 +96,6 @@ print(f"  [OK] GET /queue/status?service_code=carrier_screening -> slots: {data[
 resp = client.post("/order/unknown_service/submit", json={
     "order_id": "X-001",
     "service_code": "unknown_service",
-    "sample_name": "X"
 })
 assert resp.status_code == 400
 print(f"  [OK] POST /order/unknown_service/submit -> 400 (expected)")

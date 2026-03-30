@@ -304,16 +304,24 @@ async def health(
 
 # ─── Order Endpoints ──────────────────────────────────────
 
+def _pipeline_folder_label(order_id: str, sample_name: Optional[str]) -> str:
+    """work_dir 아래 디렉터리 명: sample_name 비어 있으면 order_id."""
+    sn = (sample_name or "").strip()
+    oid = (order_id or "").strip()
+    return sn or oid
+
+
 def _build_job_from_submit_request(service_code: str, request: OrderSubmitRequest) -> Job:
     """Submit/Save 공통 Job 생성."""
     work_dir = request.work_dir or now_kst_date_compact()
+    folder = _pipeline_folder_label(request.order_id, request.sample_name)
     if service_code == "sgnipt":
         root = settings.sgnipt_job_root
         oid = (request.order_id or "").strip()
         return Job(
             order_id=request.order_id,
             service_code=service_code,
-            sample_name=request.sample_name,
+            sample_name=folder,
             work_dir=work_dir,
             fastq_r1_url=request.fastq_r1_url,
             fastq_r2_url=request.fastq_r2_url,
@@ -321,7 +329,6 @@ def _build_job_from_submit_request(service_code: str, request: OrderSubmitReques
             fastq_r2_path=request.fastq_r2_path,
             params=request.params or {},
             priority=request.priority,
-            callback_url=request.callback_url,
             fastq_dir=os.path.join(root, "fastq", work_dir, oid),
             analysis_dir=os.path.join(root, "analysis", work_dir, oid),
             output_dir=os.path.join(root, "output", work_dir, oid),
@@ -332,7 +339,7 @@ def _build_job_from_submit_request(service_code: str, request: OrderSubmitReques
         return Job(
             order_id=request.order_id,
             service_code=service_code,
-            sample_name=request.sample_name,
+            sample_name=folder,
             work_dir=work_dir,
             fastq_r1_url=request.fastq_r1_url,
             fastq_r2_url=request.fastq_r2_url,
@@ -340,17 +347,16 @@ def _build_job_from_submit_request(service_code: str, request: OrderSubmitReques
             fastq_r2_path=request.fastq_r2_path,
             params=request.params or {},
             priority=request.priority,
-            callback_url=request.callback_url,
-            fastq_dir=os.path.join(work_root, "fastq", work_dir, request.sample_name),
-            analysis_dir=os.path.join(work_root, "analysis", work_dir, request.sample_name),
-            output_dir=os.path.join(work_root, "output", work_dir, request.sample_name),
-            log_dir=os.path.join(work_root, "log", work_dir, request.sample_name),
+            fastq_dir=os.path.join(work_root, "fastq", work_dir, folder),
+            analysis_dir=os.path.join(work_root, "analysis", work_dir, folder),
+            output_dir=os.path.join(work_root, "output", work_dir, folder),
+            log_dir=os.path.join(work_root, "log", work_dir, folder),
         )
     base = settings.base_dir
     return Job(
         order_id=request.order_id,
         service_code=service_code,
-        sample_name=request.sample_name,
+        sample_name=folder,
         work_dir=work_dir,
         fastq_r1_url=request.fastq_r1_url,
         fastq_r2_url=request.fastq_r2_url,
@@ -358,11 +364,10 @@ def _build_job_from_submit_request(service_code: str, request: OrderSubmitReques
         fastq_r2_path=request.fastq_r2_path,
         params=request.params or {},
         priority=request.priority,
-        callback_url=request.callback_url,
-        fastq_dir=os.path.join(base, "fastq", work_dir, request.sample_name),
-        analysis_dir=os.path.join(base, "analysis", work_dir, request.sample_name),
-        output_dir=os.path.join(base, "output", work_dir, request.sample_name),
-        log_dir=os.path.join(base, "log", work_dir, request.sample_name),
+        fastq_dir=os.path.join(base, "fastq", work_dir, folder),
+        analysis_dir=os.path.join(base, "analysis", work_dir, folder),
+        output_dir=os.path.join(base, "output", work_dir, folder),
+        log_dir=os.path.join(base, "log", work_dir, folder),
     )
 
 
@@ -394,7 +399,6 @@ def _order_merge_submit(job: Job, patch: OrderUpdateRequest) -> OrderSubmitReque
         "fastq_r2_path": job.fastq_r2_path,
         "params": merged_params,
         "priority": job.priority or "normal",
-        "callback_url": job.callback_url,
     }
     for k, v in data.items():
         if v is not None:
@@ -1205,7 +1209,6 @@ async def list_orders(
                 "fastq_r2_url": j.fastq_r2_url,
                 "fastq_r1_path": j.fastq_r1_path,
                 "fastq_r2_path": j.fastq_r2_path,
-                "callback_url": j.callback_url,
             }
             for j in all_jobs
         ],

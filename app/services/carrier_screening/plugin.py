@@ -1035,17 +1035,19 @@ class CarrierScreeningPlugin(ServicePlugin):
             from .annotator import VariantAnnotator
             from .review import extract_qc_summary, generate_result_json, generate_variants_tsv
             from .vep_parser import is_vep_annotated_vcf, extract_vep_annotations_from_vcf
+            from .layout_norm import align_carrier_job_dirs_from_main_vcf
+
+            # ── 0. main VCF 실제 위치와 job.analysis|output|log 정렬 (work_root ≠ 파이프 산출 트리인 경우)
+            main_vcf = job.params.get("main_vcf")
+            if not main_vcf or not os.path.exists(main_vcf):
+                logger.error(f"Main VCF not found: {main_vcf}")
+                return False
+            align_carrier_job_dirs_from_main_vcf(job, main_vcf)
 
             dirs = self._get_dirs(job)
             analysis_dir = dirs["analysis"]
             output_dir = dirs["output"]
             os.makedirs(output_dir, exist_ok=True)
-
-            # ── 1. VCF 파일 확인 ──
-            main_vcf = job.params.get("main_vcf")
-            if not main_vcf or not os.path.exists(main_vcf):
-                logger.error(f"Main VCF not found: {main_vcf}")
-                return False
 
             logger.info(f"[process_results] Starting annotation for {job.sample_name}")
             logger.info(f"  Main VCF: {main_vcf}")

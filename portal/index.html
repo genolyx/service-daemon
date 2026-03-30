@@ -40,6 +40,13 @@
     .wrap{max-width:1000px;margin:32px auto;padding:0 20px;transition:max-width .3s}
     .wrap.wide{max-width:98%}
     header{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+    .header-theme-rail{
+      display:inline-flex;align-items:center;gap:10px;margin-left:auto;flex-shrink:0;
+      padding:4px 0 4px 12px;border-left:1px solid var(--line)
+    }
+    .theme-label{font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--muted);user-select:none;white-space:nowrap}
+    body:not(.light) .theme-label-dark{color:var(--text);font-weight:700}
+    body.light .theme-label-light{color:var(--text);font-weight:700}
     .logo{font-size:18px;font-weight:700;padding:10px 14px;border-radius:12px;background:linear-gradient(145deg,#1a2250,#0f1430);border:1px solid var(--line);box-shadow:var(--shadow);color:#e8ebff;white-space:nowrap}
     body.light .logo{background:linear-gradient(145deg,#f5f7ff,#ffffff);color:#102046}
     .right{margin-left:auto}
@@ -61,7 +68,7 @@
     @keyframes spin{to{transform:translateY(-50%) rotate(360deg)}}
 
     /* Theme Switch */
-    .theme-switch{width:44px;height:22px;background:var(--btn-bg);border:1px solid var(--line);border-radius:999px;position:relative;cursor:pointer;transition:.3s;flex-shrink:0;margin:0 6px}
+    .theme-switch{width:44px;height:22px;background:var(--btn-bg);border:1px solid var(--line);border-radius:999px;position:relative;cursor:pointer;transition:.3s;flex-shrink:0;margin:0}
     .switch-ball{position:absolute;top:2px;left:2px;width:16px;height:16px;background:var(--muted);border-radius:50%;transition:transform .3s cubic-bezier(.4,0,.2,1),background .3s}
     .theme-switch:hover{border-color:var(--brand)}
     body.light .switch-ball{transform:translateX(22px);background:var(--brand)}
@@ -107,6 +114,9 @@
     .pill.new{background:var(--pill-new-bg);border-color:var(--pill-new-bd);color:var(--pill-new-tx)}
     .pill.inp{background:var(--pill-inp-bg);border-color:var(--pill-inp-bd);color:var(--pill-inp-tx)}
     .pill.done{background:var(--pill-done-bg);border-color:var(--pill-done-bd);color:var(--pill-done-tx)}
+    /* COMPLETED or Report Ready after Reprocess only — list until user opens Order detail */
+    .pill.done-reprocess{background:rgba(234,179,8,.2);border-color:rgba(234,179,8,.55);color:#eab308;font-weight:700}
+    body.light .pill.done-reprocess{background:rgba(202,138,4,.12);border-color:rgba(161,98,7,.5);color:#a16207}
     .pill.report-ready{background:rgba(46,160,130,.22);border-color:rgba(46,160,130,.55);color:#2e9a82;font-weight:600}
     .btn-icon-dl{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer;padding:0;flex-shrink:0}
     .btn-icon-dl:hover{border-color:var(--accent);color:var(--accent);background:var(--input-bg)}
@@ -115,14 +125,14 @@
     td.order-dl{padding-left:8px;padding-right:8px}
     .order-dl-icons{display:flex;align-items:center;justify-content:center;gap:5px;flex-wrap:nowrap;width:100%;margin:0 auto;box-sizing:border-box}
     .btn-dl-report{width:auto;min-width:36px;height:34px;padding:0 7px;border-radius:10px;border:1px solid;font-size:10px;font-weight:800;letter-spacing:.04em;cursor:pointer;flex-shrink:0;line-height:1}
-    .btn-dl-report-pdf{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.5);color:#fca5a5}
-    .btn-dl-report-pdf:hover{background:rgba(239,68,68,.22);border-color:#ef4444;color:#fff}
-    body.light .btn-dl-report-pdf{background:rgba(220,38,38,.1);border-color:rgba(220,38,38,.45);color:#b91c1c}
-    body.light .btn-dl-report-pdf:hover{background:#fecaca;border-color:#dc2626;color:#7f1d1d}
-    .btn-dl-report-html{background:rgba(59,130,246,.14);border-color:rgba(59,130,246,.5);color:#93c5fd}
-    .btn-dl-report-html:hover{background:rgba(59,130,246,.28);border-color:#3b82f6;color:#fff}
-    body.light .btn-dl-report-html{background:rgba(37,99,235,.1);border-color:rgba(37,99,235,.45);color:#1d4ed8}
-    body.light .btn-dl-report-html:hover{background:#bfdbfe;border-color:#2563eb;color:#1e3a8a}
+    .btn-dl-report-pdf,.btn-dl-report-html{background:rgba(59,130,246,.14);border-color:rgba(59,130,246,.5);color:#93c5fd}
+    .btn-dl-report-pdf:hover,.btn-dl-report-html:hover{background:rgba(59,130,246,.28);border-color:#3b82f6;color:#fff}
+    body.light .btn-dl-report-pdf,body.light .btn-dl-report-html{background:rgba(37,99,235,.1);border-color:rgba(37,99,235,.45);color:#1d4ed8}
+    body.light .btn-dl-report-pdf:hover,body.light .btn-dl-report-html:hover{background:#bfdbfe;border-color:#2563eb;color:#1e3a8a}
+    .btn-dl-report--downloaded{background:rgba(239,68,68,.14)!important;border-color:rgba(239,68,68,.55)!important;color:#fca5a5!important}
+    .btn-dl-report--downloaded:hover{background:rgba(239,68,68,.26)!important;border-color:#ef4444!important;color:#fff!important}
+    body.light .btn-dl-report--downloaded{background:rgba(220,38,38,.12)!important;border-color:rgba(220,38,38,.5)!important;color:#b91c1c!important}
+    body.light .btn-dl-report--downloaded:hover{background:#fecaca!important;border-color:#dc2626!important;color:#7f1d1d!important}
     .pill.type-carrier{background:rgba(59,130,246,.14);border-color:rgba(59,130,246,.45);color:#93c5fd}
     .pill.type-couples{background:rgba(139,92,246,.18);border-color:rgba(139,92,246,.5);color:#ddd6fe}
     .pill.type-other-test{background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.5);color:var(--pill-warn-tx)}
@@ -165,6 +175,33 @@
     .detail-item .detail-value{font-size:13px;color:var(--text);margin-top:2px;word-break:break-all}
     .checkbox-label{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px}
     .checkbox-label input[type="checkbox"]{width:auto;cursor:pointer}
+    /* Carrier create — Couples report mode: two columns, radio + label grouped */
+    .report-mode-seg{
+      display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;
+    }
+    @media(max-width:720px){
+      .report-mode-seg{grid-template-columns:1fr}
+    }
+    .report-mode-option{
+      display:flex;align-items:flex-start;gap:10px;margin:0;
+      padding:12px 14px;border:1px solid var(--line);border-radius:12px;
+      background:var(--input-bg);cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s;
+      box-sizing:border-box;min-height:3.5rem;
+    }
+    .report-mode-option:hover{border-color:var(--accent)}
+    .report-mode-option:has(input:checked){
+      border-color:var(--brand);background:rgba(106,163,255,.1);
+      box-shadow:0 0 0 1px var(--brand);
+    }
+    body.light .report-mode-option:has(input:checked){
+      background:rgba(37,99,235,.08);box-shadow:0 0 0 1px rgba(37,99,235,.45)
+    }
+    .report-mode-option input[type="radio"]{
+      margin:3px 0 0;width:18px;height:18px;flex-shrink:0;accent-color:var(--brand);cursor:pointer
+    }
+    .report-mode-option-text{display:flex;flex-direction:column;gap:4px;font-size:13px;line-height:1.35;color:var(--text)}
+    .report-mode-option-text .report-mode-title{font-weight:700;font-size:13px;color:var(--text)}
+    .report-mode-option-text .report-mode-sub{font-size:11px;font-weight:500;color:var(--muted);line-height:1.4}
 
     /* 변이 테이블 체크박스 크게 */
     #tblVariants input[type="checkbox"],
@@ -546,8 +583,12 @@
       <button id="tabReview" class="btn" onclick="showView('review')">Review</button>
       <button id="tabLiterature" class="btn" onclick="showView('literature')">Literature</button>
 
-      <div class="theme-switch" id="btnTheme">
-        <div class="switch-ball"></div>
+      <div class="header-theme-rail" role="group" aria-label="Theme: dark or light">
+        <span class="theme-label theme-label-dark">Dark</span>
+        <div class="theme-switch" id="btnTheme" title="Toggle light / dark theme" tabindex="0" role="switch" aria-checked="false" aria-label="Toggle theme">
+          <div class="switch-ball"></div>
+        </div>
+        <span class="theme-label theme-label-light">Light</span>
       </div>
     </header>
 
@@ -647,7 +688,7 @@
                   <th class="sortable" data-key="order_id">Order ID</th>
                   <th class="sortable" data-key="service_code">Service</th>
                   <th class="sortable" data-key="order_type">Type</th>
-                  <th class="sortable" data-key="sample_name">Patient / Sample</th>
+                  <th class="sortable" data-key="patient">Patient</th>
                   <th class="sortable" data-key="status">Status</th>
                   <th>Progress</th>
                   <th class="sortable" data-key="created_at">Order created</th>
@@ -695,24 +736,15 @@
           <div class="row" style="margin-bottom:12px">
             <div class="col-6">
               <label class="required">Order ID</label>
-              <input id="cr_order_id" placeholder="e.g. CS-2026-001" />
+              <input id="cr_order_id" placeholder="e.g. CS-2026-001" autocomplete="off" />
             </div>
-            <div class="col-6">
-              <label class="required">Sample name (pipeline / FASTQ folder)</label>
-              <input id="cr_pipeline_sample" placeholder="Defaults from Sample ID or Sample Barcode if empty" />
-              <span class="muted" style="display:block;margin-top:4px">Daemon <code>sample_name</code> for this analysis.</span>
-            </div>
-            <div class="col-4">
+            <div class="col-3">
               <label>Work Directory</label>
               <input id="cr_work_dir" placeholder="e.g. 2603 (auto if empty)" />
             </div>
-            <div class="col-4">
+            <div class="col-3">
               <label>Priority</label>
               <select id="cr_priority"><option value="normal">Normal</option><option value="urgent">Urgent</option><option value="low">Low</option></select>
-            </div>
-            <div class="col-4">
-              <label>Callback URL</label>
-              <input id="cr_callback" placeholder="Optional" />
             </div>
           </div>
 
@@ -790,11 +822,25 @@
 
               <div class="form-section-card">
                 <h4>Couples carrier report</h4>
-                <p class="muted" style="margin:0 0 10px;font-size:12px">Single report (default) vs couples merged report using another order’s carrier result JSON (logic to be wired on the backend).</p>
+                <p class="muted" style="margin:0 0 12px;font-size:12px;line-height:1.45">Choose how the carrier PDF/HTML is built: this order alone, or merged with a partner order’s carrier result (backend uses both <code>result.json</code>).</p>
                 <div class="row">
-                  <div class="col-12" style="display:flex;flex-direction:column;gap:8px">
-                    <label class="checkbox-label" style="margin:0"><input type="radio" name="cr_report_mode" value="single" checked /> Single report (this order only)</label>
-                    <label class="checkbox-label" style="margin:0"><input type="radio" name="cr_report_mode" value="couples" /> Couples report — combine with another order</label>
+                  <div class="col-12">
+                    <div class="report-mode-seg" role="radiogroup" aria-label="Carrier report mode">
+                      <label class="report-mode-option">
+                        <input type="radio" name="cr_report_mode" value="single" checked />
+                        <span class="report-mode-option-text">
+                          <span class="report-mode-title">Single report</span>
+                          <span class="report-mode-sub">This order only — default carrier template.</span>
+                        </span>
+                      </label>
+                      <label class="report-mode-option">
+                        <input type="radio" name="cr_report_mode" value="couples" />
+                        <span class="report-mode-option-text">
+                          <span class="report-mode-title">Couples report</span>
+                          <span class="report-mode-sub">Merged report with another carrier order (enter Partner Order ID below).</span>
+                        </span>
+                      </label>
+                    </div>
                   </div>
                   <div class="col-12 hidden" id="cr_partner_order_wrap">
                     <label class="required">Partner Order ID</label>
@@ -849,24 +895,15 @@
           <div class="row" style="margin-bottom:12px">
             <div class="col-6">
               <label class="required">Order ID</label>
-              <input id="sgOrderId" placeholder="e.g. GNCI26030045" />
+              <input id="sgOrderId" placeholder="e.g. GNCI26030045" autocomplete="off" />
             </div>
-            <div class="col-6">
-              <label class="required">Sample name (pipeline / FASTQ folder)</label>
-              <input id="sgPipelineSample" placeholder="e.g. 2603100011 — defaults from Sample ID or Barcode if empty" />
-              <span class="muted" style="display:block;margin-top:4px">Used as daemon <code>sample_name</code>; pre-filled from Sample ID or Sample Barcode when you leave this empty.</span>
-            </div>
-            <div class="col-4">
+            <div class="col-3">
               <label>Work Directory</label>
               <input id="sgWorkDir" placeholder="YYMM, auto if empty" />
             </div>
-            <div class="col-4">
+            <div class="col-3">
               <label>Priority</label>
               <select id="sgPriority"><option value="normal">Normal</option><option value="urgent">Urgent</option><option value="low">Low</option></select>
-            </div>
-            <div class="col-4">
-              <label>Callback URL</label>
-              <input id="sgCallback" placeholder="Optional" />
             </div>
           </div>
 
@@ -1785,6 +1822,92 @@
       return pill(key || '—', 'warn');
     };
 
+    const PORTAL_REPROCESS_HIGHLIGHT_KEY = 'portalReprocessHighlightOrderIds';
+
+    function getPortalReprocessHighlightSet() {
+      try {
+        const raw = localStorage.getItem(PORTAL_REPROCESS_HIGHLIGHT_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return new Set(Array.isArray(arr) ? arr.map(x => String(x).trim()).filter(Boolean) : []);
+      } catch (_) {
+        return new Set();
+      }
+    }
+
+    function persistPortalReprocessHighlightSet(set) {
+      try {
+        localStorage.setItem(PORTAL_REPROCESS_HIGHLIGHT_KEY, JSON.stringify([...set]));
+      } catch (_) { /* quota */ }
+    }
+
+    function markPortalReprocessHighlight(orderId) {
+      const id = String(orderId || '').trim();
+      if (!id) return;
+      const s = getPortalReprocessHighlightSet();
+      s.add(id);
+      persistPortalReprocessHighlightSet(s);
+    }
+
+    function clearPortalReprocessHighlight(orderId) {
+      const id = String(orderId || '').trim();
+      if (!id) return;
+      const s = getPortalReprocessHighlightSet();
+      if (!s.delete(id)) return;
+      persistPortalReprocessHighlightSet(s);
+    }
+
+    /** Orders table: yellow COMPLETED / Report Ready if reprocess finished and Detail not opened yet */
+    function orderStatusPillForList(o) {
+      const st = orderStatusUpper(o);
+      const oid = String(o.order_id || '').trim();
+      if (oid && getPortalReprocessHighlightSet().has(oid)) {
+        if (st === 'COMPLETED') return pill('COMPLETED', 'done-reprocess');
+        if (st === 'REPORT_READY') return pill('Report Ready', 'done-reprocess');
+      }
+      return statusPill(st);
+    }
+
+    const PORTAL_REPORT_DL_KEY = 'portalReportDownloadedByOrder';
+
+    function getPortalReportDownloadMap() {
+      try {
+        const raw = localStorage.getItem(PORTAL_REPORT_DL_KEY);
+        const m = raw ? JSON.parse(raw) : {};
+        return m && typeof m === 'object' ? m : {};
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function persistPortalReportDownloadMap(m) {
+      try {
+        localStorage.setItem(PORTAL_REPORT_DL_KEY, JSON.stringify(m));
+      } catch (_) { /* quota */ }
+    }
+
+    function markPortalReportDownloaded(orderId, kind) {
+      const id = String(orderId || '').trim();
+      const k = kind === 'html' ? 'html' : 'pdf';
+      if (!id) return;
+      const m = getPortalReportDownloadMap();
+      if (!m[id]) m[id] = {};
+      m[id][k] = true;
+      persistPortalReportDownloadMap(m);
+    }
+
+    function portalReportDownloadVisited(orderId, kind) {
+      const id = String(orderId || '').trim();
+      const k = kind === 'html' ? 'html' : 'pdf';
+      const rec = getPortalReportDownloadMap()[id];
+      return !!(rec && rec[k]);
+    }
+
+    /** Order detail panel: normalized status pill (COMPLETED always green here) */
+    function orderDetailStatusPillHtml(o) {
+      const k = orderStatusUpper(o);
+      return statusPill(k);
+    }
+
     const acmgClass = cls => {
       const c = (cls || '').toLowerCase();
       if (c === 'pathogenic') return 'cls-pathogenic';
@@ -2044,6 +2167,8 @@
         } else {
           toast(`${k.toUpperCase()} opened in new tab: ${target.name}`);
         }
+        markPortalReportDownloaded(orderId, k);
+        renderOrders();
         setTimeout(() => { try { URL.revokeObjectURL(u); } catch (e) { /* ignore */ } }, 180000);
       } catch (e) {
         toast((e && e.message) || 'Open failed', false);
@@ -2405,12 +2530,8 @@
       const c = (o.params && o.params.carrier) || {};
       const p = o.params || {};
       setFormInput('cr_order_id', o.order_id);
-      setFormInput('cr_pipeline_sample', o.sample_name);
-      const cps = qs('cr_pipeline_sample');
-      if (cps) cps.dataset.locked = (o.sample_name && String(o.sample_name).trim()) ? '1' : '';
       setFormInput('cr_work_dir', o.work_dir);
       if (qs('cr_priority')) qs('cr_priority').value = o.priority || 'normal';
-      setFormInput('cr_callback', o.callback_url || '');
       setFormInput('fR1Path', o.fastq_r1_path || '');
       setFormInput('fR2Path', o.fastq_r2_path || '');
 
@@ -2463,12 +2584,8 @@
     function populateSgniptFormFromOrder(o) {
       const n = (o.params && o.params.nipt) || {};
       setFormInput('sgOrderId', o.order_id);
-      setFormInput('sgPipelineSample', o.sample_name);
-      const sps = qs('sgPipelineSample');
-      if (sps) sps.dataset.locked = (o.sample_name && String(o.sample_name).trim()) ? '1' : '';
       setFormInput('sgWorkDir', o.work_dir);
       if (qs('sgPriority')) qs('sgPriority').value = o.priority || 'normal';
-      setFormInput('sgCallback', o.callback_url || '');
       setFormInput('fR1Path', o.fastq_r1_path || '');
       setFormInput('fR2Path', o.fastq_r2_path || '');
 
@@ -2578,6 +2695,22 @@
       return meta;
     }
 
+    /** Strip all whitespace from order ID fields (spaces/tabs/newlines not allowed). */
+    function sanitizeOrderIdInput(el) {
+      if (!el) return;
+      const cur = el.value;
+      const cleaned = cur.replace(/\s/g, '');
+      if (cleaned !== cur) el.value = cleaned;
+    }
+
+    function wireOrderIdNoSpace(id) {
+      const el = typeof id === 'string' ? qs(id) : id;
+      if (!el) return;
+      const run = () => sanitizeOrderIdInput(el);
+      el.addEventListener('input', run);
+      el.addEventListener('blur', run);
+    }
+
     function validateCarrierSubmit() {
       const val = id => { const el = qs(id); return el && el.value != null ? String(el.value).trim() : ''; };
       if (!val('cr_order_id')) return 'Order ID is required';
@@ -2608,7 +2741,9 @@
         if (!val('cr_p3_affected')) return 'Affected3 is required';
       }
       const modeEl = document.querySelector('input[name="cr_report_mode"]:checked');
-      if (modeEl && modeEl.value === 'couples' && !val('cr_partner_order_id')) return 'Partner Order ID is required for couples report';
+      if (modeEl && modeEl.value === 'couples') {
+        if (!val('cr_partner_order_id')) return 'Partner Order ID is required for couples report';
+      }
       return null;
     }
 
@@ -2620,25 +2755,13 @@
       document.querySelectorAll('input[name="cr_report_mode"]').forEach(r => {
         r.addEventListener('change', refreshCarrierConditionalUi);
       });
-      const syncSample = () => {
-        const svc = document.querySelector('input[name="fService"]:checked');
-        if (!svc || svc.value !== 'carrier_screening') return;
-        const p = qs('cr_pipeline_sample');
-        if (!p || p.dataset.locked === '1') return;
-        const sid = qs('cr_sample_id') && qs('cr_sample_id').value.trim();
-        const bc = qs('cr_barcode') && qs('cr_barcode').value.trim();
-        if (sid || bc) p.value = sid || bc;
-      };
-      ['cr_sample_id', 'cr_barcode'].forEach(id => {
-        const el = qs(id);
-        if (el) el.addEventListener('input', syncSample);
-      });
-      const cps = qs('cr_pipeline_sample');
-      if (cps) {
-        cps.addEventListener('input', function() {
-          this.dataset.locked = this.value.trim() ? '1' : '';
-        });
+      const oidEl = qs('cr_order_id');
+      const onCarrierOrderId = () => sanitizeOrderIdInput(oidEl);
+      if (oidEl) {
+        oidEl.addEventListener('input', onCarrierOrderId);
+        oidEl.addEventListener('change', onCarrierOrderId);
       }
+      wireOrderIdNoSpace('cr_partner_order_id');
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -2667,7 +2790,6 @@
               <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)">
                 <span class="pill inp">${svcLabel(j.service_code)}</span>
                 <span style="font-weight:600">${j.order_id}</span>
-                <span class="muted">${j.sample_name}</span>
                 <div style="flex:1;max-width:200px">
                   <div class="progress-bar"><div class="progress-fill" style="width:${j.progress}%"></div></div>
                 </div>
@@ -2756,27 +2878,24 @@
       if (!btn || btn.classList.contains('loading')) return;
 
       const serviceCode = document.querySelector('input[name="fService"]:checked').value;
-      let orderId, sampleName, workDir, priority, callbackUrl, body;
+      let orderId, workDir, priority, body;
 
       if (serviceCode === 'carrier_screening') {
+        sanitizeOrderIdInput(qs('cr_order_id'));
+        sanitizeOrderIdInput(qs('cr_partner_order_id'));
         const cErr = validateCarrierSubmit();
         if (cErr) return toast(cErr, false);
         orderId = qs('cr_order_id').value.trim();
         const carrier = collectCarrierOrderMeta();
-        sampleName = qs('cr_pipeline_sample').value.trim() || carrier.sample_id || carrier.sample_barcode || '';
-        if (!sampleName) return toast('Set Sample name (pipeline), or fill Sample ID / Sample Barcode', false);
         workDir = qs('cr_work_dir').value.trim();
         priority = qs('cr_priority').value;
-        callbackUrl = qs('cr_callback').value.trim();
         body = {
           order_id: orderId,
           service_code: serviceCode,
-          sample_name: sampleName,
           work_dir: workDir || undefined,
           fastq_r1_path: qs('fR1Path').value.trim() || undefined,
           fastq_r2_path: qs('fR2Path').value.trim() || undefined,
           priority,
-          callback_url: callbackUrl || undefined,
           params: { carrier },
         };
         const bb = qs('fBackboneBed').value.trim();
@@ -2790,25 +2909,22 @@
         if (hpo) body.params.hpo_terms = hpo;
         if (gf) body.params.gene_filter = gf;
       } else {
+        sanitizeOrderIdInput(qs('sgOrderId'));
+        sanitizeOrderIdInput(qs('sg_prev_order'));
         orderId = qs('sgOrderId').value.trim();
         if (!orderId) return toast('Order ID is required', false);
         const nipt = collectSgniptNiptParams();
         const vErr = validateSgniptClinical(nipt);
         if (vErr) return toast(vErr, false);
-        sampleName = qs('sgPipelineSample').value.trim() || nipt.sample_id || nipt.sample_barcode || '';
-        if (!sampleName) return toast('Set Sample name (pipeline), or fill Sample ID / Sample Barcode', false);
         workDir = qs('sgWorkDir').value.trim();
         priority = qs('sgPriority').value;
-        callbackUrl = qs('sgCallback').value.trim();
         body = {
           order_id: orderId,
           service_code: serviceCode,
-          sample_name: sampleName,
           work_dir: workDir || undefined,
           fastq_r1_path: qs('fR1Path').value.trim() || undefined,
           fastq_r2_path: qs('fR2Path').value.trim() || undefined,
           priority,
-          callback_url: callbackUrl || undefined,
           params: { nipt },
         };
       }
@@ -2820,12 +2936,10 @@
         if (editingOrderId) {
           const patchBody = {
             order_id: body.order_id,
-            sample_name: body.sample_name,
             work_dir: body.work_dir,
             fastq_r1_path: body.fastq_r1_path,
             fastq_r2_path: body.fastq_r2_path,
             priority: body.priority,
-            callback_url: body.callback_url,
             params: body.params,
           };
           res = await apiPatch(`/order/${encodeURIComponent(editingOrderId)}`, patchBody);
@@ -2910,9 +3024,9 @@
       const key = orderSortKey;
       const dir = orderSortAsc ? 1 : -1;
       let va, vb;
-      if (key === 'sample_name') {
-        va = (patientDisplayName(a) || a.sample_name || '').toLowerCase();
-        vb = (patientDisplayName(b) || b.sample_name || '').toLowerCase();
+      if (key === 'patient') {
+        va = (patientDisplayName(a) || '').toLowerCase();
+        vb = (patientDisplayName(b) || '').toLowerCase();
       } else if (key === 'order_type') {
         va = orderTypeSortKey(a).toLowerCase();
         vb = orderTypeSortKey(b).toLowerCase();
@@ -3079,6 +3193,7 @@
       if (!ok) return;
       try {
         const res = await apiPost(`/order/${encodeURIComponent(oid)}/reprocess-results`, {});
+        markPortalReprocessHighlight(oid);
         loadOrders();
         loadDashboard();
         const cur = reviewLoadedOrderId ? String(reviewLoadedOrderId).trim() : '';
@@ -3191,10 +3306,10 @@
 
     function exportOrdersTsv() {
       const rows = getOrdersAfterClientFilter();
-      const headers = ['order_id', 'service_code', 'type', 'patient_or_sample', 'status', 'progress', 'created_at', 'priority', 'message'];
+      const headers = ['order_id', 'service_code', 'type', 'patient', 'status', 'progress', 'created_at', 'priority', 'message'];
       const lines = [headers.join('\t')];
       rows.forEach(o => {
-        const pat = patientDisplayName(o) || o.sample_name || '';
+        const pat = patientDisplayName(o) || '';
         const typeTxt = orderTypeSortKey(o) || '';
         lines.push([
           o.order_id,
@@ -3389,6 +3504,9 @@
     }
 
     function showOrderDetail(o) {
+      clearPortalReprocessHighlight(o.order_id);
+      renderOrders();
+
       const chrome = qs('ordersBrowseChrome');
       if (chrome) chrome.classList.add('hidden');
       const p = qs('orderDetailPanel');
@@ -3400,7 +3518,8 @@
       const pipelinePairs = [
         ['Order ID', o.order_id],
         ['Service', svcTag],
-        ['Sample name (pipeline)', o.sample_name],
+      ];
+      pipelinePairs.push(
         ['Work directory', o.work_dir || '—'],
         ['Status', (() => {
           const k = orderStatusUpper(o);
@@ -3416,14 +3535,16 @@
         ['Completed', fmtDateTimeDetail(o.completed_at)],
         ['R1 path', o.fastq_r1_path || '—'],
         ['R2 path', o.fastq_r2_path || '—'],
-        ['Callback URL', o.callback_url || '—'],
-      ];
+      );
 
       let html = '';
       html += `<div class="detail-section"><h4>Order logistics &amp; pipeline</h4><div class="detail-kv">` +
-        pipelinePairs.map(([l, v]) =>
-          `<div class="kv-item"><div class="kv-label">${escapeHtml(l)}</div><div class="kv-value">${v === '—' ? '—' : escapeHtml(String(v))}</div></div>`
-        ).join('') + `</div></div>`;
+        pipelinePairs.map(([l, v]) => {
+          if (l === 'Status') {
+            return `<div class="kv-item"><div class="kv-label">${escapeHtml(l)}</div><div class="kv-value">${orderDetailStatusPillHtml(o)}</div></div>`;
+          }
+          return `<div class="kv-item"><div class="kv-label">${escapeHtml(l)}</div><div class="kv-value">${v === '—' ? '—' : escapeHtml(String(v))}</div></div>`;
+        }).join('') + `</div></div>`;
 
       const nipt = o.params && o.params.nipt;
       if (nipt && typeof nipt === 'object') {
@@ -3626,7 +3747,7 @@
         const tr = document.createElement('tr');
         tr.className = 'order-row-click';
         const svcLabel = o.service_code === 'sgnipt' ? 'sgNIPT' : (o.service_code === 'carrier_screening' ? 'Carrier' : o.service_code || '-');
-        const pat = patientDisplayName(o) || o.sample_name || '—';
+        const pat = patientDisplayName(o) || '—';
         const st = orderStatusUpper(o);
         const items = [];
         items.push('<button type="button" data-act="edit">Edit</button>');
@@ -3665,10 +3786,13 @@
         }
         if (!items.length) items.push('<button type="button" disabled style="opacity:.5;cursor:default">—</button>');
         /* SVG 대신 문자: 일부 브라우저에서 table>tr innerHTML 파싱 이슈 방지 */
+        const oidDl = String(o.order_id || '').trim();
+        const pdfSeen = oidDl && portalReportDownloadVisited(oidDl, 'pdf');
+        const htmlSeen = oidDl && portalReportDownloadVisited(oidDl, 'html');
         const dlBtn = st === 'REPORT_READY'
           ? `<div class="order-dl-icons" role="group" aria-label="Download report files">
-            <button type="button" class="btn-dl-report btn-dl-report-pdf" data-order-id="${escapeHtml(o.order_id)}" data-report-kind="pdf" title="Open PDF in new tab" aria-label="Open PDF report in new tab">PDF</button>
-            <button type="button" class="btn-dl-report btn-dl-report-html" data-order-id="${escapeHtml(o.order_id)}" data-report-kind="html" title="Open HTML in new tab" aria-label="Open HTML report in new tab">HTML</button>
+            <button type="button" class="btn-dl-report btn-dl-report-pdf${pdfSeen ? ' btn-dl-report--downloaded' : ''}" data-order-id="${escapeHtml(o.order_id)}" data-report-kind="pdf" title="Open PDF in new tab" aria-label="Open PDF report in new tab">PDF</button>
+            <button type="button" class="btn-dl-report btn-dl-report-html${htmlSeen ? ' btn-dl-report--downloaded' : ''}" data-order-id="${escapeHtml(o.order_id)}" data-report-kind="html" title="Open HTML in new tab" aria-label="Open HTML report in new tab">HTML</button>
           </div>`
           : '';
         tr.innerHTML = `
@@ -3676,7 +3800,7 @@
           <td><span class="pill inp">${escapeHtml(svcLabel)}</span></td>
           <td style="white-space:nowrap">${orderTypePillHtml(o)}</td>
           <td>${escapeHtml(pat)}</td>
-          <td>${statusPill(st)}</td>
+          <td>${orderStatusPillForList(o)}</td>
           <td>
             <div class="progress-bar" style="min-width:80px"><div class="progress-fill" style="width:${o.progress ?? 0}%"></div></div>
             <span class="muted">${o.progress ?? 0}%</span>
@@ -3797,18 +3921,14 @@
     // ═══════════════════════════════════════════════════════════
     // Variant Review
     // ═══════════════════════════════════════════════════════════
-    function ensureReviewOrderOption(orderId, sampleLabel) {
+    function ensureReviewOrderOption(orderId) {
       const sel = qs('reviewOrderSelect');
       if (!sel || !orderId) return;
-      const lab = (sampleLabel != null && String(sampleLabel).trim()) ? String(sampleLabel).trim() : null;
       const existing = Array.from(sel.options).find(o => o.value === orderId);
-      if (existing) {
-        if (lab !== null) existing.textContent = `${orderId} (${lab})`;
-        return;
-      }
+      if (existing) return;
       const opt = document.createElement('option');
       opt.value = orderId;
-      opt.textContent = lab !== null ? `${orderId} (${lab})` : `${orderId} (—)`;
+      opt.textContent = orderId;
       sel.appendChild(opt);
     }
 
@@ -4035,7 +4155,7 @@
           opt.value = o.order_id;
           const sk = orderStatusUpper(o);
           const stLabel = sk === 'REPORT_READY' ? 'Report Ready' : String(o.status ?? '');
-          opt.textContent = `${o.order_id} (${o.sample_name}) - ${stLabel}`;
+          opt.textContent = `${o.order_id} — ${stLabel}`;
           sel.appendChild(opt);
         });
         if (current) sel.value = current;
@@ -4077,7 +4197,7 @@
         try {
           localStorage.setItem('reviewLastOrderId', orderId);
         } catch (e) { /* ignore quota */ }
-        ensureReviewOrderOption(orderId, reviewData.sample_name);
+        ensureReviewOrderOption(orderId);
         qs('reviewOrderSelect').value = orderId;
 
         selectedVariants = new Set();
@@ -6134,13 +6254,31 @@
     // ═══════════════════════════════════════════════════════════
     // Theme Toggle
     // ═══════════════════════════════════════════════════════════
+    function syncThemeSwitchAria() {
+      const el = qs('btnTheme');
+      if (!el) return;
+      el.setAttribute('aria-checked', document.body.classList.contains('light') ? 'true' : 'false');
+    }
+
     const savedTheme = localStorage.getItem('theme') || 'dark';
     if (savedTheme === 'light') document.body.classList.add('light');
+    syncThemeSwitchAria();
 
-    qs('btnTheme').onclick = () => {
+    const btnTheme = qs('btnTheme');
+    const toggleTheme = () => {
       document.body.classList.toggle('light');
       localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
+      syncThemeSwitchAria();
     };
+    if (btnTheme) {
+      btnTheme.onclick = toggleTheme;
+      btnTheme.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggleTheme();
+        }
+      });
+    }
 
     // ═══════════════════════════════════════════════════════════
     // Init
@@ -6352,6 +6490,8 @@
     (async function init() {
       wireGlobalConfirmModal();
       wireCarrierFormEvents();
+      wireOrderIdNoSpace('sgOrderId');
+      wireOrderIdNoSpace('sg_prev_order');
       wireFastqBrowseUi();
       await detectOrderApiPrefix();
       let lastTab = localStorage.getItem('activeTab') || 'dash';

@@ -91,12 +91,12 @@ print(f"  [OK] carrier_screening.acmg")
 job = Job(
     order_id="TEST-001",
     service_code="carrier_screening",
-    sample_name="SAMPLE_001",
+    sample_name="TEST-001",
     work_dir="260101",
-    fastq_dir="/data/fastq/260101/SAMPLE_001",
-    analysis_dir="/data/analysis/carrier_screening/260101/SAMPLE_001",
-    output_dir="/data/output/carrier_screening/260101/SAMPLE_001",
-    log_dir="/data/log/carrier_screening/260101/SAMPLE_001"
+    fastq_dir="/data/fastq/260101/TEST-001",
+    analysis_dir="/data/analysis/carrier_screening/260101/TEST-001",
+    output_dir="/data/output/carrier_screening/260101/TEST-001",
+    log_dir="/data/log/carrier_screening/260101/TEST-001"
 )
 print(f"  [OK] Job created: {job.order_id} ({job.service_code})")
 

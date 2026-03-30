@@ -193,7 +193,10 @@ def get_annotation_layout(vcf) -> Tuple:
                     return uf.index(n)
             return None
 
-        gene_idx = idx({"SYMBOL", "GENE"})
+        # SYMBOL must win over Gene (ENSG…): set iteration order is not stable across runtimes.
+        gene_idx = idx({"SYMBOL"})
+        if gene_idx is None:
+            gene_idx = idx({"GENE"})
         tx_idx = idx({"FEATURE", "TRANSCRIPT"})
         c_idx = idx({"HGVSC", "HGVS_C"})
         p_idx = idx({"HGVSP", "HGVS_P"})
@@ -616,6 +619,24 @@ def apply_clinvar_filter(
     return matches
 
 
+def _is_ensembl_gene_id(s: str) -> bool:
+    t = (s or "").strip()
+    return len(t) >= 12 and t.startswith("ENSG")
+
+
+def _merge_ann_gene_from_csq_row(ann: Dict[str, Any], g2: str) -> None:
+    """Fill or upgrade ann['gene'] using per-record CSQ (prefer HGNC symbol over ENSG)."""
+    if not g2 or not str(g2).strip():
+        return
+    sym = str(g2).strip()
+    cur = (ann.get("gene") or "").strip()
+    if not cur:
+        ann["gene"] = sym
+        return
+    if _is_ensembl_gene_id(cur) and not _is_ensembl_gene_id(sym):
+        ann["gene"] = sym
+
+
 def _lookup_vep_annotations(
     vep_annotations: Dict[str, Any],
     chrom: str,
@@ -830,8 +851,7 @@ def parse_vcf_variants(
                             layout_ei,
                             gene_interval_lookup=gene_interval_lookup,
                         )
-                        if g2 and not (ann.get("gene") or "").strip():
-                            ann["gene"] = g2
+                        _merge_ann_gene_from_csq_row(ann, g2)
                         if t2 and not (ann.get("transcript") or "").strip():
                             ann["transcript"] = t2
                         if hc2 and not (ann.get("hgvsc") or "").strip():

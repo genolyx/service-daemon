@@ -804,16 +804,114 @@ def _dosage_title_matches(title: str) -> bool:
     return False
 
 
+def _is_alpha_thalassemia_dosage_title(title: Optional[str]) -> bool:
+    """HBA / Alpha thal dosage blocks only (not CYP21A2). Matches portal ``alphaThalassemiaDosageTitleMatches``."""
+    u = (title or "").strip()
+    if not u:
+        return False
+    if re.search(r"HBA\s+ANALYSIS", u, re.I):
+        return True
+    if re.search(r"Alpha\s*Thalassemia", u, re.I) and re.search(r"Dosage", u, re.I):
+        return True
+    return dark_genes_display_title(title) == "Alpha Thalassemia"
+
+
+def _split_alpha_thal_kv_segments(raw: str) -> List[str]:
+    """Split on newlines / pipes / semicolons / tabs so ``Est_CN=…|hba1=…`` or TSV parses."""
+    parts: List[str] = []
+    for seg in re.split(r"[\r\n|;\t]+", raw or ""):
+        t = seg.strip()
+        if t:
+            parts.append(t)
+    return parts
+
+
+def _alpha_thal_pick_scalar(raw: str, key_names: List[str]) -> Optional[str]:
+    """First matching key=value (scalar); tries line-anchored then each segment."""
+    s = raw or ""
+    for name in key_names:
+        m = re.search(rf"^\s*{re.escape(name)}\s*=\s*(\S+)", s, re.I | re.M)
+        if m:
+            return m.group(1)
+    for seg in _split_alpha_thal_kv_segments(s):
+        for name in key_names:
+            m = re.match(rf"^{re.escape(name)}\s*=\s*(\S+)$", seg, re.I)
+            if m:
+                return m.group(1)
+    return None
+
+
+def _alpha_thal_pick_scalar_anywhere(raw: str, key_names: List[str]) -> Optional[str]:
+    """Fallback: space-separated ``key=value`` on one line (e.g. after ``Ratio=… hba1=…``)."""
+    s = raw or ""
+    for name in key_names:
+        k = re.escape(name)
+        m = re.search(rf"(?:^|[\s|;,\t]){k}\s*=\s*([^\s|;,\t]+)", s, re.I)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _alpha_thal_result_from_formula_line(raw: str, formula_key: str) -> Optional[str]:
+    """
+    Pipeline may only emit ``formula_est_hba1=4*505/(505+480)=2.0508``.
+    Take the numeric token after the last ``=`` for hba1/hba2 display (no formula row).
+    """
+    k = re.escape(formula_key)
+    m = re.search(rf"(?:^|[\s|;,\t]){k}\s*=\s*(.+)$", raw or "", re.I | re.M)
+    if not m:
+        return None
+    rhs = m.group(1).strip()
+    if "=" in rhs:
+        tail = rhs.rsplit("=", 1)[-1].strip()
+    else:
+        tail = rhs
+    if re.match(r"^[\d.eE+-]+$", tail):
+        return tail
+    return None
+
+
 def _try_dosage_kv_html(title: str, body: str) -> Optional[str]:
-    """Match portal ``tryRenderDosageAnalysisSection`` (Estimated CNV, Ratio, Warning)."""
+    """Match portal ``tryRenderDosageAnalysisSection`` (Est_CN/Ratio/WARNING; Alpha thal appends hba1/hba2)."""
     if not _dosage_title_matches(title):
         return None
     raw = body or ""
+    is_alpha = _is_alpha_thalassemia_dosage_title(title)
     m_est = re.search(r"^\s*Est_CN\s*=\s*(\S+)", raw, re.I | re.M)
     m_ratio = re.search(r"^\s*Ratio\s*=\s*(\S+)", raw, re.I | re.M)
     m_warn = re.search(r"^\s*WARNING:\s*(.+)", raw, re.I | re.M)
     if not m_est and not m_ratio and not m_warn:
         return None
+    hba1_keys = [
+        "est_copies_hba1",
+        "hba1",
+        "paralog_hba1",
+        "hba1_paralog",
+        "HBA1_paralog",
+        "HBA1",
+    ]
+    hba2_keys = [
+        "est_copies_hba2",
+        "hba2",
+        "paralog_hba2",
+        "hba2_paralog",
+        "HBA2_paralog",
+        "HBA2",
+    ]
+    hba1_val = (
+        (_alpha_thal_pick_scalar(raw, hba1_keys) or _alpha_thal_pick_scalar_anywhere(raw, hba1_keys))
+        if is_alpha
+        else None
+    )
+    hba2_val = (
+        (_alpha_thal_pick_scalar(raw, hba2_keys) or _alpha_thal_pick_scalar_anywhere(raw, hba2_keys))
+        if is_alpha
+        else None
+    )
+    if is_alpha and hba1_val is None:
+        hba1_val = _alpha_thal_result_from_formula_line(raw, "formula_est_hba1")
+    if is_alpha and hba2_val is None:
+        hba2_val = _alpha_thal_result_from_formula_line(raw, "formula_est_hba2")
     rows: List[Tuple[str, str]] = []
     if m_est:
         rows.append(("Estimated CNV", m_est.group(1)))
@@ -821,6 +919,10 @@ def _try_dosage_kv_html(title: str, body: str) -> Optional[str]:
         rows.append(("Ratio", m_ratio.group(1)))
     if m_warn:
         rows.append(("Warning", re.sub(r"\s+", " ", m_warn.group(1).strip())))
+    if hba1_val is not None:
+        rows.append(("hba1", hba1_val))
+    if hba2_val is not None:
+        rows.append(("hba2", hba2_val))
     return _dl_kv_pdf_rows(rows)
 
 

@@ -68,7 +68,6 @@ class OrderSubmitRequest(BaseModel):
         description="서비스별 추가 파라미터 (예: backbone_bed, pon_tar 등)"
     )
     
-    priority: str = Field(default="normal", description="우선순위: urgent, normal, low")
 
 
 class OrderStatusResponse(BaseModel):
@@ -121,7 +120,6 @@ class OrderUpdateRequest(BaseModel):
     fastq_r1_path: Optional[str] = None
     fastq_r2_path: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
-    priority: Optional[str] = None
 
 
 class OrderUpdateResponse(BaseModel):
@@ -185,8 +183,6 @@ class Job(BaseModel):
     status: OrderStatus = OrderStatus.RECEIVED
     progress: int = 0
     message: str = ""
-    priority: str = "normal"
-    
     # 타임스탬프
     created_at: str = Field(default_factory=now_kst_iso)
     started_at: Optional[str] = None

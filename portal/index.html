@@ -228,6 +228,21 @@
     #tblVariants td:first-child {
       width:44px;text-align:center;padding:0 6px;
     }
+    /* Long VEP consequence strings must not stretch the row — ellipsis + hover title */
+    #tblVariants {
+      width: 100%;
+    }
+    #tblVariants th.col-effect,
+    #tblVariants td.col-effect {
+      width: 10rem;
+      max-width: 10rem;
+      box-sizing: border-box;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 11px;
+      vertical-align: middle;
+    }
 
     /* Pagination */
     .pagination{display:flex;align-items:center;justify-content:space-between;margin-top:10px}
@@ -759,7 +774,6 @@
                   <th class="sortable" data-key="status">Status</th>
                   <th>Progress</th>
                   <th class="sortable" data-key="created_at">Order created</th>
-                  <th class="sortable" data-key="priority">Priority</th>
                   <th>Message</th>
                   <th class="td-report-col" style="min-width:104px" title="Open PDF or HTML report in a new tab">Report</th>
                   <th style="width:52px">More</th>
@@ -808,10 +822,6 @@
             <div class="col-3">
               <label>Work Directory</label>
               <input id="cr_work_dir" placeholder="e.g. 2603 (auto if empty)" />
-            </div>
-            <div class="col-3">
-              <label>Priority</label>
-              <select id="cr_priority"><option value="normal">Normal</option><option value="urgent">Urgent</option><option value="low">Low</option></select>
             </div>
           </div>
 
@@ -967,10 +977,6 @@
             <div class="col-3">
               <label>Work Directory</label>
               <input id="sgWorkDir" placeholder="YYMM, auto if empty" />
-            </div>
-            <div class="col-3">
-              <label>Priority</label>
-              <select id="sgPriority"><option value="normal">Normal</option><option value="urgent">Urgent</option><option value="low">Low</option></select>
             </div>
           </div>
 
@@ -1240,11 +1246,12 @@
               <tr>
                 <th style="width:44px;text-align:center"><input type="checkbox" id="chkAll" onchange="toggleAllCheckboxes(this)" /></th>
                 <th class="sortable" data-key="gene">Gene</th>
-                <th class="sortable" data-key="transcript_nm_sort" title="MANE RefSeq (NM_…); may show ENST if NM unavailable">Transcript (NM)</th>
                 <th class="sortable" data-key="hgvsc">HGVSc</th>
                 <th class="sortable" data-key="hgvsp">HGVSp</th>
-                <th class="sortable" data-key="effect">Effect</th>
+                <th class="sortable" data-key="transcript_nm_sort" title="MANE RefSeq (NM_…); may show ENST if NM unavailable">Transcript (NM)</th>
+                <th class="sortable col-effect" data-key="effect" title="Consequence (truncated; hover cell for full)">Effect</th>
                 <th class="sortable" data-key="zygosity">Zygosity</th>
+                <th class="sortable" data-key="allele_depth_sort" title="REF / ALT read depth (VCF AD); DP when AD unavailable">Allele depth</th>
                 <th class="sortable" data-key="gnomad_af">gnomAD AF</th>
                 <th class="sortable" data-key="clinvar_sig_primary">ClinVar</th>
                 <th class="sortable" data-key="acmg_classification">ACMG</th>
@@ -1991,6 +1998,23 @@
       return isNaN(n) ? '-' : n < 0.0001 ? n.toExponential(2) : n.toFixed(4);
     };
 
+    /** Ref/alt read depths for review table; DP fallback when AD missing. */
+    function fmtVariantAlleleDepth(v) {
+      if (!v || typeof v !== 'object') return '-';
+      const rd = v.ref_depth;
+      const ad = v.alt_depth;
+      if (rd != null && rd !== '' && ad != null && ad !== '') {
+        const r = Number(rd);
+        const a = Number(ad);
+        if (!Number.isNaN(r) && !Number.isNaN(a)) return `${r} / ${a}`;
+      }
+      if (v.dp != null && v.dp !== '') {
+        const d = Number(v.dp);
+        if (!Number.isNaN(d)) return `DP ${d}`;
+      }
+      return '-';
+    }
+
     /** Align with server ``normalize_variants_for_portal`` — alternate keys + gnomAD fallback */
     function normalizeVariantForReview(v) {
       if (!v || typeof v !== 'object') return v;
@@ -2009,6 +2033,17 @@
       const tx = (o.transcript || '').trim();
       const enst = (o.canonical_enst || '').trim();
       o.transcript_nm_sort = clinical || (/^NM_/i.test(tx) ? tx : '') || enst || tx || '';
+      let alleleSort = null;
+      if (o.ref_depth != null && o.ref_depth !== '' && o.alt_depth != null && o.alt_depth !== '') {
+        const r = Number(o.ref_depth);
+        const a = Number(o.alt_depth);
+        if (!Number.isNaN(r) && !Number.isNaN(a)) alleleSort = r + a;
+      }
+      if (alleleSort == null && o.dp != null && o.dp !== '') {
+        const d = Number(o.dp);
+        if (!Number.isNaN(d)) alleleSort = d;
+      }
+      o.allele_depth_sort = alleleSort != null ? alleleSort : null;
       return o;
     }
 
@@ -2602,7 +2637,6 @@
       const p = o.params || {};
       setFormInput('cr_order_id', o.order_id);
       setFormInput('cr_work_dir', o.work_dir);
-      if (qs('cr_priority')) qs('cr_priority').value = o.priority || 'normal';
       setFormInput('fR1Path', o.fastq_r1_path || '');
       setFormInput('fR2Path', o.fastq_r2_path || '');
 
@@ -2656,7 +2690,6 @@
       const n = (o.params && o.params.nipt) || {};
       setFormInput('sgOrderId', o.order_id);
       setFormInput('sgWorkDir', o.work_dir);
-      if (qs('sgPriority')) qs('sgPriority').value = o.priority || 'normal';
       setFormInput('fR1Path', o.fastq_r1_path || '');
       setFormInput('fR2Path', o.fastq_r2_path || '');
 
@@ -3169,7 +3202,7 @@
       if (!btn || btn.classList.contains('loading')) return;
 
       const serviceCode = document.querySelector('input[name="fService"]:checked').value;
-      let orderId, workDir, priority, body;
+      let orderId, workDir, body;
 
       if (serviceCode === 'carrier_screening') {
         sanitizeOrderIdInput(qs('cr_order_id'));
@@ -3179,14 +3212,12 @@
         orderId = qs('cr_order_id').value.trim();
         const carrier = collectCarrierOrderMeta();
         workDir = qs('cr_work_dir').value.trim();
-        priority = qs('cr_priority').value;
         body = {
           order_id: orderId,
           service_code: serviceCode,
           work_dir: workDir || undefined,
           fastq_r1_path: qs('fR1Path').value.trim() || undefined,
           fastq_r2_path: qs('fR2Path').value.trim() || undefined,
-          priority,
           params: { carrier },
         };
         const bb = qs('fBackboneBed').value.trim();
@@ -3208,14 +3239,12 @@
         const vErr = validateSgniptClinical(nipt);
         if (vErr) return toast(vErr, false);
         workDir = qs('sgWorkDir').value.trim();
-        priority = qs('sgPriority').value;
         body = {
           order_id: orderId,
           service_code: serviceCode,
           work_dir: workDir || undefined,
           fastq_r1_path: qs('fR1Path').value.trim() || undefined,
           fastq_r2_path: qs('fR2Path').value.trim() || undefined,
-          priority,
           params: { nipt },
         };
       }
@@ -3230,7 +3259,6 @@
             work_dir: body.work_dir,
             fastq_r1_path: body.fastq_r1_path,
             fastq_r2_path: body.fastq_r2_path,
-            priority: body.priority,
             params: body.params,
           };
           res = await apiPatch(`/order/${encodeURIComponent(editingOrderId)}`, patchBody);
@@ -3628,7 +3656,7 @@
 
     function exportOrdersTsv() {
       const rows = getOrdersAfterClientFilter();
-      const headers = ['order_id', 'service_code', 'type', 'patient', 'status', 'progress', 'created_at', 'priority', 'message'];
+      const headers = ['order_id', 'service_code', 'type', 'patient', 'status', 'progress', 'created_at', 'message'];
       const lines = [headers.join('\t')];
       rows.forEach(o => {
         const pat = patientDisplayName(o) || '';
@@ -3641,7 +3669,6 @@
           o.status,
           String(o.progress ?? ''),
           o.created_at || '',
-          o.priority || '',
           ((o.error_log || o.message) || '').replace(/\t/g, ' '),
         ].map(cell => String(cell).replace(/\r?\n/g, ' ')).join('\t'));
       });
@@ -3674,6 +3701,11 @@
       const d = document.createElement('div');
       d.textContent = s;
       return d.innerHTML;
+    }
+
+    function escapeAttr(s) {
+      if (s == null) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/\r?\n/g, ' ');
     }
 
     /** First digit run in the field → https://omim.org/entry/{id} (handles "261600", "OMIM:261600", etc.) */
@@ -3849,7 +3881,6 @@
           return o.status != null ? String(o.status) : '—';
         })()],
         ['Progress', `${o.progress ?? 0}%`],
-        ['Priority', o.priority || '—'],
         ['Message', (o.error_log || o.message) || '—'],
         ['Created', fmtDateTimeDetail(o.created_at)],
         ['Started', fmtDateTimeDetail(o.started_at)],
@@ -4146,7 +4177,6 @@
             <span class="muted">${o.progress ?? 0}%</span>
           </td>
           <td>${fmtDate(o.created_at)}</td>
-          <td><span class="pill ${o.priority === 'urgent' ? 'warn' : 'new'}">${escapeHtml(o.priority || '')}</span></td>
           <td class="muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${escapeHtml((o.error_log || o.message) || '')}</td>
           <td class="order-dl">${dlBtn}</td>
           <td class="order-more"><div class="more-wrap">
@@ -5717,22 +5747,119 @@
       return false;
     }
 
+    /** HBA / Alpha thal dosage only (not CYP21A2 CAH). Used for hba1/hba2 extraction. */
+    function alphaThalassemiaDosageTitleMatches(t) {
+      const u = (t || '').trim();
+      if (!u) return false;
+      if (/HBA\s+ANALYSIS/i.test(u)) return true;
+      if (/Alpha\s*Thalassemia/i.test(u) && /Dosage/i.test(u)) return true;
+      return darkGenesDisplayTitle(t) === 'Alpha Thalassemia';
+    }
+
+    /** Split detailed text on newlines / pipes / semicolons / tabs so `Est_CN=…|hba1=…` or tab-separated lines parse. */
+    function splitAlphaThalKvSegments(raw) {
+      return String(raw || '')
+        .split(/[\r\n|;\t]+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+    }
+
+    /**
+     * First matching key=value (scalar). Tries full body with ^ line starts, then each segment.
+     * Keys: hba1, paralog_hba1, hba1_paralog, etc.
+     */
+    function alphaThalPickScalar(raw, keyNames) {
+      const s = String(raw || '');
+      const names = Array.isArray(keyNames) ? keyNames : [keyNames];
+      for (const name of names) {
+        const re = new RegExp(`^\\s*${name}\\s*=\\s*(\\S+)`, 'im');
+        const m = s.match(re);
+        if (m) return m[1];
+      }
+      for (const seg of splitAlphaThalKvSegments(s)) {
+        for (const name of names) {
+          const re = new RegExp(`^${name}\\s*=\\s*(\\S+)$`, 'i');
+          const m = re.exec(seg);
+          if (m) return m[1];
+        }
+      }
+      return null;
+    }
+
+    /**
+     * Fallback: space- or tab-separated key=value on one line (e.g. `Est_CN=4 Ratio=2.0874 hba1=2.0508 hba2=1.9492`).
+     */
+    function alphaThalPickScalarAnywhere(raw, keyNames) {
+      const s = String(raw || '');
+      const names = Array.isArray(keyNames) ? keyNames : [keyNames];
+      for (const name of names) {
+        const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp(`(?:^|[\\s|;,\t])${esc}\\s*=\\s*([^\\s|;,\t]+)`, 'i');
+        const m = s.match(re);
+        if (m) return m[1];
+      }
+      return null;
+    }
+
+    /**
+     * When the pipeline only prints `formula_est_hba1=4*505/(505+480)=2.0508`, take the final numeric result
+     * (after the last `=`) for display as hba1/hba2 — same numbers, no long formula row.
+     */
+    function alphaThalPickResultFromFormulaLine(raw, formulaKey) {
+      const esc = String(formulaKey).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`(?:^|[\\s|;,\t])${esc}\\s*=\\s*(.+)$`, 'im');
+      const m = String(raw || '').match(re);
+      if (!m) return null;
+      const rhs = m[1].trim();
+      const i = rhs.lastIndexOf('=');
+      const tail = i < 0 ? rhs : rhs.slice(i + 1).trim();
+      return /^[\d.eE+-]+$/.test(tail) ? tail : null;
+    }
+
     /**
      * HBA / CYP21A2 dosage blocks: Est_CN, Ratio, WARNING line → Estimated CNV, Ratio, Warning.
+     * Alpha thal: append hba1/hba2 (paralog) when present (same block as Est_CN/Ratio/Warning).
      * Line-anchored keys so `C_Ratio=…` does not satisfy `Ratio=…`.
      */
     function tryRenderDosageAnalysisSection(sec) {
       const t = (sec.title || '').trim();
       if (!dosageAnalysisTitleMatches(t)) return null;
       const raw = String(sec.body || '');
+      const isAlpha = alphaThalassemiaDosageTitleMatches(t);
       const mEst = raw.match(/^\s*Est_CN\s*=\s*(\S+)/im);
       const mRatio = raw.match(/^\s*Ratio\s*=\s*(\S+)/im);
       const mWarn = raw.match(/^\s*WARNING:\s*(.+)/im);
       if (!mEst && !mRatio && !mWarn) return null;
+      const hba1Keys = [
+        'est_copies_hba1',
+        'hba1',
+        'paralog_hba1',
+        'hba1_paralog',
+        'HBA1_paralog',
+        'HBA1',
+      ];
+      const hba2Keys = [
+        'est_copies_hba2',
+        'hba2',
+        'paralog_hba2',
+        'hba2_paralog',
+        'HBA2_paralog',
+        'HBA2',
+      ];
+      let hba1Val = isAlpha
+        ? alphaThalPickScalar(raw, hba1Keys) || alphaThalPickScalarAnywhere(raw, hba1Keys)
+        : null;
+      let hba2Val = isAlpha
+        ? alphaThalPickScalar(raw, hba2Keys) || alphaThalPickScalarAnywhere(raw, hba2Keys)
+        : null;
+      if (isAlpha && hba1Val == null) hba1Val = alphaThalPickResultFromFormulaLine(raw, 'formula_est_hba1');
+      if (isAlpha && hba2Val == null) hba2Val = alphaThalPickResultFromFormulaLine(raw, 'formula_est_hba2');
       const rows = [];
       if (mEst) rows.push(['Estimated CNV', mEst[1]]);
       if (mRatio) rows.push(['Ratio', mRatio[1]]);
       if (mWarn) rows.push(['Warning', mWarn[1].trim().replace(/\s+/g, ' ')]);
+      if (hba1Val != null) rows.push(['hba1', hba1Val]);
+      if (hba2Val != null) rows.push(['hba2', hba2Val]);
       const inner = rows
         .map(([lab, val]) => `<dt>${escapeHtml(lab)}</dt><dd>${escapeHtml(val)}</dd>`)
         .join('');
@@ -6348,11 +6475,12 @@
         thead.innerHTML = `
           <th style="width:44px;text-align:center"><input type="checkbox" id="chkAll" onchange="toggleAllCheckboxes(this)" /></th>
           <th class="sortable" data-key="gene">Gene</th>
-          <th class="sortable" data-key="transcript_nm_sort" title="MANE RefSeq (NM_…); may show ENST if NM unavailable">Transcript (NM)</th>
           <th class="sortable" data-key="hgvsc">HGVSc</th>
           <th class="sortable" data-key="hgvsp">HGVSp</th>
-          <th class="sortable" data-key="effect">Effect</th>
+          <th class="sortable" data-key="transcript_nm_sort" title="MANE RefSeq (NM_…); may show ENST if NM unavailable">Transcript (NM)</th>
+          <th class="sortable col-effect" data-key="effect" title="Consequence (truncated; hover cell for full)">Effect</th>
           <th class="sortable" data-key="zygosity">Zygosity</th>
+          <th class="sortable" data-key="allele_depth_sort" title="REF / ALT read depth (VCF AD); DP when AD unavailable">Allele depth</th>
           <th class="sortable" data-key="gnomad_af">gnomAD AF</th>
           <th class="sortable" data-key="clinvar_sig_primary">ClinVar</th>
           <th class="sortable" data-key="acmg_classification">ACMG</th>
@@ -6418,6 +6546,20 @@
       // Sort
       if (variantSortKey) {
         variants = [...variants].sort((a, b) => {
+          if (variantSortKey === 'allele_depth_sort') {
+            const na =
+              typeof a.allele_depth_sort === 'number' && !Number.isNaN(a.allele_depth_sort)
+                ? a.allele_depth_sort
+                : null;
+            const nb =
+              typeof b.allele_depth_sort === 'number' && !Number.isNaN(b.allele_depth_sort)
+                ? b.allele_depth_sort
+                : null;
+            if (na == null && nb == null) return 0;
+            if (na == null) return variantSortAsc ? 1 : -1;
+            if (nb == null) return variantSortAsc ? -1 : 1;
+            return variantSortAsc ? na - nb : nb - na;
+          }
           let va = a[variantSortKey] ?? '', vb = b[variantSortKey] ?? '';
           if (typeof va === 'number' && typeof vb === 'number') {
             return variantSortAsc ? va - vb : vb - va;
@@ -6439,14 +6581,16 @@
         const tr = document.createElement('tr');
         tr.className = 'variant-row' + (isSelected ? ' selected' : '');
         const txTitle = [v.clinical_nm && `NM: ${v.clinical_nm}`, v.transcript && `ENST: ${v.transcript}`, v.canonical_enst && `MANE ENST: ${v.canonical_enst}`].filter(Boolean).join(' · ');
+        const effRaw = v.effect || '-';
         tr.innerHTML = `
           <td><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleVariant('${v.variant_id}', this.checked)" /></td>
           <td style="font-weight:600">${v.gene || '-'}</td>
-          <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px" title="${txTitle || ''}">${variantTranscriptNmCellHtml(v)}</td>
           <td class="muted" style="max-width:150px;overflow:hidden;text-overflow:ellipsis" title="${v.hgvsc || ''}">${v.hgvsc || '-'}</td>
           <td class="muted" style="max-width:150px;overflow:hidden;text-overflow:ellipsis" title="${v.hgvsp || ''}">${v.hgvsp || '-'}</td>
-          <td>${v.effect || '-'}</td>
+          <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px" title="${txTitle || ''}">${variantTranscriptNmCellHtml(v)}</td>
+          <td class="muted col-effect" title="${escapeAttr(effRaw)}">${escapeHtml(effRaw)}</td>
           <td>${v.zygosity || '-'}</td>
+          <td style="font-size:11px;white-space:nowrap" title="REF / ALT depth">${fmtVariantAlleleDepth(v)}</td>
           <td>${fmtAF(v.gnomad_af)}</td>
           <td>${v.clinvar_sig_primary ? pill(v.clinvar_sig_primary, v.clinvar_sig_primary.toLowerCase().includes('pathogenic') ? 'err' : v.clinvar_sig_primary.toLowerCase().includes('benign') ? 'done' : 'warn') : '-'}</td>
           <td><span class="${acmgClass(v.acmg_classification)}">${v.acmg_classification || '-'}</span></td>
@@ -6480,10 +6624,10 @@
     }
 
     function findVariantIdFromRow(row) {
-      // Extract gene and hgvsc from row to find variant_id (checkbox, gene, transcript NM, HGVSc, …)
+      // Extract gene and hgvsc from row to find variant_id (checkbox, gene, HGVSc, HGVSp, transcript, …)
       const cells = row.querySelectorAll('td');
       const gene = cells[1]?.textContent.trim();
-      const hgvsc = cells[3]?.textContent.trim();
+      const hgvsc = cells[2]?.textContent.trim();
       if (!reviewData) return null;
       const v = (reviewData.variants || []).find(v => v.gene === gene && (v.hgvsc || '-') === hgvsc);
       return v ? v.variant_id : null;

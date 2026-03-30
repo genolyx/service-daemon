@@ -49,7 +49,11 @@ services:
       # 스크립트(src/), 데이터(data/config/) — HOST:HOST 마운트로 docker -v 호스트 경로 일치.
       - ${SGNIPT_SRC_HOST:-/home/ken/sgnipt}:${SGNIPT_SRC_HOST:-/home/ken/sgnipt}:ro
       - ${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}:${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}
-      # sgNIPT 작업 트리는 BASE_DIR 아래에 생성 (별도 마운트 불필요 — /data 가 이미 rw 마운트됨)
+      # sgNIPT 쓰기 전용 트리 (${BASE_DIR:-/data}/sgnipt_work): carrier 의 carrier_screening_work 와 동일. 레이아웃 data·config 를 :ro 로 덮어씀.
+      - ${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}/data:${BASE_DIR:-/data}/sgnipt_work/data:ro
+      - ${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}/config:${BASE_DIR:-/data}/sgnipt_work/config:ro
+      # 레이아웃 FASTQ = SGNIPT_ROOT_DIR/fastq (run_sgnipt 자동검색·docker -v와 일치). :ro 아님 — 주문 폴더 생성·symlink 허용.
+      - ${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}/fastq:${BASE_DIR:-/data}/sgnipt_work/fastq
       - ${BASE_DIR:-/data}/reference:/data/reference:ro
       - ${CARRIER_SCREENING_PIPELINE_DIR:-/opt/pipelines/carrier-screening}:/opt/pipelines/carrier-screening:ro
       - ${NIPT_PIPELINE_DIR:-/opt/pipelines/nipt}:/opt/pipelines/nipt:ro

@@ -477,6 +477,8 @@
 
     td.order-more{position:relative;z-index:6;vertical-align:middle;width:1%;white-space:nowrap}
     .more-wrap{position:relative;display:inline-block;z-index:7}
+    /* ⋯ 메뉴가 열린 행: 아래쪽 행의 More 셀·버튼보다 위에 그려지도록 전체 행 스택 상승 */
+    tbody tr.order-row-more-open{position:relative;z-index:50000}
     .more-btn{
       padding:6px 12px;font-size:20px;line-height:1;min-width:40px;min-height:36px;border-radius:8px;
       border:1px solid var(--line);background:var(--btn-bg);color:var(--text);cursor:pointer;
@@ -484,7 +486,13 @@
       -webkit-tap-highlight-color:transparent
     }
     /* 기본은 absolute; 열릴 때 JS가 position:fixed로 바꿔 .table-wrap overflow에 잘리지 않게 함 */
-    .more-dd{position:absolute;right:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--line);border-radius:10px;min-width:160px;z-index:10050;display:none;box-shadow:var(--shadow)}
+    .more-dd{
+      position:absolute;right:0;top:calc(100% + 4px);min-width:160px;z-index:10050;display:none;
+      border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);
+      background-color:var(--card);background:var(--card);opacity:1;
+      -webkit-backdrop-filter:none;backdrop-filter:none;
+      isolation:isolate
+    }
     .more-dd.open{display:block}
     .more-dd button{display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:transparent;color:var(--text);font-size:13px;cursor:pointer;border-radius:0}
     .more-dd button:hover{background:rgba(106,163,255,.12)}
@@ -670,7 +678,7 @@
         <div id="ordersBrowseChrome">
         <div style="margin-bottom:14px">
           <h3 class="submit-page-title" style="margin-bottom:4px">Client Order List</h3>
-          <p class="submit-page-sub">Orders on this daemon. <strong>Save</strong> stores a draft (<strong>SAVED</strong>) without starting the pipeline. Use <strong>⋯ → Submit</strong> to queue a first run. <strong>Stop</strong> removes a draft, cancels queued, or stops a running job. <strong>⋯ → Delete</strong> removes the order from the daemon and deletes <code>analysis</code>, <code>output</code>, and <code>log</code> for that run (FASTQ is kept; stop a running job first). Carrier: <strong>⋯ → Force Run</strong> queues the <strong>full pipeline from FASTQ</strong> again (alignment + calling + post-process). Optional <strong>Reprocess only</strong> refreshes <code>result.json</code>/QC from existing VCFs without Nextflow.</p>
+          <p class="submit-page-sub">Orders on this daemon. <strong>Save</strong> stores a draft (<strong>SAVED</strong>) without starting the pipeline. Use <strong>⋯ → Submit</strong> to queue a first run. <strong>Stop</strong> removes a draft, cancels queued, or stops a running job. <strong>⋯ → Delete</strong> removes the order from the daemon and deletes <code>analysis</code>, <code>output</code>, and <code>log</code> for that run (FASTQ is kept; stop a running job first). <strong>⋯ → Force Run</strong> (Carrier &amp; sgNIPT) queues the full pipeline reusing Nextflow cache (<code>-resume</code>). <strong>Force Run (Fresh)</strong> (Carrier &amp; sgNIPT) deletes <code>work/</code> + <code>.nextflow</code> cache and reruns completely from scratch (<code>--fresh</code>). Carrier &amp; sgNIPT optional: <strong>Reprocess only</strong> refreshes <code>result.json</code> from existing pipeline output without re-running the pipeline (Carrier: re-annotates VCFs; sgNIPT: re-copies result JSON).</p>
           <button type="button" class="btn primary" id="btnGotoCreateOrder" style="margin-top:10px">+ Create an order</button>
         </div>
         <div class="form-section-card" style="margin-bottom:16px">
@@ -739,7 +747,7 @@
           </div>
         </div>
         <div id="trackListArea">
-          <p class="muted orders-table-hint">Click a row for detail. Open <strong>⋯</strong> for Submit, Force Run (carrier full re-run), Stop / Review. <strong>Report ready</strong> orders show <strong>PDF</strong> (red) and <strong>HTML</strong> (blue); each opens the file in a <strong>new browser tab</strong>.</p>
+          <p class="muted orders-table-hint">Click a row for detail. Open <strong>⋯</strong> for Submit, Force Run, Force Run (Fresh), Stop / <strong>Review</strong>. <strong>Report ready</strong> orders show <strong>PDF</strong> (red) and <strong>HTML</strong> (blue); each opens the file in a <strong>new browser tab</strong>.</p>
           <div class="table-wrap" id="ordersTableWrap">
             <table id="tblOrders">
               <thead>
@@ -3359,6 +3367,7 @@
     }
 
     function closeAllMoreMenus() {
+      document.querySelectorAll('tr.order-row-more-open').forEach(tr => tr.classList.remove('order-row-more-open'));
       document.querySelectorAll('.more-dd.open').forEach(el => {
         el.classList.remove('open');
         clearMoreDdLayout(el);
@@ -3442,20 +3451,46 @@
         toast('Cannot force run: missing order id', false);
         return;
       }
+      const msg = `Queue a full analysis from FASTQ for "${oid}"?\n\nExisting Nextflow work/ cache is reused (-resume / cached intermediates). Post-processing runs after the pipeline finishes.`;
       const { ok } = await openConfirmModal({
         title: 'Force Run (full pipeline)?',
-        message: `Queue a full analysis from FASTQ for "${oid}"?\n\nAlignment and variant calling run again; existing analysis files may be reused or overwritten depending on your pipeline settings. Post-processing runs after the pipeline finishes.`,
+        message: msg,
         okText: 'Force Run',
         danger: true,
       });
       if (!ok) return;
       try {
-        const res = await apiPost(`/order/${encodeURIComponent(oid)}/start`, {});
+        const res = await apiPost(`/order/${encodeURIComponent(oid)}/start`, { fresh: false });
         toast(res.message || 'Queued for full run', true);
         loadOrders();
         loadDashboard();
       } catch (e) {
         toast(e.message || 'Force Run failed', false);
+      }
+    }
+
+    /** sgNIPT: Nextflow 캐시 삭제 후 완전 처음부터 재실행 (--fresh). */
+    async function freshRunOrderRow(o) {
+      closeAllMoreMenus();
+      const oid = o && o.order_id != null ? String(o.order_id).trim() : '';
+      if (!oid) {
+        toast('Cannot fresh run: missing order id', false);
+        return;
+      }
+      const { ok } = await openConfirmModal({
+        title: 'Force Run (Fresh) — delete cache?',
+        message: `Run the pipeline for "${oid}" completely from scratch?\n\nThe Nextflow work/ cache and session files will be deleted (--fresh). This takes longer than Force Run but avoids stale intermediate files.`,
+        okText: 'Force Run (Fresh)',
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        const res = await apiPost(`/order/${encodeURIComponent(oid)}/start`, { fresh: true });
+        toast(res.message || 'Queued for fresh run', true);
+        loadOrders();
+        loadDashboard();
+      } catch (e) {
+        toast(e.message || 'Force Run (Fresh) failed', false);
       }
     }
 
@@ -3467,9 +3502,13 @@
         toast('Cannot reprocess: missing order id', false);
         return;
       }
+      const isSgNIPT = (o.service_code === 'sgnipt');
+      const reprocessMsg = isSgNIPT
+        ? `Regenerate result.json for "${oid}" from the existing pipeline output?\n\nThe sgNIPT pipeline is NOT re-run — the existing result JSON is reused.`
+        : `Re-run annotation, QC extract, and result.json for "${oid}"?\n\nNextflow is NOT run — existing VCFs are reused.`;
       const { ok } = await openConfirmModal({
         title: 'Reprocess only?',
-        message: `Re-run annotation, QC extract, and result.json for "${oid}"?\n\nNextflow is NOT run — existing VCFs are reused.`,
+        message: reprocessMsg,
         okText: 'Reprocess',
         danger: true,
       });
@@ -3603,7 +3642,7 @@
           String(o.progress ?? ''),
           o.created_at || '',
           o.priority || '',
-          (o.message || '').replace(/\t/g, ' '),
+          ((o.error_log || o.message) || '').replace(/\t/g, ' '),
         ].map(cell => String(cell).replace(/\r?\n/g, ' ')).join('\t'));
       });
       const blob = new Blob([lines.join('\n')], { type: 'text/tab-separated-values;charset=utf-8' });
@@ -3811,7 +3850,7 @@
         })()],
         ['Progress', `${o.progress ?? 0}%`],
         ['Priority', o.priority || '—'],
-        ['Message', o.message || '—'],
+        ['Message', (o.error_log || o.message) || '—'],
         ['Created', fmtDateTimeDetail(o.created_at)],
         ['Started', fmtDateTimeDetail(o.started_at)],
         ['Last updated', fmtDateTimeDetail(o.updated_at)],
@@ -4046,23 +4085,30 @@
         const items = [];
         items.push('<button type="button" data-act="edit">Edit</button>');
         const terminalMenu = ['SAVED', 'FAILED', 'CANCELLED', 'COMPLETED', 'REPORT_READY'].includes(st);
-        if ((st === 'COMPLETED' || st === 'REPORT_READY') && o.service_code === 'carrier_screening') {
+        if ((st === 'COMPLETED' || st === 'REPORT_READY') && ['carrier_screening', 'sgnipt'].includes(o.service_code)) {
           items.push('<button type="button" data-act="review">Review</button>');
         }
         if (
-          o.service_code === 'carrier_screening'
+          ['carrier_screening', 'sgnipt'].includes(o.service_code)
           && ['COMPLETED', 'REPORT_READY', 'FAILED', 'CANCELLED'].includes(st)
         ) {
-          items.push('<button type="button" data-act="force-run" title="Full pipeline from FASTQ (alignment + calling + post-process)">Force Run</button>');
+          const forceTitle = o.service_code === 'sgnipt'
+            ? 'Full pipeline from FASTQ (Nextflow -resume: cache reused)'
+            : 'Full pipeline from FASTQ (alignment + calling + post-process; -resume)';
+          items.push(`<button type="button" data-act="force-run" title="${forceTitle}">Force Run</button>`);
+          items.push('<button type="button" data-act="force-run-fresh" title="Delete Nextflow work/ cache and run completely from scratch (--fresh)">Force Run (Fresh)</button>');
         }
         if (
-          o.service_code === 'carrier_screening'
+          ['carrier_screening', 'sgnipt'].includes(o.service_code)
           && ['COMPLETED', 'REPORT_READY', 'FAILED'].includes(st)
         ) {
-          items.push('<button type="button" data-act="reprocess-only" title="Refresh result.json and QC from existing VCFs; skip Nextflow">Reprocess only</button>');
+          const reprocessTitle = o.service_code === 'sgnipt'
+            ? 'Regenerate result.json from existing pipeline output; skip re-running the pipeline'
+            : 'Refresh result.json and QC from existing VCFs; skip Nextflow';
+          items.push(`<button type="button" data-act="reprocess-only" title="${reprocessTitle}">Reprocess only</button>`);
         }
         if (terminalMenu) {
-          const skipSubmit = o.service_code === 'carrier_screening'
+          const skipSubmit = ['carrier_screening', 'sgnipt'].includes(o.service_code)
             && ['COMPLETED', 'REPORT_READY', 'FAILED', 'CANCELLED'].includes(st);
           if (!skipSubmit) {
             items.push('<button type="button" data-act="submit">Submit</button>');
@@ -4101,7 +4147,7 @@
           </td>
           <td>${fmtDate(o.created_at)}</td>
           <td><span class="pill ${o.priority === 'urgent' ? 'warn' : 'new'}">${escapeHtml(o.priority || '')}</span></td>
-          <td class="muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(o.message || '')}</td>
+          <td class="muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${escapeHtml((o.error_log || o.message) || '')}</td>
           <td class="order-dl">${dlBtn}</td>
           <td class="order-more"><div class="more-wrap">
             <button type="button" class="more-btn" aria-haspopup="true" aria-expanded="false">⋯</button>
@@ -4117,6 +4163,7 @@
             const open = dd.classList.contains('open');
             closeAllMoreMenus();
             if (!open) {
+              tr.classList.add('order-row-more-open');
               dd.classList.add('open');
               requestAnimationFrame(() => {
                 positionMoreDdBelowButton(mbtn, dd);
@@ -4128,6 +4175,7 @@
             b.onclick = e => {
               e.preventDefault();
               e.stopPropagation();
+              tr.classList.remove('order-row-more-open');
               dd.classList.remove('open');
               clearMoreDdLayout(dd);
               mbtn.setAttribute('aria-expanded', 'false');
@@ -4135,6 +4183,7 @@
               if (act === 'edit') openEditOrder(o);
               else if (act === 'submit') startSavedOrder(o.order_id);
               else if (act === 'force-run') forceRunOrderRow(o);
+              else if (act === 'force-run-fresh') freshRunOrderRow(o);
               else if (act === 'reprocess-only') reprocessOnlyOrderRow(o);
               else if (act === 'stop') stopOrderRow(o.order_id);
               else if (act === 'delete') deleteOrderRow(o);
@@ -4475,12 +4524,53 @@
       try {
         const quietToast = !!opt.quietToast;
         reviewData = await apiGet(`/order/${orderId}/result`);
+
+        // ── sgNIPT 감지 및 정규화 ──────────────────────────────────────────
+        const isSgNIPT = reviewData.service_code === 'sgnipt'
+          || (!Array.isArray(reviewData.variants) && Array.isArray(reviewData.clinical_findings));
+        reviewData._service_code = isSgNIPT ? 'sgnipt' : (reviewData.service_code || 'carrier_screening');
+
+        if (isSgNIPT && !Array.isArray(reviewData.variants)) {
+          // target_name에서 첫 번째 유전자명 추출 (예: "COL4A2_ENST00000..." → "COL4A2")
+          const geneFromTarget = tn => {
+            if (!tn) return '';
+            const first = tn.split('|')[0];
+            return first.split('_')[0] || '';
+          };
+          // clinical_findings → variants 정규화 (공통 review 렌더링 호환)
+          reviewData.variants = (reviewData.clinical_findings || []).map(v => {
+            const gene = v.gene || geneFromTarget(v.target_name);
+            return {
+              gene,
+              chrom: v.chrom || '',
+              pos: v.pos != null ? String(v.pos) : '',
+              ref: v.ref || '',
+              alt: v.alt || '',
+              disease: v.disease || '',
+              diseases: v.disease ? [{ name: v.disease }] : [],
+              vaf: v.vaf,
+              depth: v.depth,
+              origin: v.origin || '',
+              fetal_genotype: v.fetal_genotype || '',
+              maternal_genotype: v.maternal_genotype || '',
+              confidence: v.confidence || '',
+              pathogenic_variant: !!v.pathogenic_variant,
+              target_name: v.target_name || '',
+              in_zero_probe_region: !!v.in_zero_probe_region,
+              details: v.details || '',
+              acmg_class: v.pathogenic_variant ? '5' : '',
+              hgvsc: '', hgvsp: '', effect: '', gnomad_af: '',
+            };
+          });
+        }
+
         if (Array.isArray(reviewData.variants)) {
           reviewData.variants = reviewData.variants.map(normalizeVariantForReview);
         }
         if (!reviewData.order_params || Object.keys(reviewData.order_params).length === 0) {
           try {
-            const list = await apiGet('/orders?service_code=carrier_screening');
+            const svc = isSgNIPT ? 'sgnipt' : 'carrier_screening';
+            const list = await apiGet(`/orders?service_code=${svc}`);
             const row = (list.orders || []).find(o => o.order_id === orderId);
             if (row && row.params && typeof row.params === 'object') {
               reviewData.order_params = row.params;
@@ -4502,20 +4592,33 @@
         geneKnowledgeMeta = null;
         autoSelectPathogenicVariantsForReport();
 
+        // sgNIPT: carrier-only 서브탭 숨김
+        const carrierOnlyTabs = ['diseases', 'darkgenes', 'report', 'genedb'];
+        document.querySelectorAll('#reviewSubTabs .sub-tab').forEach(el => {
+          const tab = el.dataset.tab;
+          el.style.display = (isSgNIPT && carrierOnlyTabs.includes(tab)) ? 'none' : '';
+        });
+
         // Populate gene filter dropdown
         populateGeneFilter();
 
         await fetchGeneKnowledgeForReview(false);
 
         // Render all tabs
-        renderCarrierBanner();
+        if (!isSgNIPT) renderCarrierBanner();
+        else renderSgNIPTBanner();
         renderReviewQC();
         renderReviewDarkGenes();
         renderReviewStats();
         renderVariantsTable();
         renderDiseaseSummary();
         renderGeneDatabase();
-        const sub = opt.focusTab && REVIEW_SUB_TAB_KEYS.includes(opt.focusTab) ? opt.focusTab : getSavedReviewSubTab();
+        const validTabs = isSgNIPT
+          ? REVIEW_SUB_TAB_KEYS.filter(t => !carrierOnlyTabs.includes(t))
+          : REVIEW_SUB_TAB_KEYS;
+        const savedSub = getSavedReviewSubTab();
+        const sub = opt.focusTab && validTabs.includes(opt.focusTab) ? opt.focusTab
+          : validTabs.includes(savedSub) ? savedSub : 'variants';
         showReviewTab(sub);
         updateReviewResultMeta();
         if (!quietToast) toast(`Loaded ${(reviewData.variants || []).length} variants`);
@@ -4947,6 +5050,57 @@
           <span class="pill err">${pathogenic.length} P/LP</span>
           <span class="pill warn">${vus.length} VUS</span>
           <span class="pill done">${variants.length - pathogenic.length - vus.length} B/LB</span>
+        </div>
+      `;
+      banner.classList.remove('hidden');
+    }
+
+    function renderSgNIPTBanner() {
+      const banner = qs('carrierBanner');
+      if (!reviewData) { banner.classList.add('hidden'); return; }
+      const sum = reviewData.summary || {};
+      const va = reviewData.variant_analysis_summary || {};
+      const ff = reviewData.fetal_fraction_used
+        ?? reviewData.fetal_fraction_detail?.primary_ff;
+      const panel = reviewData.panel || '';
+      const pipelineStatus = reviewData.sgnipt_status || reviewData.status || '';
+      const flags = (reviewData.sgnipt_status_flags || []).join(', ');
+
+      const fetal = sum.fetal_specific_variants ?? va.fetal_variants ?? 0;
+      const matHet = sum.maternal_heterozygous_variants ?? 0;
+      const matHom = sum.maternal_homozygous_variants ?? 0;
+      const total = sum.total_variants_analyzed ?? va.total_variants ?? (reviewData.variants || []).length;
+
+      let statusClass, icon, text, detail;
+      if (pipelineStatus === 'NO_CALL' || pipelineStatus === 'FAILED') {
+        statusClass = 'uncertain';
+        icon = '!';
+        text = `${pipelineStatus}${flags ? ' — ' + flags : ''}`;
+        detail = `Insufficient data for variant calling.${total != null ? ' Variants analyzed: ' + total : ''}`;
+      } else if (fetal > 0) {
+        statusClass = 'positive';
+        icon = '⚠';
+        text = `Fetal Variant(s) Detected — ${fetal} fetal-specific`;
+        detail = `Total analyzed: ${total} · Maternal het: ${matHet} · Maternal hom: ${matHom}`;
+      } else {
+        statusClass = 'negative';
+        icon = '✓';
+        text = 'No Fetal-Specific Variants Detected';
+        detail = `Total analyzed: ${total} · Maternal het: ${matHet} · Maternal hom: ${matHom}`;
+      }
+      banner.className = `carrier-banner ${statusClass}`;
+      banner.innerHTML = `
+        <div class="banner-icon">${icon}</div>
+        <div>
+          <div class="banner-text">${text}</div>
+          <div class="banner-detail">${detail}</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${ff != null ? `<span class="pill inp">FF: ${(ff * 100).toFixed(1)}%</span>` : ''}
+          ${panel ? `<span class="pill new">${escapeHtml(panel)}</span>` : ''}
+          <span class="pill err">${fetal} Fetal</span>
+          <span class="pill warn">${matHet} MatHet</span>
+          <span class="pill done">${matHom} MatHom</span>
         </div>
       `;
       banner.classList.remove('hidden');
@@ -6002,6 +6156,71 @@
     // ── Statistics ──
     function renderReviewStats() {
       if (!reviewData) return;
+
+      // ── sgNIPT: summary + QC 정보 표시 ─────────────────────────────────
+      if (reviewData._service_code === 'sgnipt') {
+        const sum = reviewData.summary || {};
+        const va = reviewData.variant_analysis_summary || {};
+        const ff = reviewData.fetal_fraction_used
+          ?? reviewData.fetal_fraction_detail?.primary_ff;
+        const ffDet = reviewData.fetal_fraction_detail || {};
+        const fqc = reviewData.fastq_qc || {};
+        const bqc = reviewData.bam_qc || {};
+
+        const fmt = v => v != null ? escapeHtml(String(v)) : '<span class="muted">-</span>';
+        const fmtPct = v => v != null ? escapeHtml((v * 100).toFixed(2) + '%') : '<span class="muted">-</span>';
+        const fmtN = v => v != null ? escapeHtml(Number(v).toLocaleString()) : '<span class="muted">-</span>';
+        const row = (k, v) =>
+          `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line)">
+            <span class="muted" style="font-size:12px">${k}</span><span style="font-weight:600;font-size:12px">${v}</span>
+          </div>`;
+        const section = (title, rows) =>
+          `<div style="margin-bottom:16px"><div style="font-weight:700;font-size:13px;margin-bottom:6px;padding-bottom:4px;border-bottom:2px solid var(--line)">${title}</div>${rows}</div>`;
+
+        const summaryRows = [
+          row('Pipeline Status', fmt(reviewData.sgnipt_status)),
+          row('Status Flags', (reviewData.sgnipt_status_flags||[]).length ? escapeHtml((reviewData.sgnipt_status_flags||[]).join(', ')) : '<span class="muted">—</span>'),
+          row('Panel', fmt(reviewData.panel)),
+          row('Sample ID', fmt(reviewData.sample_id)),
+          row('Fetal Fraction', ff != null ? fmtPct(ff) : '<span class="muted">-</span>'),
+          row('FF Method', fmt(ffDet.primary_method)),
+          row('FF Confidence', fmt(ffDet.confidence)),
+          row('Informative SNPs', fmtN(ffDet.num_informative_snps)),
+        ].join('');
+
+        const varRows = [
+          row('Total Target Loci', fmtN(va.total_target_loci ?? sum.variants_in_target)),
+          row('Total Variants', fmtN(va.total_variants ?? sum.total_variants_analyzed)),
+          row('Fetal Variants', fmtN(va.fetal_variants ?? sum.fetal_specific_variants)),
+          row('Maternal Het', fmtN(sum.maternal_heterozygous_variants)),
+          row('Maternal Hom', fmtN(sum.maternal_homozygous_variants)),
+          row('Pathogenic Variants', fmtN(va.pathogenic_variants)),
+          row('Zero-Probe Variants', fmtN(sum.variants_in_zero_probe_regions)),
+        ].join('');
+
+        const fqcRows = [
+          row('Total Reads', fmtN(fqc.total_reads)),
+          row('Reads After Filter', fmtN(fqc.reads_after_filter)),
+          row('Q30 Rate', fqc.q30_rate != null ? fmtPct(fqc.q30_rate) : '<span class="muted">-</span>'),
+          row('GC Content', fqc.gc_content != null ? fmtPct(fqc.gc_content) : '<span class="muted">-</span>'),
+        ].join('');
+
+        const bqcRows = [
+          row('Mapped Reads', fmtN(bqc.mapped_reads)),
+          row('Mapping Rate', bqc.mapping_rate != null ? fmtPct(bqc.mapping_rate) : '<span class="muted">-</span>'),
+          row('Mean Coverage', bqc.mean_coverage != null ? fmt(bqc.mean_coverage) + 'x' : '<span class="muted">-</span>'),
+          row('Target Coverage', bqc.target_coverage != null ? fmt(bqc.target_coverage) + 'x' : '<span class="muted">-</span>'),
+          row('On-Target Rate', bqc.on_target_rate != null ? fmtPct(bqc.on_target_rate) : '<span class="muted">-</span>'),
+        ].join('');
+
+        qs('statsClassBody').innerHTML =
+          section('Run Summary', summaryRows) +
+          section('Variant Analysis', varRows);
+        qs('statsGeneBody').innerHTML = section('FASTQ QC', fqcRows);
+        qs('statsDiseaseBody').innerHTML = section('BAM QC', bqcRows);
+        return;
+      }
+
       const stats = reviewData.variant_stats || {};
       const variants = reviewData.variants || [];
 
@@ -6034,8 +6253,125 @@
     }
 
     // ── Variants Table ──
+    function renderSgNIPTVariantsTable() {
+      const tbl = document.getElementById('tblVariants');
+      if (!tbl) return;
+
+      // Replace thead with sgNIPT-specific columns
+      const thead = tbl.querySelector('thead tr');
+      if (thead) thead.innerHTML = `
+        <th style="width:44px;text-align:center"></th>
+        <th class="sortable" data-key="gene">Gene</th>
+        <th>Position</th>
+        <th>Ref → Alt</th>
+        <th class="sortable" data-key="depth">Depth</th>
+        <th class="sortable" data-key="vaf">VAF</th>
+        <th class="sortable" data-key="origin">Origin</th>
+        <th class="sortable" data-key="fetal_genotype">Fetal GT</th>
+        <th class="sortable" data-key="confidence">Confidence</th>
+        <th>Disease / Target</th>
+      `;
+
+      let variants = reviewData.variants || [];
+      const q = qs('variantSearch').value.trim().toLowerCase();
+      if (q) {
+        variants = variants.filter(v =>
+          (v.gene || '').toLowerCase().includes(q) ||
+          (v.disease || '').toLowerCase().includes(q) ||
+          (v.origin || '').toLowerCase().includes(q) ||
+          (v.target_name || '').toLowerCase().includes(q) ||
+          (`${v.chrom}:${v.pos}`).includes(q)
+        );
+      }
+      const geneFilter = qs('variantGeneFilter').value;
+      if (geneFilter) variants = variants.filter(v => v.gene === geneFilter);
+
+      qs('variantCount').textContent = `${variants.length} variant(s)`;
+      const tb = qs('tblVariantsBody');
+      tb.innerHTML = '';
+
+      const originLabel = {
+        fetal_specific: 'Fetal',
+        fetal: 'Fetal',
+        maternal_het: 'Mat. Het',
+        maternal_hom: 'Mat. Hom',
+        maternal: 'Maternal',
+        ambiguous: 'Ambiguous',
+        uncertain: 'Uncertain',
+      };
+      const confPill = { high: 'done', medium: 'warn', low: 'err' };
+
+      variants.forEach(v => {
+        const isFetal = v.origin === 'fetal_specific' || v.origin === 'fetal';
+        const isPathogenic = v.pathogenic_variant;
+        const tr = document.createElement('tr');
+        if (isFetal) tr.style.background = 'rgba(239,68,68,.07)';
+        const posStr = `${v.chrom || ''}:${v.pos || ''}`;
+        const origLabel = originLabel[v.origin] || (v.origin || '-');
+        const isMat = v.origin === 'maternal' || v.origin === 'maternal_het' || v.origin === 'maternal_hom';
+        const origClass = isFetal ? 'err' : isMat ? 'warn' : 'new';
+        const conf = (v.confidence || '').toLowerCase();
+        const confClass = confPill[conf] || 'inp';
+        // target_name에서 유전자명만 추출 (첫 번째 파이프 이전, 첫 언더스코어 이전)
+        const firstGene = (v.target_name || '').split('|')[0].split('_')[0];
+        const diseaseCell = v.disease
+          ? `<span title="${escapeHtml(v.target_name || '')}">${escapeHtml(v.disease)}</span>`
+          : (firstGene ? `<span title="${escapeHtml(v.target_name)}">${escapeHtml(firstGene)}</span>` : '-');
+        tr.innerHTML = `
+          <td style="text-align:center">${isPathogenic ? '<span style="color:var(--err);font-size:13px">★</span>' : ''}</td>
+          <td style="font-weight:600">${escapeHtml(v.gene || '-')}</td>
+          <td class="muted" style="font-size:11px">${escapeHtml(posStr)}</td>
+          <td style="font-size:11px">${escapeHtml(v.ref || '')} → ${escapeHtml(v.alt || '')}</td>
+          <td>${v.depth != null ? v.depth : '-'}</td>
+          <td>${v.vaf != null ? (v.vaf * 100).toFixed(1) + '%' : '-'}</td>
+          <td>${pill(origLabel, origClass)}</td>
+          <td class="muted">${escapeHtml(v.fetal_genotype || '-')}</td>
+          <td>${conf ? pill(conf, confClass) : '-'}</td>
+          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;font-size:11px">${diseaseCell}</td>
+        `;
+        tb.appendChild(tr);
+      });
+    }
+
     function renderVariantsTable() {
       if (!reviewData) return;
+
+      // ── sgNIPT: 별도 컬럼으로 렌더링 ────────────────────────────────────
+      if (reviewData._service_code === 'sgnipt') {
+        renderSgNIPTVariantsTable();
+        return;
+      }
+
+      // carrier: thead 를 원상 복귀 (sgNIPT 로드 후 carrier 로드 시 복원)
+      const thead = document.querySelector('#tblVariants thead tr');
+      if (thead && !thead.querySelector('th[data-key="hgvsc"]')) {
+        thead.innerHTML = `
+          <th style="width:44px;text-align:center"><input type="checkbox" id="chkAll" onchange="toggleAllCheckboxes(this)" /></th>
+          <th class="sortable" data-key="gene">Gene</th>
+          <th class="sortable" data-key="transcript_nm_sort" title="MANE RefSeq (NM_…); may show ENST if NM unavailable">Transcript (NM)</th>
+          <th class="sortable" data-key="hgvsc">HGVSc</th>
+          <th class="sortable" data-key="hgvsp">HGVSp</th>
+          <th class="sortable" data-key="effect">Effect</th>
+          <th class="sortable" data-key="zygosity">Zygosity</th>
+          <th class="sortable" data-key="gnomad_af">gnomAD AF</th>
+          <th class="sortable" data-key="clinvar_sig_primary">ClinVar</th>
+          <th class="sortable" data-key="acmg_classification">ACMG</th>
+          <th>Disease</th>
+          <th>Action</th>
+        `;
+        document.querySelectorAll('#tblVariants thead th').forEach(th => {
+          if (th.classList.contains('sortable')) {
+            th.style.cursor = 'pointer';
+            th.onclick = () => {
+              const key = th.dataset.key;
+              if (variantSortKey === key) variantSortAsc = !variantSortAsc;
+              else { variantSortKey = key; variantSortAsc = true; }
+              renderVariantsTable();
+            };
+          }
+        });
+      }
+
       let variants = reviewData.variants || [];
 
       // Filter: search

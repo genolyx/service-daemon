@@ -91,6 +91,14 @@ class OrderSubmitResponse(BaseModel):
     queue_position: Optional[int] = None
 
 
+class StartOrderRequest(BaseModel):
+    """Force Run / Fresh Run 요청 본문 (선택)."""
+    fresh: bool = Field(
+        default=False,
+        description="True면 파이프라인 캐시(Nextflow work/ 등)를 지우고 처음부터 재실행 (sgNIPT --fresh).",
+    )
+
+
 class OrderSaveResponse(BaseModel):
     """주문 저장만 (큐 미등록) 응답"""
     status: str

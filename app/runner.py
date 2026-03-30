@@ -275,6 +275,7 @@ class PipelineRunner:
         Returns:
             프로세스 exit code
         """
+        plugin = get_plugin(job.service_code)
         # 로그 디렉토리 생성
         log_dir = job.log_dir or os.path.join(
             settings.log_base_dir, job.service_code, job.work_dir, job.sample_name
@@ -285,12 +286,20 @@ class PipelineRunner:
         
         logger.info(f"[{job.service_code}] Running pipeline, log: {log_file}")
 
+        cwd = job.analysis_dir or settings.analysis_base_dir
+        if plugin:
+            plugin_cwd = plugin.get_pipeline_cwd(job)
+            if plugin_cwd:
+                cwd = plugin_cwd
+
+        logger.info(f"[{job.service_code}] Pipeline cwd: {cwd}")
+
         with open(log_file, "w") as log_f:
             process = await asyncio.create_subprocess_shell(
                 command,
                 stdout=log_f,
                 stderr=asyncio.subprocess.STDOUT,
-                cwd=job.analysis_dir or settings.analysis_base_dir
+                cwd=cwd,
             )
 
         job.pid = process.pid

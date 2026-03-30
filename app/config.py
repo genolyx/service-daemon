@@ -114,8 +114,15 @@ class Settings(BaseSettings):
         description="sgNIPT Docker 이미지명 (docker run)",
     )
     sgnipt_run_script_path: str = Field(
-        default="/home/ken/sgnipt/src/run_sgnipt.sh",
-        description="컨테이너 내 run_sgnipt.sh 경로",
+        default="/home/ken/sgNIPT/src/run_sgnipt.sh",
+        description="호스트에서 bash 로 실행할 run_sgnipt.sh 절대 경로 (레포 루트의 src/ 아래)",
+    )
+    sgnipt_src_root: Optional[str] = Field(
+        default=None,
+        description=(
+            "sgNIPT 소스 클론 루트(선택). Docker 를 풀린 레포(/home/ken/sgnipt) 와 데이터 트리(/home/ken/sgNIPT) 가 "
+            "다를 때 run_sgnipt.sh 탐색용. 비우면 SGNIPT_RUN_SCRIPT_PATH · WORK/LAYOUT 만 시도."
+        ),
     )
     sgnipt_container_mount_root: str = Field(
         default="/Work/SgNIPT",

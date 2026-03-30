@@ -25,7 +25,7 @@ from .datetime_kst import now_kst_iso, now_kst_date_compact
 from .logging_config import setup_logging, setup_middleware
 from .models import (
     OrderSubmitRequest, OrderSubmitResponse, OrderSaveResponse, OrderStatusResponse,
-    OrderUpdateRequest, OrderUpdateResponse,
+    OrderUpdateRequest, OrderUpdateResponse, StartOrderRequest,
     OrderStatus, Job, QueueSummary, OutputFile,
     ReportGenerateRequest, ReportGenerateResponse,
     GeneKnowledgeSaveRequest,
@@ -514,11 +514,20 @@ async def save_order(service_code: str, request: OrderSubmitRequest):
 
 
 @app.post("/order/{order_id}/start", response_model=OrderSubmitResponse)
-async def start_saved_order(order_id: str):
-    """SAVED 주문을 큐에 넣거나, FAILED/CANCELLED 주문을 재시도로 다시 큐에 넣습니다."""
+async def start_saved_order(
+    order_id: str,
+    request: Optional[StartOrderRequest] = Body(default=None),
+):
+    """
+    SAVED 주문을 큐에 넣거나, FAILED/CANCELLED/COMPLETED 주문을 재시도로 다시 큐에 넣습니다.
+
+    - body 없음 또는 ``{"fresh": false}`` (기본): Nextflow -resume 등 캐시 재활용 (Force Run).
+    - ``{"fresh": true}``: 파이프라인 캐시를 삭제하고 처음부터 재실행 (Force Run Fresh / ``--fresh``).
+    """
+    fresh = request.fresh if request is not None else False
     queue_manager = get_queue_manager()
     try:
-        job, queue_position = await queue_manager.start_saved_job(order_id)
+        job, queue_position = await queue_manager.start_saved_job(order_id, fresh=fresh)
     except KeyError:
         raise HTTPException(
             status_code=404,
@@ -537,19 +546,27 @@ async def start_saved_order(order_id: str):
         logger.warning(f"Platform status update after start failed: {e}")
 
     plugin = get_plugin(job.service_code)
+    run_label = "Force Run Fresh" if fresh else "Force Run"
     return OrderSubmitResponse(
         status="accepted",
         order_id=order_id,
         service_code=job.service_code,
-        message=f"Order started ({plugin.display_name if plugin else job.service_code})",
+        message=f"Queued ({run_label} — {plugin.display_name if plugin else job.service_code})",
         queue_position=queue_position,
     )
+
+
+_REPROCESS_SUPPORTED = frozenset({"carrier_screening", "sgnipt"})
 
 
 @app.post("/order/{order_id}/reprocess-results")
 async def reprocess_order_results(order_id: str):
     """
-    Carrier screening: Nextflow 없이 process_results 만 다시 실행합니다 (Portal «Reprocess only»).
+    파이프라인 없이 process_results 만 다시 실행합니다 (Portal «Reprocess only»).
+
+    - carrier_screening: 기존 VCF → annotation/QC/result.json 재생성
+    - sgnipt: 기존 파이프라인 결과 JSON → result.json 재생성
+
     전체를 FASTQ부터 돌리려면 POST /order/{id}/start («Force Run»)를 사용하세요.
     """
     queue_manager = get_queue_manager()
@@ -557,10 +574,10 @@ async def reprocess_order_results(order_id: str):
     if not job:
         raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
 
-    if job.service_code != "carrier_screening":
+    if job.service_code not in _REPROCESS_SUPPORTED:
         raise HTTPException(
             status_code=400,
-            detail="reprocess-results is only supported for carrier_screening",
+            detail=f"reprocess-results is not supported for service: {job.service_code}",
         )
 
     if job.status not in (
@@ -578,21 +595,30 @@ async def reprocess_order_results(order_id: str):
 
     plugin = get_plugin(job.service_code)
     if not plugin:
-        raise HTTPException(status_code=400, detail="No plugin for carrier_screening")
+        raise HTTPException(status_code=400, detail=f"No plugin for {job.service_code}")
 
-    from .services.carrier_screening.layout_norm import apply_carrier_layout_directories
-
-    if apply_carrier_layout_directories(job):
-        await queue_manager.persist_job(job)
+    # 서비스별 경로 정규화
+    if job.service_code == "carrier_screening":
+        from .services.carrier_screening.layout_norm import apply_carrier_layout_directories
+        if apply_carrier_layout_directories(job):
+            await queue_manager.persist_job(job)
+    elif job.service_code == "sgnipt":
+        from .services.sgnipt import apply_sgnipt_layout_directories
+        if apply_sgnipt_layout_directories(job):
+            await queue_manager.persist_job(job)
 
     completion_ok = await plugin.check_completion(job)
     if not completion_ok:
+        detail_map = {
+            "carrier_screening": "No VCF found for this order — cannot reprocess (check analysis/output paths).",
+            "sgnipt": "No pipeline result JSON found for this order — cannot reprocess (check output path).",
+        }
         raise HTTPException(
             status_code=400,
-            detail="No VCF found for this order — cannot reprocess (check analysis/output paths).",
+            detail=detail_map.get(job.service_code, "Completion check failed — no output found."),
         )
 
-    logger.info("[reprocess-results] Starting process_results for %s", order_id)
+    logger.info("[reprocess-results] Starting process_results for %s (%s)", order_id, job.service_code)
     process_ok = await plugin.process_results(job)
     if not process_ok:
         raise HTTPException(
@@ -606,7 +632,7 @@ async def reprocess_order_results(order_id: str):
     return {
         "status": "ok",
         "order_id": order_id,
-        "message": "Reprocessed (annotation/QC/result.json updated)",
+        "message": "Reprocessed (result.json updated)",
     }
 
 
@@ -1199,6 +1225,7 @@ async def list_orders(
                 "status": j.status.value,
                 "progress": j.progress,
                 "message": j.message,
+                "error_log": j.error_log,
                 "created_at": j.created_at,
                 "started_at": j.started_at,
                 "completed_at": j.completed_at,
@@ -1242,6 +1269,43 @@ async def get_order_result(order_id: str):
     if result_json_path and os.path.isfile(result_json_path):
         with open(result_json_path, "r", encoding="utf-8") as f:
             result_data = json.load(f)
+        if isinstance(result_data, dict) and job.service_code == "sgnipt":
+            # sgNIPT: result.json은 samples[] 구조의 요약 JSON.
+            # 포털 Review에 필요한 clinical_findings 등은 variant_report.json에 있으므로 병합.
+            samples = result_data.get("samples") or []
+            sample0 = samples[0] if samples else {}
+            sample_id = sample0.get("sample_id") or (job.order_id or "").strip()
+            vr_path = os.path.join(
+                job.output_dir or "",
+                sample_id,
+                "variants",
+                f"{sample_id}.variant_report.json",
+            )
+            vr: dict = {}
+            if os.path.isfile(vr_path):
+                try:
+                    with open(vr_path, "r", encoding="utf-8") as _f:
+                        vr = json.load(_f) or {}
+                except Exception as _e:
+                    logger.warning("[sgnipt] Could not load variant_report.json %s: %s", vr_path, _e)
+            # 병합: variant_report 필드를 최상위에 주입, samples[] 는 QC 용으로 유지
+            result_data = {
+                **result_data,
+                "sample_id": vr.get("sample_id", sample_id),
+                "panel": vr.get("panel"),
+                "fetal_fraction_used": vr.get("fetal_fraction_used"),
+                "summary": vr.get("summary"),
+                "clinical_findings": vr.get("clinical_findings") or [],
+                "all_target_variants": vr.get("all_target_variants") or [],
+                "gene_coverage_validation": vr.get("gene_coverage_validation"),
+                # QC: samples[0] 하위 필드를 최상위로 올림
+                "sgnipt_status": result_data.get("status"),
+                "sgnipt_status_flags": sample0.get("status_flags") or [],
+                "fastq_qc": sample0.get("fastq_qc"),
+                "bam_qc": sample0.get("bam_qc"),
+                "fetal_fraction_detail": sample0.get("fetal_fraction"),
+                "variant_analysis_summary": sample0.get("variant_analysis"),
+            }
         if isinstance(result_data, dict):
             from app.services import get_plugin
             from app.services.carrier_screening.dark_genes import (
@@ -1276,12 +1340,16 @@ async def get_order_result(order_id: str):
                             rb, str(getattr(job, "sample_name", "") or "")
                         )
         if store and isinstance(result_data, dict):
-            await asyncio.to_thread(store.set_result_json, order_id, result_data)
+            try:
+                await asyncio.to_thread(store.set_result_json, order_id, result_data)
+            except Exception as _store_err:
+                logger.warning("Could not cache result_json for %s: %s", order_id, _store_err)
         if isinstance(result_data, dict):
             from app.services.carrier_screening.review import normalize_variants_for_portal
 
             payload = dict(result_data)
             payload["order_params"] = job.params or {}
+            payload["service_code"] = job.service_code
             if isinstance(payload.get("variants"), list):
                 payload["variants"] = normalize_variants_for_portal(payload["variants"])
             return JSONResponse(content=payload, headers=_RESULT_JSON_CACHE_HEADERS)

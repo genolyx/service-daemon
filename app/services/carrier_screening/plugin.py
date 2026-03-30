@@ -644,6 +644,15 @@ class CarrierScreeningPlugin(ServicePlugin):
             "-r",
             ref_dir,
         ]
+        is_fresh = bool((job.params or {}).get("_pipeline_fresh"))
+        logger.info(
+            "[carrier_screening] _shell_command_run_analysis: order=%s params=%s fresh=%s",
+            job.order_id,
+            job.params,
+            is_fresh,
+        )
+        if is_fresh:
+            parts.append("--fresh")
         extra = (settings.carrier_screening_script_extra_args or "").strip()
         if extra:
             parts.extend(shlex.split(extra))
@@ -865,6 +874,17 @@ class CarrierScreeningPlugin(ServicePlugin):
         # 작업 디렉토리
         work_dir = os.path.join(job.analysis_dir, "work")
         cmd_parts.extend(["-work-dir", work_dir])
+
+        # fresh 모드: work/ 와 .nextflow 세션 캐시를 삭제하고 -resume 없이 실행
+        if (job.params or {}).get("_pipeline_fresh"):
+            import shutil
+            nf_cache = os.path.join(job.analysis_dir, ".nextflow")
+            for d in (work_dir, nf_cache):
+                if os.path.isdir(d):
+                    logger.info("[carrier_screening] --fresh: removing %s", d)
+                    shutil.rmtree(d, ignore_errors=True)
+        else:
+            cmd_parts.append("-resume")
 
         # 리포트
         report_path = os.path.join(job.log_dir, "nextflow_report.html")
@@ -1719,6 +1739,19 @@ class CarrierScreeningPlugin(ServicePlugin):
     async def on_job_failed(self, job: Job, error: str):
         """작업 실패 시 호출"""
         logger.error(f"[carrier_screening] Job failed: {job.order_id} - {error}")
+
+    def sync_is_complete(self, job: Job) -> bool:
+        """
+        daemon 재시작 복구 시 파이프라인이 실제로 완료됐는지 동기적으로 확인.
+        result.json 이 존재하면 process_results 까지 완료된 것으로 판정.
+        """
+        rj = carrier_result_json_path(job)
+        if rj and os.path.isfile(rj):
+            logger.info(
+                "[carrier_screening] sync_is_complete: found result.json at %s → marking COMPLETED", rj
+            )
+            return True
+        return False
 
     async def cleanup(self, job: Job):
         """작업 정리"""

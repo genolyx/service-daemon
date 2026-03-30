@@ -21,6 +21,7 @@ from .order_store import (
 from .order_cleanup import delete_run_artifacts
 from .services.carrier_screening.layout_norm import apply_carrier_layout_directories
 from .services.sgnipt import apply_sgnipt_layout_directories
+from .services import get_plugin
 
 logger = logging.getLogger(__name__)
 
@@ -86,21 +87,43 @@ class QueueManager:
             ):
                 self._store.upsert_job(job)
             if st in ACTIVE_BEFORE_RESTART:
-                old_log = (job.error_log or "").strip()
-                extra = "Daemon restarted while job was active."
-                job.error_log = f"{old_log}\n{extra}" if old_log else extra
-                job.message = "Interrupted: daemon restarted"
-                job.status = OrderStatus.FAILED
-                job.completed_at = now_kst_iso()
-                self._completed_jobs[job.order_id] = job
-                self._stats[job.service_code]["failed"] += 1
-                self._store.upsert_job(job)
-                interrupted += 1
-                logger.warning(
-                    "Marked order %s FAILED after restart (was %s)",
-                    job.order_id,
-                    st.value,
-                )
+                # daemon 재시작 전에 파이프라인이 실제로 완료됐는지 동기 확인
+                plugin = get_plugin(job.service_code)
+                recovered = plugin is not None and plugin.sync_is_complete(job)
+                if recovered:
+                    job.status = OrderStatus.REPORT_READY
+                    job.message = "Recovered after daemon restart (pipeline completed on disk)"
+                    job.completed_at = now_kst_iso()
+                    self._completed_jobs[job.order_id] = job
+                    self._stats[job.service_code]["completed"] += 1
+                    try:
+                        self._store.upsert_job(job)
+                    except Exception as _e:
+                        logger.warning("Could not persist recovered job %s: %s", job.order_id, _e)
+                    logger.info(
+                        "Recovered order %s as REPORT_READY after restart (was %s)",
+                        job.order_id,
+                        st.value,
+                    )
+                else:
+                    old_log = (job.error_log or "").strip()
+                    extra = "Daemon restarted while job was active."
+                    job.error_log = f"{old_log}\n{extra}" if old_log else extra
+                    job.message = "Interrupted: daemon restarted"
+                    job.status = OrderStatus.FAILED
+                    job.completed_at = now_kst_iso()
+                    self._completed_jobs[job.order_id] = job
+                    self._stats[job.service_code]["failed"] += 1
+                    try:
+                        self._store.upsert_job(job)
+                    except Exception as _e:
+                        logger.warning("Could not persist failed job %s: %s", job.order_id, _e)
+                    interrupted += 1
+                    logger.warning(
+                        "Marked order %s FAILED after restart (was %s)",
+                        job.order_id,
+                        st.value,
+                    )
             elif st == OrderStatus.SAVED:
                 self._saved_jobs[job.order_id] = job
             elif st == OrderStatus.QUEUED:
@@ -111,8 +134,25 @@ class QueueManager:
                 self._completed_jobs[job.order_id] = job
                 self._stats[job.service_code]["completed"] += 1
             elif st == OrderStatus.FAILED:
-                self._completed_jobs[job.order_id] = job
-                self._stats[job.service_code]["failed"] += 1
+                # FAILED 잡도 실제로 완료됐으면 REPORT_READY 로 복구
+                plugin_f = get_plugin(job.service_code)
+                if plugin_f is not None and plugin_f.sync_is_complete(job):
+                    job.status = OrderStatus.REPORT_READY
+                    job.message = "Recovered: pipeline completed on disk"
+                    job.error_log = ""
+                    try:
+                        self._store.upsert_job(job)
+                    except Exception as _e:
+                        logger.warning("Could not persist recovered FAILED job %s: %s", job.order_id, _e)
+                    self._completed_jobs[job.order_id] = job
+                    self._stats[job.service_code]["completed"] += 1
+                    logger.info(
+                        "Recovered FAILED order %s as REPORT_READY (pipeline completed on disk)",
+                        job.order_id,
+                    )
+                else:
+                    self._completed_jobs[job.order_id] = job
+                    self._stats[job.service_code]["failed"] += 1
             elif st == OrderStatus.CANCELLED:
                 self._completed_jobs[job.order_id] = job
             else:
@@ -304,6 +344,8 @@ class QueueManager:
             job.completed_at = now_kst_iso()
             job.updated_at = now_kst_iso()
             job.error_log = error
+            if (error or "").strip():
+                job.message = error.strip()
             self._running_jobs.pop(job.order_id, None)
             self._jobs.pop(job.order_id, None)
             self._completed_jobs[job.order_id] = job
@@ -426,9 +468,10 @@ class QueueManager:
         job.exit_code = None
         job.duration = None
 
-    async def start_saved_job(self, order_id: str) -> tuple:
+    async def start_saved_job(self, order_id: str, *, fresh: bool = False) -> tuple:
         """
         SAVED 주문, 또는 FAILED/CANCELLED/COMPLETED 주문(재분석)을 큐에 넣습니다.
+        fresh=True 이면 job.params['_pipeline_fresh']=True 를 설정해 플러그인이 캐시 삭제를 수행하게 함.
         (Job, queue_position) 반환.
         """
         async with self._lock:
@@ -448,6 +491,13 @@ class QueueManager:
                     raise KeyError(order_id)
                 job = self._completed_jobs.pop(order_id)
                 self._prepare_job_for_retry(job)
+
+        if fresh:
+            job.params = dict(job.params or {})
+            job.params["_pipeline_fresh"] = True
+        else:
+            if job.params and "_pipeline_fresh" in job.params:
+                del job.params["_pipeline_fresh"]
 
         queue_position = await self.enqueue(job)
         return job, queue_position

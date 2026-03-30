@@ -118,6 +118,13 @@ class ServicePlugin(ABC):
         """
         ...
 
+    def get_pipeline_cwd(self, job: Job) -> Optional[str]:
+        """
+        ``subprocess`` 실행 시 작업 디렉터리.
+        None 이면 runner 가 ``job.analysis_dir`` / ``analysis_base_dir`` 를 사용합니다.
+        """
+        return None
+
     def get_progress_stages(self) -> Dict[str, int]:
         """
         파이프라인 진행률 계산을 위한 단계별 퍼센트 매핑.
@@ -175,3 +182,12 @@ class ServicePlugin(ABC):
             (is_valid: bool, error_message: str)
         """
         return True, ""
+
+    def sync_is_complete(self, job: Job) -> bool:
+        """
+        daemon 재시작 복구 시 파이프라인이 실제로 완료됐는지 동기적으로 확인 (선택적 오버라이드).
+
+        on-disk 상태만 보고 True/False 반환. 기본 구현은 False.
+        True를 반환하면 _restore_from_store 에서 FAILED 대신 REPORT_READY 로 복구합니다.
+        """
+        return False

@@ -378,6 +378,19 @@ def test_queue_summary():
     assert resp.status_code == 200
     data = resp.json()
     assert "total_queued" in data
+    assert "stats_by_service" in data
+    assert isinstance(data["stats_by_service"], dict)
+
+
+def test_dashboard_bucket():
+    r = client.get("/queue/dashboard-bucket?bucket=queued&sort=order_id&order=asc")
+    assert r.status_code == 200
+    data = r.json()
+    assert data.get("bucket") == "queued"
+    assert "orders" in data
+    assert isinstance(data["orders"], list)
+    r_bad = client.get("/queue/dashboard-bucket?bucket=invalid")
+    assert r_bad.status_code == 400
 
 
 def test_unknown_service():
@@ -491,6 +504,7 @@ test("GET / (dashboard)", test_dashboard_endpoint)
 test("POST /order/carrier_screening/submit", test_submit_order)
 test("GET /order/{order_id}/status", test_order_status)
 test("GET /queue/summary", test_queue_summary)
+test("GET /queue/dashboard-bucket", test_dashboard_bucket)
 test("POST /order/unknown_service/submit (400)", test_unknown_service)
 test("POST /order/{order_id}/report", test_report_endpoint)
 test("dark_genes PDF only approved sections", test_dark_genes_pdf_only_approved_sections)

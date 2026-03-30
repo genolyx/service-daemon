@@ -163,6 +163,20 @@
     .stat-card.ok .stat-value{color:var(--ok)}
     .stat-card.err .stat-value{color:var(--err)}
     .stat-card.warn .stat-value{color:#f59e0b}
+    button.stat-card.stat-dash-btn{
+      font:inherit;font-family:inherit;text-align:center;cursor:pointer;width:100%;box-sizing:border-box;
+      appearance:none;margin:0;transition:border-color .15s, box-shadow .15s, background .15s
+    }
+    button.stat-card.stat-dash-btn:hover{border-color:var(--brand);background:var(--card-2)}
+    button.stat-dash-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+    button.stat-dash-btn.dash-bucket-active{box-shadow:0 0 0 2px var(--brand);border-color:var(--brand)}
+    .dash-bucket-panel{margin-top:16px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--card-2)}
+    .dash-bucket-panel.hidden{display:none!important}
+    .dash-bucket-head{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+    .dash-bucket-head h4{margin:0;font-size:14px;font-weight:700}
+    #tblDashBucket thead th{cursor:default}
+    #tblDashBucket thead th.sortable{cursor:pointer}
+    #tblDashBucket td.dash-bucket-msg{white-space:normal;max-width:420px}
 
     /* Review-specific */
     .variant-row{cursor:pointer;transition:background .15s}
@@ -496,6 +510,27 @@
     .qc-fail{color:var(--err);font-weight:600}
     .qc-warn{color:#f59e0b;font-weight:600}
 
+    /* Create Order — service picker (single-line labels) */
+    .create-service-pick{
+      display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;max-width:560px
+    }
+    @media(max-width:520px){.create-service-pick{grid-template-columns:1fr}}
+    .create-service-pick label{
+      display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;margin:0;
+      padding:12px 16px;border-radius:12px;border:1px solid var(--line);background:var(--card-2);
+      min-height:48px;box-sizing:border-box
+    }
+    /* 전역 input{width:100%}가 라디오를 늘려 버튼–텍스트 간격이 벌어지는 것 방지 */
+    .create-service-pick label input[type="radio"]{
+      width:18px;height:18px;min-width:18px;max-width:18px;flex-shrink:0;margin:0;padding:0;
+      accent-color:var(--brand)
+    }
+    .create-service-pick label:has(input:checked){
+      border-color:var(--pill-inp-bd);background:var(--pill-inp-bg);color:var(--pill-inp-tx)
+    }
+    .create-service-pick .create-service-pick-text{
+      font-size:14px;font-weight:600;line-height:1.2;white-space:nowrap;flex:0 1 auto
+    }
     /* sgNIPT Create Order (ken-nipt style) */
     .submit-page-title{font-size:20px;font-weight:700;margin:0 0 4px}
     .submit-page-sub{margin:0 0 16px;color:var(--muted);font-size:13px}
@@ -540,10 +575,20 @@
     .detail-section{background:var(--card-2);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
     .detail-section h4{margin:0 0 12px;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
     .detail-kv{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
+    /* Long paths/JSON in Pipeline / Service params — one item per row, full section width */
+    .detail-kv.detail-kv-full{grid-template-columns:1fr}
+    .detail-kv.detail-kv-full .kv-value{min-width:0}
     @media(max-width:600px){.detail-kv{grid-template-columns:1fr}}
     .detail-kv .kv-item{padding:6px 0}
     .detail-kv .kv-label{font-size:11px;color:var(--muted);margin-bottom:4px}
     .detail-kv .kv-value{font-size:14px;font-weight:600;color:var(--text);word-break:break-word}
+    /* Order detail — R1/R2 side by side (avoid staggered 2-col KV grid) */
+    .detail-fastq-grid{
+      display:grid;grid-template-columns:1fr 1fr;gap:12px 20px;margin-top:10px;padding-top:14px;
+      border-top:1px solid var(--line);align-items:start
+    }
+    @media(max-width:720px){.detail-fastq-grid{grid-template-columns:1fr}}
+    .detail-fastq-grid .kv-value.kv-path{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;font-weight:500;line-height:1.45}
 
     /* Order detail — pipeline.log terminal */
     .order-pipeline-log-host{margin-top:18px}
@@ -595,14 +640,28 @@
     <!-- Dashboard View -->
     <section id="viewDash" class="card">
       <h3>Service Dashboard</h3>
-      <div class="stat-grid" id="dashStats">
-        <div class="stat-card"><div class="stat-value" id="statServices">-</div><div class="stat-label">Services</div></div>
-        <div class="stat-card"><div class="stat-value" id="statQueued">-</div><div class="stat-label">Queued</div></div>
-        <div class="stat-card"><div class="stat-value" id="statRunning">-</div><div class="stat-label">Running</div></div>
-        <div class="stat-card ok"><div class="stat-value" id="statCompleted">-</div><div class="stat-label">Completed</div></div>
-        <div class="stat-card err"><div class="stat-value" id="statFailed">-</div><div class="stat-label">Failed</div></div>
-      </div>
+      <div id="dashServiceTabs" class="sub-tabs" role="tablist" aria-label="Dashboard by service"></div>
+      <div class="stat-grid" id="dashStats"></div>
       <div id="dashRunning" style="margin-top:12px"></div>
+      <div id="dashBucketPanel" class="dash-bucket-panel hidden" aria-live="polite">
+        <div class="dash-bucket-head">
+          <h4 id="dashBucketTitle">Orders</h4>
+          <span class="muted" id="dashBucketMeta" style="font-size:12px"></span>
+        </div>
+        <div class="table-wrap" style="max-height:min(50vh,420px);margin:0">
+          <table id="tblDashBucket">
+            <thead>
+              <tr>
+                <th class="sortable" data-dash-sort="order_id">Order ID</th>
+                <th class="sortable" data-dash-sort="status">Status</th>
+                <th class="sortable" data-dash-sort="order_updated">Order updated</th>
+                <th class="sortable" data-dash-sort="message">Message</th>
+              </tr>
+            </thead>
+            <tbody id="dashBucketBody"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <!-- Orders: list + create -->
@@ -659,7 +718,7 @@
               <select id="trackServiceFilter" style="flex:1;min-width:130px;padding:8px 12px;border-radius:12px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">
                 <option value="">All Services</option>
                 <option value="carrier_screening">Carrier Screening</option>
-                <option value="sgnipt">sgNIPT</option>
+                <option value="sgnipt">Single-gene NIPT</option>
               </select>
               <select id="trackFilter" style="flex:1;min-width:130px;padding:8px 12px;border-radius:12px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">
                 <option value="">All Status</option>
@@ -716,15 +775,15 @@
         <button type="button" class="detail-back" id="btnBackFromCreate" style="margin-bottom:12px">← Order list</button>
       <div class="row">
         <div class="col-12" style="margin-bottom:8px">
-          <div class="muted" style="font-weight:600;margin-bottom:6px">Service</div>
-          <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
-            <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin:0">
+          <div class="muted" style="font-weight:600;margin-bottom:8px">Service</div>
+          <div class="create-service-pick" role="radiogroup" aria-label="Service">
+            <label>
               <input type="radio" name="fService" value="carrier_screening" checked />
-              <span>Carrier Screening</span>
+              <span class="create-service-pick-text">Carrier Screening</span>
             </label>
-            <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin:0">
+            <label>
               <input type="radio" name="fService" value="sgnipt" />
-              <span>sgNIPT</span>
+              <span class="create-service-pick-text">Single-gene NIPT</span>
             </label>
           </div>
         </div>
@@ -890,7 +949,7 @@
 
         <!-- sgNIPT: Create Client Order (ken-nipt / NIPT fields) -->
         <div id="sgniptSubmitBlock" class="col-12 hidden">
-          <h3 class="submit-page-title">Create Client Order</h3>
+          <h3 class="submit-page-title">Create Single-gene NIPT Order</h3>
           <p class="submit-page-sub">Clinical fields → <code>params.nipt</code>. <strong>Save order</strong> stores a draft; queue from the list <strong>⋯ → Submit</strong>.</p>
           <div class="row" style="margin-bottom:12px">
             <div class="col-6">
@@ -980,7 +1039,7 @@
 
         <div class="col-12" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--line)">
           <div class="muted" style="font-weight:600;margin-bottom:6px">FASTQ (server local paths)</div>
-          <p class="muted" style="margin:0 0 10px;font-size:12px">Use <strong>Browse FASTQ (R1+R2)…</strong> on the <strong>daemon server</strong> to pick <strong>two</strong> files (Ctrl+click up to two, or click one then Shift+click another if only those two lie in range). Paths still editable below. Roots: <strong>sgNIPT</strong> / <strong>Carrier screening</strong> (see <code>SGNIPT_FASTQ_DIR</code> / <code>CARRIER_SCREENING_FASTQ_DIR</code> in daemon <code>.env</code>).</p>
+          <p class="muted" style="margin:0 0 10px;font-size:12px">Use <strong>Browse FASTQ (R1+R2)…</strong> on the <strong>daemon server</strong> to pick <strong>two</strong> files (Ctrl+click up to two, or click one then Shift+click another if only those two lie in range). Paths still editable below. Roots: <strong>Single-gene NIPT</strong> / <strong>Carrier Screening</strong> (see <code>SGNIPT_FASTQ_DIR</code> / <code>CARRIER_SCREENING_FASTQ_DIR</code> in daemon <code>.env</code>).</p>
           <div class="row">
             <div class="col-12" style="margin-bottom:10px">
               <button type="button" class="btn" id="btnBrowseFastq">Browse FASTQ (R1+R2)…</button>
@@ -2305,7 +2364,7 @@
       if (title) title.textContent = 'Select R1 + R2 FASTQ';
       const hint = qs('fastqBrowseHint');
       if (hint) {
-        const rootLabel = fastqBrowseServiceCode === 'sgnipt' ? 'sgNIPT' : 'Carrier screening';
+        const rootLabel = fastqBrowseServiceCode === 'sgnipt' ? 'Single-gene NIPT' : 'Carrier Screening';
         hint.textContent = `Service: ${rootLabel} — open folders, then choose two FASTQ files (Ctrl+click up to two, or Shift+click range if only two files in range).`;
       }
       const m = qs('fastqBrowseModal');
@@ -2431,6 +2490,10 @@
       const cp = qs('ordersCreatePanel');
       if (lp) lp.classList.add('hidden');
       if (cp) cp.classList.remove('hidden');
+      if (!editingOrderId) {
+        const cr = document.querySelector('input[name="fService"][value="carrier_screening"]');
+        if (cr) cr.checked = true;
+      }
       toggleServiceSubmitBlocks();
     }
 
@@ -2521,7 +2584,7 @@
       const t1 = qs('carrierSubmitBlock') && qs('carrierSubmitBlock').querySelector('.submit-page-title');
       const t2 = qs('sgniptSubmitBlock') && qs('sgniptSubmitBlock').querySelector('.submit-page-title');
       if (t1) t1.textContent = 'Create Carrier Order';
-      if (t2) t2.textContent = 'Create Client Order';
+      if (t2) t2.textContent = 'Create Single-gene NIPT Order';
       const btn = qs('btnSaveOrder');
       if (btn) btn.textContent = 'Save order';
     }
@@ -2640,10 +2703,10 @@
       } else if (o.service_code === 'sgnipt') {
         populateSgniptFormFromOrder(o);
         const t2 = qs('sgniptSubmitBlock') && qs('sgniptSubmitBlock').querySelector('.submit-page-title');
-        if (t2) t2.textContent = 'Edit sgNIPT Order';
+        if (t2) t2.textContent = 'Edit Single-gene NIPT Order';
       } else {
         editingOrderId = null;
-        toast('Editing is only supported for Carrier and sgNIPT orders', false);
+        toast('Editing is only supported for Carrier Screening and Single-gene NIPT orders', false);
         showOrdersListOnly();
         return;
       }
@@ -2767,6 +2830,223 @@
     // ═══════════════════════════════════════════════════════════
     // Dashboard
     // ═══════════════════════════════════════════════════════════
+    function dashSvcLabel(sc) {
+      return sc === 'sgnipt' ? 'Single-gene NIPT' : (sc === 'carrier_screening' ? 'Carrier Screening' : sc || '-');
+    }
+
+    /** Last successful /queue/summary + /services for tab panels */
+    let dashSnapshot = null;
+    let dashActiveTabKey = 'all';
+    /** @type {{ tabKey: string, bucket: string, sort: string, order: string }|null} */
+    let dashBucketCtx = null;
+
+    function dashServiceStats(queue, serviceCode) {
+      const by = queue && queue.stats_by_service;
+      const raw = by && by[serviceCode];
+      return {
+        queued: raw && raw.queued != null ? raw.queued : 0,
+        running: raw && raw.running != null ? raw.running : 0,
+        completed: raw && raw.completed != null ? raw.completed : 0,
+        failed: raw && raw.failed != null ? raw.failed : 0,
+      };
+    }
+
+    function hideDashBucketPanel() {
+      dashBucketCtx = null;
+      const p = qs('dashBucketPanel');
+      if (p) p.classList.add('hidden');
+      document.querySelectorAll('.stat-dash-btn.dash-bucket-active').forEach(el => el.classList.remove('dash-bucket-active'));
+    }
+
+    function markDashBucketActiveButton(bucket) {
+      document.querySelectorAll('#dashStats .stat-dash-btn').forEach(btn => {
+        btn.classList.toggle('dash-bucket-active', btn.getAttribute('data-dash-bucket') === bucket);
+      });
+    }
+
+    function syncDashBucketSortHeaders() {
+      const ctx = dashBucketCtx;
+      document.querySelectorAll('#tblDashBucket thead th[data-dash-sort]').forEach(th => {
+        const k = th.getAttribute('data-dash-sort');
+        th.classList.remove('sort-asc', 'sort-desc');
+        if (ctx && ctx.sort === k) {
+          th.classList.add(ctx.order === 'desc' ? 'sort-desc' : 'sort-asc');
+        }
+      });
+    }
+
+    function dashBucketHeadline(bucket) {
+      const m = { queued: 'Queued', running: 'Running', completed: 'Completed', failed: 'Failed' };
+      return m[bucket] || bucket;
+    }
+
+    async function loadDashBucketList() {
+      if (!dashBucketCtx) return;
+      const { tabKey, bucket, sort, order } = dashBucketCtx;
+      let path = `/queue/dashboard-bucket?bucket=${encodeURIComponent(bucket)}&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}`;
+      if (tabKey !== 'all') path += `&service_code=${encodeURIComponent(tabKey)}`;
+      const titleEl = qs('dashBucketTitle');
+      const metaEl = qs('dashBucketMeta');
+      const bodyEl = qs('dashBucketBody');
+      const panel = qs('dashBucketPanel');
+      try {
+        const data = await apiGet(path);
+        const scope = tabKey === 'all' ? 'all services' : dashSvcLabel(tabKey);
+        if (titleEl) titleEl.textContent = `${dashBucketHeadline(bucket)} — ${scope}`;
+        if (metaEl) metaEl.textContent = `${data.total != null ? data.total : 0} order(s) · Order updated = last status change (server time)`;
+        if (bodyEl) {
+          const rows = (data.orders || []).map(o => `
+            <tr>
+              <td>${escapeHtml(o.order_id || '')}</td>
+              <td>${escapeHtml(o.status || '')}</td>
+              <td>${fmtDateTimeDetail(o.order_updated)}</td>
+              <td class="dash-bucket-msg">${escapeHtml(o.message || '')}</td>
+            </tr>`).join('');
+          bodyEl.innerHTML = rows || '<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">No orders</td></tr>';
+        }
+        if (panel) panel.classList.remove('hidden');
+        syncDashBucketSortHeaders();
+      } catch (e) {
+        if (titleEl) titleEl.textContent = 'Orders';
+        if (metaEl) metaEl.textContent = '';
+        if (bodyEl) bodyEl.innerHTML = `<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">${escapeHtml(e.message || 'Load failed')}</td></tr>`;
+        if (panel) panel.classList.remove('hidden');
+        toast(e.message || 'Failed to load bucket list', false);
+      }
+    }
+
+    function onDashBucketButtonClick(bucket) {
+      if (!dashSnapshot || !bucket) return;
+      dashBucketCtx = {
+        tabKey: dashActiveTabKey,
+        bucket,
+        sort: 'order_updated',
+        order: 'desc',
+      };
+      markDashBucketActiveButton(bucket);
+      loadDashBucketList();
+    }
+
+    function onDashBucketSortClick(sortKey) {
+      if (!dashBucketCtx || !sortKey) return;
+      if (dashBucketCtx.sort === sortKey) {
+        dashBucketCtx.order = dashBucketCtx.order === 'desc' ? 'asc' : 'desc';
+      } else {
+        dashBucketCtx.sort = sortKey;
+        dashBucketCtx.order = (sortKey === 'order_updated' || sortKey === 'message') ? 'desc' : 'asc';
+      }
+      syncDashBucketSortHeaders();
+      loadDashBucketList();
+    }
+
+    let dashBucketTableWired = false;
+    function wireDashBucketTable() {
+      if (dashBucketTableWired) return;
+      const thead = document.querySelector('#tblDashBucket thead');
+      if (!thead) return;
+      dashBucketTableWired = true;
+      thead.addEventListener('click', e => {
+        const th = e.target && e.target.closest ? e.target.closest('th[data-dash-sort]') : null;
+        if (!th) return;
+        onDashBucketSortClick(th.getAttribute('data-dash-sort'));
+      });
+    }
+
+    function renderDashRunningList(running, emptyMsg) {
+      const host = qs('dashRunning');
+      if (!host) return;
+      if (running.length > 0) {
+        host.innerHTML = '<div class="muted" style="font-weight:600;margin-bottom:6px">Running jobs</div>' +
+          running.map(j => `
+              <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)">
+                <span class="pill inp">${dashSvcLabel(j.service_code)}</span>
+                <span style="font-weight:600">${escapeHtml(j.order_id)}</span>
+                <div style="flex:1;max-width:200px">
+                  <div class="progress-bar"><div class="progress-fill" style="width:${j.progress || 0}%"></div></div>
+                </div>
+                <span class="muted">${j.progress != null ? j.progress : 0}%</span>
+                <span class="muted">${escapeHtml(j.message || '')}</span>
+              </div>
+            `).join('');
+      } else {
+        host.innerHTML = `<div class="muted" style="text-align:center;padding:20px">${emptyMsg}</div>`;
+      }
+    }
+
+    function wireDashStatBucketClicks(grid) {
+      if (!grid) return;
+      grid.querySelectorAll('.stat-dash-btn[data-dash-bucket]').forEach(btn => {
+        btn.addEventListener('click', () => onDashBucketButtonClick(btn.getAttribute('data-dash-bucket')));
+      });
+    }
+
+    function refreshDashPanel(tabKey) {
+      if (!dashSnapshot) return;
+      const { queue, servicesList, totalServices } = dashSnapshot;
+      const grid = qs('dashStats');
+      if (!grid) return;
+
+      if (tabKey === 'all') {
+        grid.innerHTML = `
+          <div class="stat-card"><div class="stat-value" id="dashStatVal0">0</div><div class="stat-label">Services</div></div>
+          <button type="button" class="stat-card stat-dash-btn" data-dash-bucket="queued" aria-label="Show queued orders">
+            <div class="stat-value" id="dashStatVal1">0</div><div class="stat-label">Queued</div></button>
+          <button type="button" class="stat-card stat-dash-btn" data-dash-bucket="running" aria-label="Show running orders">
+            <div class="stat-value" id="dashStatVal2">0</div><div class="stat-label">Running</div></button>
+          <button type="button" class="stat-card stat-dash-btn ok" data-dash-bucket="completed" aria-label="Show completed orders">
+            <div class="stat-value" id="dashStatVal3">0</div><div class="stat-label">Completed</div></button>
+          <button type="button" class="stat-card stat-dash-btn err" data-dash-bucket="failed" aria-label="Show failed orders">
+            <div class="stat-value" id="dashStatVal4">0</div><div class="stat-label">Failed</div></button>`;
+        qs('dashStatVal0').textContent = totalServices != null ? totalServices : (servicesList || []).length;
+        qs('dashStatVal1').textContent = queue.total_queued || 0;
+        qs('dashStatVal2').textContent = queue.total_running || 0;
+        qs('dashStatVal3').textContent = queue.total_completed || 0;
+        qs('dashStatVal4').textContent = queue.total_failed || 0;
+        wireDashStatBucketClicks(grid);
+        renderDashRunningList(queue.running_jobs || [], 'No running jobs');
+      } else {
+        const st = dashServiceStats(queue, tabKey);
+        grid.innerHTML = `
+          <button type="button" class="stat-card stat-dash-btn" data-dash-bucket="queued" aria-label="Show queued orders">
+            <div class="stat-value" id="dashStatVal1">0</div><div class="stat-label">Queued</div></button>
+          <button type="button" class="stat-card stat-dash-btn" data-dash-bucket="running" aria-label="Show running orders">
+            <div class="stat-value" id="dashStatVal2">0</div><div class="stat-label">Running</div></button>
+          <button type="button" class="stat-card stat-dash-btn ok" data-dash-bucket="completed" aria-label="Show completed orders">
+            <div class="stat-value" id="dashStatVal3">0</div><div class="stat-label">Completed</div></button>
+          <button type="button" class="stat-card stat-dash-btn err" data-dash-bucket="failed" aria-label="Show failed orders">
+            <div class="stat-value" id="dashStatVal4">0</div><div class="stat-label">Failed</div></button>`;
+        qs('dashStatVal1').textContent = st.queued;
+        qs('dashStatVal2').textContent = st.running;
+        qs('dashStatVal3').textContent = st.completed;
+        qs('dashStatVal4').textContent = st.failed;
+        wireDashStatBucketClicks(grid);
+        const runFiltered = (queue.running_jobs || []).filter(j => j.service_code === tabKey);
+        renderDashRunningList(runFiltered, 'No running jobs for this service');
+      }
+
+      if (dashBucketCtx && dashBucketCtx.tabKey === tabKey) {
+        markDashBucketActiveButton(dashBucketCtx.bucket);
+        loadDashBucketList();
+      }
+    }
+
+    function setDashServiceTab(tabKey) {
+      const tabs = qs('dashServiceTabs');
+      if (!tabs) return;
+      if (dashBucketCtx && dashBucketCtx.tabKey !== tabKey) hideDashBucketPanel();
+      dashActiveTabKey = tabKey;
+      try {
+        localStorage.setItem('dashServiceTab', tabKey);
+      } catch (e) { /* ignore */ }
+      tabs.querySelectorAll('.sub-tab').forEach(btn => {
+        const k = btn.getAttribute('data-dash-tab');
+        const on = k === tabKey;
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      refreshDashPanel(tabKey);
+    }
+
     async function loadDashboard() {
       try {
         const [health, queue, services] = await Promise.all([
@@ -2776,30 +3056,33 @@
         ]);
 
         qs('connStatus').innerHTML = `<span class="conn-dot ok"></span>${health.environment || 'Connected'}`;
-        qs('statServices').textContent = services.total || 0;
-        qs('statQueued').textContent = queue.total_queued || 0;
-        qs('statRunning').textContent = queue.total_running || 0;
-        qs('statCompleted').textContent = queue.total_completed || 0;
-        qs('statFailed').textContent = queue.total_failed || 0;
 
-        const running = queue.running_jobs || [];
-        if (running.length > 0) {
-          const svcLabel = sc => sc === 'sgnipt' ? 'sgNIPT' : (sc === 'carrier_screening' ? 'Carrier' : sc || '-');
-          qs('dashRunning').innerHTML = '<div class="muted" style="font-weight:600;margin-bottom:6px">Running Jobs</div>' +
-            running.map(j => `
-              <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)">
-                <span class="pill inp">${svcLabel(j.service_code)}</span>
-                <span style="font-weight:600">${j.order_id}</span>
-                <div style="flex:1;max-width:200px">
-                  <div class="progress-bar"><div class="progress-fill" style="width:${j.progress}%"></div></div>
-                </div>
-                <span class="muted">${j.progress}%</span>
-                <span class="muted">${j.message || ''}</span>
-              </div>
-            `).join('');
-        } else {
-          qs('dashRunning').innerHTML = '<div class="muted" style="text-align:center;padding:20px">No running jobs</div>';
+        const servicesList = services.services || [];
+        const totalServices = services.total != null ? services.total : servicesList.length;
+        dashSnapshot = { queue, servicesList, totalServices, health };
+
+        const tabHost = qs('dashServiceTabs');
+        if (tabHost) {
+          const parts = ['<button type="button" class="sub-tab" data-dash-tab="all" role="tab" aria-selected="false">All services</button>'];
+          for (const s of servicesList) {
+            const code = s.service_code || '';
+            const label = (s.display_name || code || '—').trim();
+            parts.push(
+              `<button type="button" class="sub-tab" data-dash-tab="${escapeHtml(code)}" role="tab" aria-selected="false">${escapeHtml(label)}</button>`
+            );
+          }
+          tabHost.innerHTML = parts.join('');
+          tabHost.querySelectorAll('.sub-tab').forEach(btn => {
+            btn.addEventListener('click', () => setDashServiceTab(btn.getAttribute('data-dash-tab') || 'all'));
+          });
         }
+
+        let tab = 'all';
+        try {
+          tab = (localStorage.getItem('dashServiceTab') || 'all').trim() || 'all';
+        } catch (e) { /* ignore */ }
+        if (tab !== 'all' && !servicesList.some(s => s.service_code === tab)) tab = 'all';
+        setDashServiceTab(tab);
       } catch (e) {
         qs('connStatus').innerHTML = `<span class="conn-dot err"></span>Disconnected`;
         toast('Cannot connect to daemon at ' + API_BASE, false);
@@ -3132,7 +3415,7 @@
         return '<span class="pill type-carrier">Standard</span>';
       }
       if (sc === 'sgnipt') {
-        return '<span class="pill type-sgnipt">sgNIPT</span>';
+        return '<span class="pill type-sgnipt">Single-gene NIPT</span>';
       }
       if (sc === 'nipt') {
         return '<span class="pill type-nipt">NIPT</span>';
@@ -3473,7 +3756,7 @@
       const inner = pairs.map(([lab, val]) =>
         `<div class="kv-item"><div class="kv-label">${escapeHtml(lab)}</div><div class="kv-value">${val === '' || val == null ? '—' : escapeHtml(String(val))}</div></div>`
       ).join('');
-      return `<div class="detail-section"><h4>${escapeHtml(title)}</h4><div class="detail-kv">${inner}</div></div>`;
+      return `<div class="detail-section"><h4>${escapeHtml(title)}</h4><div class="detail-kv detail-kv-full">${inner}</div></div>`;
     }
 
     function niptDisplayValue(key, raw) {
@@ -3511,7 +3794,7 @@
       if (chrome) chrome.classList.add('hidden');
       const p = qs('orderDetailPanel');
       if (p) p.classList.remove('hidden');
-      const svcTag = o.service_code === 'sgnipt' ? 'sgNIPT' : (o.service_code === 'carrier_screening' ? 'Carrier' : o.service_code || '');
+      const svcTag = o.service_code === 'sgnipt' ? 'Single-gene NIPT' : (o.service_code === 'carrier_screening' ? 'Carrier Screening' : o.service_code || '');
       qs('orderDetailTitle').textContent = `Order Detail ${o.order_id}` + (svcTag ? ` (${svcTag})` : '');
       qs('orderDetailSub').textContent = 'Detail info of order';
 
@@ -3533,9 +3816,20 @@
         ['Started', fmtDateTimeDetail(o.started_at)],
         ['Last updated', fmtDateTimeDetail(o.updated_at)],
         ['Completed', fmtDateTimeDetail(o.completed_at)],
-        ['R1 path', o.fastq_r1_path || '—'],
-        ['R2 path', o.fastq_r2_path || '—'],
       );
+
+      function orderDetailFastqPathsHtml(order) {
+        const r1 = (order.fastq_r1_path || '').trim();
+        const r2 = (order.fastq_r2_path || '').trim();
+        const v1 = r1 ? escapeHtml(r1) : '—';
+        const v2 = r2 ? escapeHtml(r2) : '—';
+        return (
+          `<div class="detail-fastq-grid" role="group" aria-label="FASTQ paths">` +
+          `<div class="kv-item"><div class="kv-label">R1 path</div><div class="kv-value kv-path">${v1}</div></div>` +
+          `<div class="kv-item"><div class="kv-label">R2 path</div><div class="kv-value kv-path">${v2}</div></div>` +
+          `</div>`
+        );
+      }
 
       let html = '';
       html += `<div class="detail-section"><h4>Order logistics &amp; pipeline</h4><div class="detail-kv">` +
@@ -3544,7 +3838,7 @@
             return `<div class="kv-item"><div class="kv-label">${escapeHtml(l)}</div><div class="kv-value">${orderDetailStatusPillHtml(o)}</div></div>`;
           }
           return `<div class="kv-item"><div class="kv-label">${escapeHtml(l)}</div><div class="kv-value">${v === '—' ? '—' : escapeHtml(String(v))}</div></div>`;
-        }).join('') + `</div></div>`;
+        }).join('') + `</div>` + orderDetailFastqPathsHtml(o) + `</div>`;
 
       const nipt = o.params && o.params.nipt;
       if (nipt && typeof nipt === 'object') {
@@ -3746,7 +4040,7 @@
       filtered.forEach(o => {
         const tr = document.createElement('tr');
         tr.className = 'order-row-click';
-        const svcLabel = o.service_code === 'sgnipt' ? 'sgNIPT' : (o.service_code === 'carrier_screening' ? 'Carrier' : o.service_code || '-');
+        const svcLabel = o.service_code === 'sgnipt' ? 'Single-gene NIPT' : (o.service_code === 'carrier_screening' ? 'Carrier Screening' : o.service_code || '-');
         const pat = patientDisplayName(o) || '—';
         const st = orderStatusUpper(o);
         const items = [];
@@ -6493,6 +6787,7 @@
       wireOrderIdNoSpace('sgOrderId');
       wireOrderIdNoSpace('sg_prev_order');
       wireFastqBrowseUi();
+      wireDashBucketTable();
       await detectOrderApiPrefix();
       let lastTab = localStorage.getItem('activeTab') || 'dash';
       if (lastTab === 'submit' || lastTab === 'track') lastTab = 'orders';

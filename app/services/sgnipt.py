@@ -65,7 +65,7 @@ class SgNIPTPlugin(ServicePlugin):
 
     @property
     def display_name(self) -> str:
-        return "sgNIPT (Single-Gene NIPT)"
+        return "Single-gene NIPT"
 
     def validate_params(self, params: Dict[str, Any]) -> Tuple[bool, str]:
         return True, ""

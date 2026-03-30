@@ -272,5 +272,12 @@ class QueueSummary(BaseModel):
     total_running: int = 0
     total_completed: int = 0
     total_failed: int = 0
-    jobs_by_service: Dict[str, int] = Field(default_factory=dict)
+    jobs_by_service: Dict[str, int] = Field(
+        default_factory=dict,
+        description="서비스별 (queued + running) 합계 (하위 호환)",
+    )
+    stats_by_service: Dict[str, Dict[str, int]] = Field(
+        default_factory=dict,
+        description="서비스별 queued / running / completed / failed (QueueManager _stats)",
+    )
     running_jobs: List[Dict[str, Any]] = Field(default_factory=list)

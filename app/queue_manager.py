@@ -166,6 +166,7 @@ class QueueManager:
             apply_sgnipt_layout_directories(job)
         async with self._lock:
             job.status = OrderStatus.QUEUED
+            job.updated_at = now_kst_iso()
             self._jobs[job.order_id] = job
             self._stats[job.service_code]["queued"] += 1
 
@@ -193,6 +194,7 @@ class QueueManager:
                     self._jobs.pop(job.order_id, None)
                     job.status = OrderStatus.CANCELLED
                     job.completed_at = now_kst_iso()
+                    job.updated_at = now_kst_iso()
                     job.message = "Cancelled while queued"
                     self._completed_jobs[job.order_id] = job
                     cancelled = job
@@ -230,6 +232,7 @@ class QueueManager:
         async with self._lock:
             job.status = OrderStatus.RUNNING
             job.started_at = now_kst_iso()
+            job.updated_at = now_kst_iso()
             self._running_jobs[job.order_id] = job
             self._stats[job.service_code]["running"] += 1
 
@@ -262,6 +265,7 @@ class QueueManager:
         async with self._lock:
             job.status = OrderStatus.COMPLETED
             job.completed_at = now_kst_iso()
+            job.updated_at = now_kst_iso()
             self._running_jobs.pop(job.order_id, None)
             self._jobs.pop(job.order_id, None)
             self._completed_jobs[job.order_id] = job
@@ -298,6 +302,7 @@ class QueueManager:
         async with self._lock:
             job.status = OrderStatus.FAILED
             job.completed_at = now_kst_iso()
+            job.updated_at = now_kst_iso()
             job.error_log = error
             self._running_jobs.pop(job.order_id, None)
             self._jobs.pop(job.order_id, None)
@@ -661,6 +666,7 @@ class QueueManager:
         async with self._lock:
             job.status = OrderStatus.CANCELLED
             job.completed_at = now_kst_iso()
+            job.updated_at = now_kst_iso()
             job.message = message
             self._running_jobs.pop(job.order_id, None)
             self._jobs.pop(job.order_id, None)
@@ -707,16 +713,70 @@ class QueueManager:
             jobs = [j for j in jobs if j.service_code == service_code]
         return jobs
 
-    def get_summary(self) -> QueueSummary:
-        """큐 상태 요약"""
-        total_queued = self._queue.qsize()
-        total_running = len(self._running_jobs)
-        total_completed = sum(s["completed"] for s in self._stats.values())
-        total_failed = sum(s["failed"] for s in self._stats.values())
+    def iter_all_jobs_unique(self) -> List[Job]:
+        """saved / queued / running / completed 버킷에서 order_id 기준 중복 제거 목록."""
+        seen: Set[str] = set()
+        out: List[Job] = []
+        for bucket in (self._saved_jobs, self._jobs, self._running_jobs, self._completed_jobs):
+            for oid, job in bucket.items():
+                if oid not in seen:
+                    seen.add(oid)
+                    out.append(job)
+        return out
 
-        jobs_by_service = {}
-        for svc, stats in self._stats.items():
-            jobs_by_service[svc] = stats["queued"] + stats["running"]
+    def snapshot_stats_by_service(self) -> Dict[str, Dict[str, int]]:
+        """대시보드·버킷 목록과 동일한 기준의 현재 스냅샷 통계."""
+        running_ids = set(self._running_jobs.keys())
+        by_svc: Dict[str, Dict[str, int]] = {}
+        for j in self.iter_all_jobs_unique():
+            svc = j.service_code
+            if svc not in by_svc:
+                by_svc[svc] = {"queued": 0, "running": 0, "completed": 0, "failed": 0}
+            st = by_svc[svc]
+            if j.status == OrderStatus.QUEUED:
+                st["queued"] += 1
+            elif j.order_id in running_ids:
+                st["running"] += 1
+            elif j.status in (OrderStatus.COMPLETED, OrderStatus.REPORT_READY):
+                st["completed"] += 1
+            elif j.status == OrderStatus.FAILED:
+                st["failed"] += 1
+        return by_svc
+
+    def get_dashboard_bucket_jobs(
+        self, bucket: str, service_code: Optional[str] = None
+    ) -> List[Job]:
+        """queued / running / completed / failed — 현재 시점 주문 스냅샷."""
+        b = (bucket or "").strip().lower()
+        jobs = self.iter_all_jobs_unique()
+        if service_code and str(service_code).strip():
+            sc = str(service_code).strip()
+            jobs = [j for j in jobs if j.service_code == sc]
+        if b == "queued":
+            return [j for j in jobs if j.status == OrderStatus.QUEUED]
+        if b == "running":
+            return [j for j in jobs if j.order_id in self._running_jobs]
+        if b == "completed":
+            return [
+                j
+                for j in jobs
+                if j.status in (OrderStatus.COMPLETED, OrderStatus.REPORT_READY)
+            ]
+        if b == "failed":
+            return [j for j in jobs if j.status == OrderStatus.FAILED]
+        return []
+
+    def get_summary(self) -> QueueSummary:
+        """큐 상태 요약 (통계는 현재 주문 스냅샷; 카운트=대시보드 버킷과 일치)."""
+        stats_by_service = self.snapshot_stats_by_service()
+        total_queued = sum(s["queued"] for s in stats_by_service.values())
+        total_running = sum(s["running"] for s in stats_by_service.values())
+        total_completed = sum(s["completed"] for s in stats_by_service.values())
+        total_failed = sum(s["failed"] for s in stats_by_service.values())
+
+        jobs_by_service = {
+            svc: st["queued"] + st["running"] for svc, st in stats_by_service.items()
+        }
 
         running_jobs = [
             {
@@ -730,12 +790,23 @@ class QueueManager:
             for j in self._running_jobs.values()
         ]
 
+        stats_out = {
+            svc: {
+                "queued": int(st["queued"]),
+                "running": int(st["running"]),
+                "completed": int(st["completed"]),
+                "failed": int(st["failed"]),
+            }
+            for svc, st in stats_by_service.items()
+        }
+
         return QueueSummary(
             total_queued=total_queued,
             total_running=total_running,
             total_completed=total_completed,
             total_failed=total_failed,
             jobs_by_service=jobs_by_service,
+            stats_by_service=stats_out,
             running_jobs=running_jobs,
         )
 

@@ -2075,6 +2075,70 @@ async def get_queue_summary():
     return queue_manager.get_summary()
 
 
+def _dashboard_order_updated_iso(j: Job) -> str:
+    """상태 갱신 시각(포털 Order updated): 우선 ``updated_at``."""
+    return j.updated_at or j.completed_at or j.started_at or j.created_at or ""
+
+
+@app.get("/queue/dashboard-bucket")
+async def get_dashboard_bucket(
+    bucket: str = Query(..., description="queued | running | completed | failed"),
+    service_code: Optional[str] = Query(default=None, description="서비스 코드; 생략 시 전체"),
+    sort: str = Query(default="order_updated", description="order_id | status | order_updated | message"),
+    order: str = Query(default="desc", description="asc | desc"),
+):
+    """
+    대시보드 통계 카드(버킷)에 대응하는 주문 목록.
+    ``order_updated`` 는 Job 의 ``updated_at``(없으면 completed/started/created 로 대체)입니다.
+    """
+    allowed_bucket = {"queued", "running", "completed", "failed"}
+    b = (bucket or "").strip().lower()
+    if b not in allowed_bucket:
+        raise HTTPException(status_code=400, detail=f"Invalid bucket: {bucket}")
+
+    order_l = (order or "desc").strip().lower()
+    if order_l not in ("asc", "desc"):
+        order_l = "desc"
+    sk = (sort or "order_updated").strip().lower()
+    allowed_sort = {"order_id", "status", "order_updated", "message"}
+    if sk not in allowed_sort:
+        sk = "order_updated"
+
+    queue_manager = get_queue_manager()
+    jobs = queue_manager.get_dashboard_bucket_jobs(b, service_code)
+    rev = order_l == "desc"
+
+    if sk == "order_id":
+        jobs = sorted(jobs, key=lambda j: (j.order_id or "").lower(), reverse=rev)
+    elif sk == "status":
+        jobs = sorted(
+            jobs,
+            key=lambda j: j.status.value if j.status else "",
+            reverse=rev,
+        )
+    elif sk == "message":
+        jobs = sorted(jobs, key=lambda j: (j.message or "").lower(), reverse=rev)
+    else:
+        jobs = sorted(jobs, key=_dashboard_order_updated_iso, reverse=rev)
+
+    return {
+        "bucket": b,
+        "service_code": service_code,
+        "sort": sk,
+        "order": order_l,
+        "total": len(jobs),
+        "orders": [
+            {
+                "order_id": j.order_id,
+                "status": j.status.value,
+                "order_updated": _dashboard_order_updated_iso(j),
+                "message": j.message or "",
+            }
+            for j in jobs
+        ],
+    }
+
+
 @app.get("/queue/status")
 async def get_queue_status(
     service_code: str = Query(default=None, description="특정 서비스만 조회")

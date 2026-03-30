@@ -564,7 +564,15 @@ class CarrierScreeningPlugin(ServicePlugin):
            — compose 가 CARRIER_SCREENING_HOST 로 레포 전체를 붙인 경우
         3) CARRIER_SCREENING_PIPELINE_DIR 아래 src/, 루트, scripts/
         없으면 None → Nextflow 직접.
+
+        CARRIER_SCREENING_FORCE_DIRECT_NEXTFLOW=1 skips 1–3 so DARK_GENE_PIPELINE_DIR can be used.
         """
+        if settings.carrier_screening_force_direct_nextflow:
+            logger.info(
+                "[carrier_screening] CARRIER_SCREENING_FORCE_DIRECT_NEXTFLOW set — "
+                "skipping run_analysis.sh, using direct Nextflow"
+            )
+            return None
         explicit = (settings.carrier_screening_run_script or "").strip()
         layout_base = settings.carrier_screening_layout_base
         pd = settings.carrier_screening_pipeline_dir

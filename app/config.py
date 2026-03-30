@@ -52,6 +52,20 @@ class Settings(BaseSettings):
     api_username: Optional[str] = Field(default=None, description="API login username")
     api_password: Optional[str] = Field(default=None, description="API login password")
 
+    # ─── Telegram (optional job lifecycle alerts) ──────────
+    telegram_bot_token: Optional[str] = Field(
+        default=None,
+        description="Telegram Bot API token; unset disables sendMessage notifications",
+    )
+    telegram_chat_ids: Optional[str] = Field(
+        default=None,
+        description="Comma-separated chat IDs (e.g. personal DM or group)",
+    )
+    telegram_notify_enabled: bool = Field(
+        default=True,
+        description="If false, do not send Telegram messages",
+    )
+
     # ─── Queue / Worker ────────────────────────────────────
     max_concurrent_jobs: int = Field(
         default=2,
@@ -152,12 +166,20 @@ class Settings(BaseSettings):
             "Optional path to the unified dark-gene Nextflow repo (main.nf: FASTQ→align→dark-genes tracks). "
             "When set and main.nf exists, the daemon prefers this entry over CARRIER_SCREENING_PIPELINE_DIR "
             "unless CARRIER_SCREENING_MAIN_NF is set. "
-            "Requires CARRIER_SCREENING_RUN_SCRIPT unset so jobs use nextflow run directly."
+            "Use CARRIER_SCREENING_FORCE_DIRECT_NEXTFLOW=true (or remove run_analysis.sh) so jobs use "
+            "nextflow run directly; otherwise auto-discovered run_analysis.sh takes precedence."
         ),
     )
     dark_gene_skip_cnv: bool = Field(
         default=True,
         description="When using dark_gene unified main.nf, pass --skip_cnv (gCNV is heavy; set false to enable).",
+    )
+    carrier_screening_force_direct_nextflow: bool = Field(
+        default=False,
+        description=(
+            "When true, never use run_analysis.sh (even if present under layout or pipeline dir); "
+            "run `nextflow run` with DARK_GENE_PIPELINE_DIR / CARRIER_SCREENING_MAIN_NF resolution instead."
+        ),
     )
     carrier_screening_nextflow_profile: Optional[str] = Field(
         default=None,

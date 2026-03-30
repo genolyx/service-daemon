@@ -1260,6 +1260,18 @@ async def get_order_result(order_id: str):
                     dg2 = dict(dg)
                     dg2["visual_evidence"] = merge_visual_evidence_across_roots(roots)
                     result_data = {**result_data, "dark_genes": dg2}
+            if job.service_code == "carrier_screening":
+                from app.services.carrier_screening.review import (
+                    enrich_review_build_with_smaca_vcf_depths,
+                )
+
+                meta = result_data.get("metadata")
+                if isinstance(meta, dict):
+                    rb = meta.get("review_build")
+                    if isinstance(rb, dict) and not rb.get("smaca_snp_depths"):
+                        enrich_review_build_with_smaca_vcf_depths(
+                            rb, str(getattr(job, "sample_name", "") or "")
+                        )
         if store and isinstance(result_data, dict):
             await asyncio.to_thread(store.set_result_json, order_id, result_data)
         if isinstance(result_data, dict):
@@ -1299,6 +1311,18 @@ async def get_order_result(order_id: str):
                         dg2 = dict(dg)
                         dg2["visual_evidence"] = merge_visual_evidence_across_roots(roots)
                         out = {**out, "dark_genes": dg2}
+                if job.service_code == "carrier_screening":
+                    from app.services.carrier_screening.review import (
+                        enrich_review_build_with_smaca_vcf_depths,
+                    )
+
+                    meta = out.get("metadata")
+                    if isinstance(meta, dict):
+                        rb = meta.get("review_build")
+                        if isinstance(rb, dict) and not rb.get("smaca_snp_depths"):
+                            enrich_review_build_with_smaca_vcf_depths(
+                                rb, str(getattr(job, "sample_name", "") or "")
+                            )
                 from app.services.carrier_screening.review import normalize_variants_for_portal
 
                 payload = dict(out)

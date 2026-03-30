@@ -92,7 +92,6 @@ def _risk_heading_colors(risk_level: str) -> Tuple[str, str]:
 # Pipeline section titles (``detailed_sections[].title``) → customer-facing report titles.
 # Keys: lowercase, whitespace-collapsed for robust matching.
 _DARK_GENES_DISPLAY_TITLE: Dict[str, str] = {
-    "smaca check (silent carrier + coverage)": "Spinal Muscular Atrophy",
     "hba analysis (alpha thalassemia - dosage)": "Alpha Thalassemia",
     "cyp21a2 analysis (cah - dosage)": "Congenital Adrenal Hyperplasia (CAH)",
     "expansion hunter (fragile x / fmr1)": "Fragile X",
@@ -109,6 +108,8 @@ def dark_genes_display_title(raw: Optional[str]) -> str:
     t = (raw or "").strip()
     if not t:
         return "Section"
+    if re.match(r"^smaca\s+check\b", t, re.I):
+        return "Spinal Muscular Atrophy"
     key = " ".join(t.lower().split())
     return _DARK_GENES_DISPLAY_TITLE.get(key, t)
 
@@ -366,6 +367,85 @@ _DETAILED_GLOBS = (
     "*_detailed_report.txt",
     "*detailed_report*.txt",
 )
+# SMAca process writes this (see docs/integrations/carrier_dark_genes.md); merged into detailed text.
+_SMACA_CT_SIDECAR_GLOBS = (
+    "summary/smaca_snp_counts.txt",
+    "summary/SMAca/smaca_snp_counts.txt",
+    "smaca/smaca_snp_counts.txt",
+    "smaca_snp_counts.txt",
+)
+
+
+def _parse_smaca_ct_sidecar_text(raw: str) -> Optional[str]:
+    """
+    First usable line for portal/PDF: ``C_T=n,n`` or ``CT_counts=n,n``, or two integers.
+    """
+    if not (raw or "").strip():
+        return None
+    for line in raw.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if re.match(r"^C_T\s*=\s*\d+\s*,\s*\d+", s, re.I):
+            return s
+        if re.match(r"^CT_counts\s*=\s*\d+\s*,\s*\d+", s, re.I):
+            return s
+        if re.match(r"^SMN_C_T\s*=\s*\d+\s*,\s*\d+", s, re.I):
+            return s
+    lines0 = raw.strip().splitlines()
+    if lines0:
+        m = re.match(r"^(\d+)\s+(\d+)\s*$", lines0[0].strip())
+        if m:
+            return f"C_T={m.group(1)},{m.group(2)}"
+    return None
+
+
+def _inject_smaca_ct_line_into_detailed_text(detailed: str, ct_line: str) -> str:
+    """
+    Insert ``C_T=…`` into the SMAca block when the pipeline only wrote a sidecar file.
+    Avoid duplicating if already present.
+    """
+    if not (detailed or "").strip() or not (ct_line or "").strip():
+        return detailed
+    if re.search(r"(?im)^\s*C_T\s*=", detailed):
+        return detailed
+    if re.search(r"(?im)^\s*CT_counts\s*=", detailed):
+        return detailed
+    inj = ct_line if ct_line.endswith("\n") else ct_line + "\n"
+    # Prefer after C_Ratio= (same block as SMN1 cov fraction)
+    m = re.search(r"(?im)^(\s*C_Ratio\s*=\s*[^\n]+\n)", detailed)
+    if m:
+        i = m.end()
+        return detailed[:i] + inj + detailed[i:]
+    # Else before SMN1_CN=
+    m2 = re.search(r"(?im)^(\s*SMN1_CN\s*=\s*)", detailed)
+    if m2:
+        i = m2.start()
+        return detailed[:i] + inj + detailed[i:]
+    return detailed.rstrip() + "\n\n" + inj
+
+
+def _read_smaca_ct_sidecar(base: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Returns (``C_T=…`` line or None, relative path of file read or None).
+    """
+    paths: List[str] = []
+    for pat in _SMACA_CT_SIDECAR_GLOBS:
+        paths.extend(glob.glob(os.path.join(base, pat)))
+    if not paths:
+        paths = _rglob_unique(base, ("**/smaca_snp_counts.txt",))
+    if not paths:
+        return None, None
+    path = sorted(paths)[0]
+    raw = _read_text_safe(path, 4096)
+    line = _parse_smaca_ct_sidecar_text(raw)
+    if not line:
+        return None, None
+    try:
+        rel = os.path.relpath(path, base)
+    except ValueError:
+        rel = os.path.basename(path)
+    return line, rel
 
 
 def _read_text_safe(path: str, max_chars: int) -> str:
@@ -671,6 +751,8 @@ def _try_smaca_kv_html(title: str, body: str) -> Optional[str]:
     if not re.search(r"SMAca\s*CHECK", title, re.I):
         return None
     raw = body or ""
+    m1e = re.search(r"SMN1_CN_est\s*=\s*(\S+)", raw, re.I)
+    m2e = re.search(r"SMN2_CN_est\s*=\s*(\S+)", raw, re.I)
     m1 = re.search(r"SMN1_CN\s*=\s*(\S+)", raw, re.I)
     m2 = re.search(r"SMN2_CN\s*=\s*(\S+)", raw, re.I)
     m_silent = re.search(r"SilentCarrier\s*=\s*([^\s(]+)(?:\s*\([^)]*\))?", raw, re.I)
@@ -680,13 +762,17 @@ def _try_smaca_kv_html(title: str, body: str) -> Optional[str]:
     # Optional: g.27134-style SNP read split (emit from pipeline as key=value).
     m_ct_ratio = re.search(r"CT_Ratio\s*=\s*(\S+)", raw, re.I)
     ct_pair = _smaca_extract_snp_ct_counts(raw)
-    if not m1 and not m2 and not m_silent and not m_cr and not m_cov and not m_ct_ratio and not ct_pair:
+    if not m1e and not m2e and not m1 and not m2 and not m_silent and not m_cr and not m_cov and not m_ct_ratio and not ct_pair:
         return None
     rows: List[Tuple[str, str]] = []
-    if m1:
-        rows.append(("SMN1", m1.group(1)))
-    if m2:
-        rows.append(("SMN2", m2.group(1)))
+    if m1e:
+        rows.append(("SMN1 CNV (est.)", m1e.group(1)))
+    elif m1:
+        rows.append(("SMN1 CNV", m1.group(1)))
+    if m2e:
+        rows.append(("SMN2 CNV (est.)", m2e.group(1)))
+    elif m2:
+        rows.append(("SMN2 CNV", m2.group(1)))
     if m_silent:
         rows.append(("Silent Carrier", m_silent.group(1)))
     if m_cr:
@@ -985,6 +1071,12 @@ def collect_dark_genes_from_analysis_dir(
     if detailed_paths:
         detailed_excerpt = _read_text_safe(detailed_paths[0], min(120_000, _MAX_READ_BYTES))
 
+    smaca_ct_line, smaca_ct_sidecar = _read_smaca_ct_sidecar(base)
+    if smaca_ct_line and detailed_excerpt:
+        detailed_excerpt = _inject_smaca_ct_line_into_detailed_text(
+            detailed_excerpt, smaca_ct_line
+        )
+
     status = "found" if summary_text else "partial"
 
     detailed_sections: List[Dict[str, Any]] = []
@@ -1005,6 +1097,11 @@ def collect_dark_genes_from_analysis_dir(
         "detailed_text": detailed_excerpt,
         "detailed_sections": detailed_sections,
         "visual_evidence": discover_dark_gene_visual_evidence(base),
+        **(
+            {"smaca_ct_sidecar": smaca_ct_sidecar}
+            if smaca_ct_sidecar
+            else {}
+        ),
     }
 
 

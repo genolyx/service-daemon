@@ -408,6 +408,8 @@
     .dark-genes-save-row{margin-top:10px;display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
     .dark-genes-visual-evidence{margin:12px 0 18px;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--table-bg)}
     .dark-genes-visual-evidence .dg-visual-iframe{width:100%;min-height:480px;border:1px solid var(--line);border-radius:10px;background:#fff}
+    #smnIgvModal .modal{max-width:min(1200px,98vw);width:96vw;max-height:92vh;overflow:hidden;display:flex;flex-direction:column}
+    #smnIgvModalFrameHost iframe{width:100%;min-height:min(72vh,820px);border:0;border-radius:8px;background:#fff}
     .dark-genes-visual-evidence .dg-visual-sub{margin:10px 0 6px;font-size:12px;font-weight:600;color:var(--text)}
     .dark-genes-visual-evidence .dg-repeat-row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start}
     .dark-genes-visual-evidence .dg-repeat-svg,.dark-genes-visual-evidence .dg-snap-png{max-width:100%;max-height:520px;border-radius:8px;border:1px solid var(--line);background:var(--card)}
@@ -1352,6 +1354,16 @@
     </div>
   </div>
 
+  <div id="smnIgvModal" class="modal-overlay hidden" style="z-index:20002" aria-hidden="true" onclick="if(event.target===this)smnIgvModalClose()">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="smnIgvModalTitle" onclick="event.stopPropagation()" style="padding:16px 18px">
+      <h3 id="smnIgvModalTitle" style="font-size:15px;margin:0 0 6px">SMN / SMA — IGV (c.840)</h3>
+      <p class="muted" style="font-size:11px;margin:0 0 10px;line-height:1.45">Same igv-reports bundle as below. Default view opens the <strong>SMA_c840_SNP_Zoom</strong> region. On hg38, summary lists <strong>c840_SMN1_*</strong> and <strong>c840_SMN2_*</strong> separately at each c.840 alignment column; <strong>c840_merged_*</strong> is used only for the unified realignment BAM (single exon 7 column).</p>
+      <div id="smnIgvModalFrameHost" style="min-height:200px;background:var(--table-bg);border-radius:8px;border:1px solid var(--line);overflow:hidden"><span class="muted" style="padding:12px;display:inline-block">Loading…</span></div>
+      <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px">
+        <button type="button" class="btn" onclick="smnIgvModalClose()">Close</button>
+      </div>
+    </div>
+  </div>
   <div id="qcImageModal" class="modal-overlay hidden" style="z-index:20001" aria-hidden="true" onclick="qcImageModalBackdropClick(event)">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="qcImageModalTitle" onclick="event.stopPropagation()" style="max-width:min(920px,94vw);max-height:90vh;overflow:auto">
       <h3 id="qcImageModalTitle" style="font-size:15px;margin:0 0 12px">QC chart</h3>
@@ -1535,12 +1547,18 @@
           if (!r.ok) throw new Error('igv');
           const blob = await r.blob();
           const blobUrl = pushBlob(URL.createObjectURL(blob));
+          window._dgIgvBlobUrl = blobUrl;
+          window._dgIgvReportRelPath = String(ve.igv_report_html || '');
           igvHost.innerHTML = `<iframe title="IGV visual evidence" class="dg-visual-iframe" src="${blobUrl}"></iframe>`;
         } catch (e) {
+          window._dgIgvBlobUrl = null;
+          window._dgIgvReportRelPath = '';
           igvHost.innerHTML =
             '<p class="muted">Could not load IGV report. Reprocess results after the pipeline finishes, or check daemon access to analysis_dir/snapshots.</p>';
         }
       } else if (igvHost) {
+        window._dgIgvBlobUrl = null;
+        window._dgIgvReportRelPath = '';
         igvHost.innerHTML = '';
       }
 
@@ -4779,10 +4797,41 @@
       return m ? [m[1], m[2]] : null;
     }
 
-    function tryRenderSmacaCheckSection(sec) {
+    /**
+     * When the detailed report has no C_T= line, show ref/alt depths from the annotated panel VCF
+     * (Review variants) for the SMN1/SMN2 discriminating SNP — comparable to IGV pileup (same locus).
+     */
+    function findSmacaSnpVariantDepthsFromReview(variants) {
+      if (!Array.isArray(variants) || !variants.length) return null;
+      for (const v of variants) {
+        const g = String(v.gene || '').toUpperCase();
+        if (g !== 'SMN1' && g !== 'SMN2') continue;
+        const h = String(v.hgvsc || '');
+        if (/\*3\+80/i.test(h) || /c\.\*3\+80/i.test(h) || /27134/i.test(h)) {
+          const rd = v.ref_depth;
+          const ad = v.alt_depth;
+          if (rd != null && ad != null) return { ref: rd, alt: ad, via: 'hgvsc' };
+        }
+      }
+      for (const v of variants) {
+        const c = String(v.chrom || '').replace(/^chr/i, '');
+        if (c !== '5') continue;
+        const p = parseInt(String(v.pos || ''), 10);
+        if (Number.isNaN(p) || p < 70941970 || p > 70941995) continue;
+        const rd = v.ref_depth;
+        const ad = v.alt_depth;
+        if (rd != null && ad != null) return { ref: rd, alt: ad, via: 'chr5:70941981±' };
+      }
+      return null;
+    }
+
+    function tryRenderSmacaCheckSection(sec, reviewVariants, reviewMeta) {
       const t = (sec.title || '').trim();
       if (!/SMAca\s*CHECK/i.test(t)) return null;
       const raw = String(sec.body || '');
+      // Unified pipeline: SMN1_CN_est / SMN2_CN_est (cov-fraction split); legacy: SMN1_CN / SMN2_CN
+      const m1e = raw.match(/SMN1_CN_est\s*=\s*(\S+)/i);
+      const m2e = raw.match(/SMN2_CN_est\s*=\s*(\S+)/i);
       const m1 = raw.match(/SMN1_CN\s*=\s*(\S+)/i);
       const m2 = raw.match(/SMN2_CN\s*=\s*(\S+)/i);
       const mSilent = raw.match(/SilentCarrier\s*=\s*([^\s(]+)(?:\s*\([^)]*\))?/i);
@@ -4790,15 +4839,257 @@
       const mCov = raw.match(/Cov\s*\(\s*1\s*,\s*2\s*\)\s*=\s*(.+)/i);
       const mCtRatio = raw.match(/CT_Ratio\s*=\s*(\S+)/i);
       const ctPair = extractSmacaSnpCtCounts(raw);
-      if (!m1 && !m2 && !mSilent && !mCr && !mCov && !mCtRatio && !ctPair) return null;
+      /** @type {[string, string]|null} Legacy c840_merged_C/T (pre–fwd+hgvs split) */
+      let mC840Merged = null;
+      {
+        const cs = raw.match(/c840_merged_C=(\d+)/i);
+        const ts = raw.match(/c840_merged_T=(\d+)/i);
+        if (cs && ts && !/c840_merged_hgvs_C=/i.test(raw) && !/c840_merged_fwd_A=/i.test(raw)) {
+          mC840Merged = [null, `${cs[1]},${ts[1]}`];
+        }
+      }
+      const hasC840MergedFwd = /c840_merged_fwd_A=/i.test(raw);
+      const hasC840MergedHgvs = /c840_merged_hgvs_C=/i.test(raw);
+      const hasC840Smn1Locus =
+        /c840_SMN1_fwd_A=/i.test(raw) || /c840_SMN1_hgvs_norm_C=/i.test(raw);
+      let mC840S1 = raw.match(/c840_SMN1_C_and_T_coding=([^|]+)/i);
+      if (!mC840S1) {
+        const cs = raw.match(/c840_SMN1_C=(\d+)/i);
+        const ts = raw.match(/c840_SMN1_T=(\d+)/i);
+        if (cs && ts) mC840S1 = [null, `${cs[1]},${ts[1]}`];
+      }
+      let mC840S2 = raw.match(/c840_SMN2_C_and_T_coding=([^|]+)/i);
+      if (!mC840S2) {
+        const cs = raw.match(/c840_SMN2_C=(\d+)/i);
+        const ts = raw.match(/c840_SMN2_T=(\d+)/i);
+        if (cs && ts) mC840S2 = [null, `${cs[1]},${ts[1]}`];
+      }
+      let mC840U = raw.match(/c840_unified_C_and_T_coding=([^|]+)/i);
+      if (!mC840U) {
+        const cs = raw.match(/c840_unified_C=(\d+)/i);
+        const ts = raw.match(/c840_unified_T=(\d+)/i);
+        if (cs && ts) mC840U = [null, `${cs[1]},${ts[1]}`];
+      }
+      if (
+        !m1e &&
+        !m2e &&
+        !m1 &&
+        !m2 &&
+        !mSilent &&
+        !mCr &&
+        !mCov &&
+        !mCtRatio &&
+        !ctPair &&
+        !mC840Merged &&
+        !hasC840MergedFwd &&
+        !hasC840MergedHgvs &&
+        !hasC840Smn1Locus &&
+        !mC840S1 &&
+        !mC840S2 &&
+        !mC840U
+      ) {
+        return null;
+      }
       const rows = [];
-      if (m1) rows.push(['SMN1', m1[1]]);
-      if (m2) rows.push(['SMN2', m2[1]]);
+      if (m1e) rows.push(['SMN1 CNV (est.)', m1e[1]]);
+      else if (m1) rows.push(['SMN1 CNV', m1[1]]);
+      if (m2e) rows.push(['SMN2 CNV (est.)', m2e[1]]);
+      else if (m2) rows.push(['SMN2 CNV', m2[1]]);
       if (mSilent) rows.push(['Silent Carrier', mSilent[1]]);
       if (mCr) rows.push(['SMN1 cov fraction', mCr[1]]);
       if (ctPair) rows.push(['SNP C,T counts', `${ctPair[0]} / ${ctPair[1]}`]);
       if (mCtRatio) rows.push(['SNP C/T ratio', mCtRatio[1]]);
+      if (!ctPair && !mCtRatio) {
+        const rb = reviewMeta && reviewMeta.review_build;
+        const smVcf = rb && rb.smaca_snp_depths;
+        if (smVcf && smVcf.ref_ad != null && smVcf.alt_ad != null) {
+          rows.push([
+            'SNP allele depths (main VCF)',
+            `${smVcf.ref_ad} / ${smVcf.alt_ad} — AD at ${smVcf.chrom}:${smVcf.pos} (compare to IGV pileup; VCF ref/alt allele order may differ from IGV C/T colors)`,
+          ]);
+        } else if (reviewVariants && reviewVariants.length) {
+          const vdep = findSmacaSnpVariantDepthsFromReview(reviewVariants);
+          if (vdep) {
+            rows.push([
+              'SNP allele depths (panel VCF)',
+              `${vdep.ref} / ${vdep.alt} — ref vs alt from variant table (compare to IGV at same site)`,
+            ]);
+          }
+        }
+      }
       if (mCov) rows.push(['Cov(1,2)', mCov[1].trim().replace(/\s+/g, ' ')]);
+      /**
+       * SMN1 norm C vs SMN2 norm T (42/58-style); combined C/(C+T) from summed SMN1+SMN2 hgvs norm C and T
+       * (same construction as per-locus c840_*_hgvs_norm_C_frac_CplusT, but pooled across both loci).
+       */
+      function parseC840Smn12HgvsNorm(rawStr) {
+        const c1 = rawStr.match(/c840_SMN1_hgvs_norm_C=(NA|\d+)/i);
+        const t1 = rawStr.match(/c840_SMN1_hgvs_norm_T=(NA|\d+)/i);
+        const c2 = rawStr.match(/c840_SMN2_hgvs_norm_C=(NA|\d+)/i);
+        const t2 = rawStr.match(/c840_SMN2_hgvs_norm_T=(NA|\d+)/i);
+        if (!c1 || !t2 || c1[1] === 'NA' || t2[1] === 'NA') return null;
+        const baseRatio = `${c1[1]}/${t2[1]}`;
+        let combinedFrac = null;
+        let combinedC = null;
+        let combinedT = null;
+        if (t1 && c2 && [c1, t1, c2, t2].every((m) => m[1] !== 'NA')) {
+          const nc = parseInt(c1[1], 10) + parseInt(c2[1], 10);
+          const nt = parseInt(t1[1], 10) + parseInt(t2[1], 10);
+          const d = nc + nt;
+          combinedC = nc;
+          combinedT = nt;
+          if (d > 0) combinedFrac = (nc / d).toFixed(3);
+        }
+        const ratioStr =
+          combinedC != null && combinedT != null
+            ? `${baseRatio} — C=${combinedC}, T=${combinedT}`
+            : baseRatio;
+        return { ratioStr, combinedFrac, combinedC, combinedT };
+      }
+      function fmtC840CtPair(s) {
+        const p = String(s || '').split(',');
+        if (p.length !== 2) return String(s || '');
+        return `C=${p[0].trim()}, T=${p[1].trim()}`;
+      }
+      function fmtC840HgvsNormSuffix(tag) {
+        const nC = raw.match(new RegExp(`c840_${tag}_hgvs_norm_C=(NA|\\d+)`, 'i'));
+        const nT = raw.match(new RegExp(`c840_${tag}_hgvs_norm_T=(NA|\\d+)`, 'i'));
+        const nR = raw.match(new RegExp(`c840_${tag}_hgvs_norm_C_frac_CplusT=(NA|\\S+)`, 'i'));
+        if (nC && nT && nR) {
+          return ` — normalized (G→C, A→T) HGVS: norm_C=${nC[1]} norm_T=${nT[1]}; C/(C+T)=${nR[1]}`;
+        }
+        const ha = raw.match(new RegExp(`c840_${tag}_hgvs_A=(NA|\\d+)`, 'i'));
+        const hc = raw.match(new RegExp(`c840_${tag}_hgvs_C=(NA|\\d+)`, 'i'));
+        const hg = raw.match(new RegExp(`c840_${tag}_hgvs_G=(NA|\\d+)`, 'i'));
+        const ht = raw.match(new RegExp(`c840_${tag}_hgvs_T=(NA|\\d+)`, 'i'));
+        if (!ha || !hc || !hg || !ht) return '';
+        const a = parseInt(ha[1], 10);
+        const c = parseInt(hc[1], 10);
+        const g = parseInt(hg[1], 10);
+        const t = parseInt(ht[1], 10);
+        if ([a, c, g, t].some((x) => Number.isNaN(x))) return '';
+        const nc = c + g;
+        const nt = t + a;
+        const s = nc + nt;
+        const ratio = s > 0 ? (nc / s).toFixed(3) : '?';
+        return ` — normalized (G→C, A→T) HGVS: norm_C=${nc} norm_T=${nt}; C/(C+T)=${ratio}`;
+      }
+      function fmtC840LocusAcgtRow(tag) {
+        const ma = raw.match(new RegExp(`c840_${tag}_fwd_A=(NA|\\d+)`, 'i'));
+        const mc = raw.match(new RegExp(`c840_${tag}_fwd_C=(NA|\\d+)`, 'i'));
+        const mg = raw.match(new RegExp(`c840_${tag}_fwd_G=(NA|\\d+)`, 'i'));
+        const mt = raw.match(new RegExp(`c840_${tag}_fwd_T=(NA|\\d+)`, 'i'));
+        const md = raw.match(new RegExp(`c840_${tag}_fwd_depth=(NA|\\d+)`, 'i'));
+        const mr = raw.match(new RegExp(`c840_${tag}_fwd_C_frac_CplusT=(NA|\\S+)`, 'i'));
+        const ha = raw.match(new RegExp(`c840_${tag}_hgvs_A=(NA|\\d+)`, 'i'));
+        const hc = raw.match(new RegExp(`c840_${tag}_hgvs_C=(NA|\\d+)`, 'i'));
+        const hg = raw.match(new RegExp(`c840_${tag}_hgvs_G=(NA|\\d+)`, 'i'));
+        const ht = raw.match(new RegExp(`c840_${tag}_hgvs_T=(NA|\\d+)`, 'i'));
+        const hd = raw.match(new RegExp(`c840_${tag}_hgvs_depth=(NA|\\d+)`, 'i'));
+        const hr = raw.match(new RegExp(`c840_${tag}_hgvs_C_frac_CplusT_coding=(NA|\\S+)`, 'i'));
+        if (!ma || !mc || !mg || !mt) return null;
+        const fwd = `forward A/C/G/T: ${ma[1]}/${mc[1]}/${mg[1]}/${mt[1]}; depth=${md ? md[1] : '?'}; C/(C+T)=${mr ? mr[1] : '?'}`;
+        if (ha && hc && hg && ht) {
+          return `${fwd} — HGVS coding A/C/G/T: ${ha[1]}/${hc[1]}/${hg[1]}/${ht[1]}; depth=${hd ? hd[1] : '?'}; C/(C+T)=${hr ? hr[1] : '?'}${fmtC840HgvsNormSuffix(tag)}`;
+        }
+        return fwd;
+      }
+      function fmtC840MergedExplanation(raw, pairCsv) {
+        const modeM = raw.match(/c840_pileup_mode=([^|]+)/i);
+        const mode = modeM ? modeM[1].trim() : '';
+        const p = String(pairCsv || '').split(',');
+        const c = p[0] != null ? p[0].trim() : '';
+        const t = p[1] != null ? p[1].trim() : '';
+        const parts = [
+          `Legacy HGVS line (C,T only): ${c}×C + ${t}×T. Prefer full HGVS A/C/G/T row when present.`,
+        ];
+        if (mode === 'hg38_two_positions_merged' || mode === 'hg38_two_positions') {
+          parts.push(
+            'Per-locus SMN1/SMN2 rows (hg38): two genomic coordinates; c.840C>T is read at each alignment column separately.',
+          );
+        } else if (mode === 'unified_SMN1_ref') {
+          parts.push('Source: unified SMN realignment BAM — comparable to the IGV unified SMN pileup track.');
+        }
+        return parts.join(' ');
+      }
+      if (hasC840Smn1Locus) {
+        const smn12 = parseC840Smn12HgvsNorm(raw);
+        if (smn12) {
+          rows.push(['SMN1/2 C/T ratio', smn12.ratioStr]);
+          if (smn12.combinedFrac != null && smn12.combinedC != null && smn12.combinedT != null) {
+            rows.push([
+              'SMN1/2 C/(C+T) (hgvs norm)',
+              `C=${smn12.combinedC}, T=${smn12.combinedT}; C/(C+T)=${smn12.combinedFrac}`,
+            ]);
+          }
+        }
+        const s1 = fmtC840LocusAcgtRow('SMN1');
+        const s2 = fmtC840LocusAcgtRow('SMN2');
+        if (s1) rows.push(['c.840 SMN1 locus (hg38)', s1]);
+        if (s2) rows.push(['c.840 SMN2 locus (hg38)', s2]);
+      }
+      const c840UnifiedMode = /c840_pileup_mode=unified_SMN1_ref/i.test(raw);
+      if (hasC840MergedFwd && c840UnifiedMode) {
+        const ma = raw.match(/c840_merged_fwd_A=(NA|\d+)/i);
+        const mc = raw.match(/c840_merged_fwd_C=(NA|\d+)/i);
+        const mg = raw.match(/c840_merged_fwd_G=(NA|\d+)/i);
+        const mt = raw.match(/c840_merged_fwd_T=(NA|\d+)/i);
+        const md = raw.match(/c840_merged_fwd_depth=(NA|\d+)/i);
+        const mr = raw.match(/c840_merged_fwd_C_frac_CplusT=(NA|\S+)/i);
+        if (ma && mc && mg && mt) {
+          rows.push([
+            'c.840 pileup (genome forward strand, merged)',
+            `A=${ma[1]}, C=${mc[1]}, G=${mg[1]}, T=${mt[1]}; depth=${md ? md[1] : '?'}; C/(C+T)=${mr ? mr[1] : '?'}`,
+          ]);
+        }
+      }
+      if (hasC840MergedHgvs && c840UnifiedMode) {
+        const hA = raw.match(/c840_merged_hgvs_A=(NA|\d+)/i);
+        const hC = raw.match(/c840_merged_hgvs_C=(NA|\d+)/i);
+        const hG = raw.match(/c840_merged_hgvs_G=(NA|\d+)/i);
+        const hT = raw.match(/c840_merged_hgvs_T=(NA|\d+)/i);
+        const hD = raw.match(/c840_merged_hgvs_depth=(NA|\d+)/i);
+        const hr = raw.match(/c840_merged_hgvs_C_frac_CplusT_coding=(NA|\S+)/i);
+        if (hA && hC && hG && hT) {
+          const modeM = raw.match(/c840_pileup_mode=([^|]+)/i);
+          const mode = modeM ? modeM[1].trim() : '';
+          let note =
+            'HGVS letters complement forward strand for minus-strand genes (e.g. many forward T → HGVS coding A). ';
+          if (mode === 'hg38_two_positions_merged' || mode === 'hg38_two_positions') {
+            note += ' (legacy merged row; use per-locus SMN1/SMN2 lines for hg38.)';
+          }
+          const mNc = raw.match(/c840_merged_hgvs_norm_C=(NA|\d+)/i);
+          const mNt = raw.match(/c840_merged_hgvs_norm_T=(NA|\d+)/i);
+          const mNr = raw.match(/c840_merged_hgvs_norm_C_frac_CplusT=(NA|\S+)/i);
+          let normSuf = '';
+          if (mNc && mNt && mNr) {
+            normSuf = ` — normalized (G→C, A→T): norm_C=${mNc[1]} norm_T=${mNt[1]}; C/(C+T)=${mNr[1]}`;
+          } else {
+            const a = parseInt(hA[1], 10);
+            const c = parseInt(hC[1], 10);
+            const g = parseInt(hG[1], 10);
+            const t = parseInt(hT[1], 10);
+            if (![a, c, g, t].some((x) => Number.isNaN(x))) {
+              const nc = c + g;
+              const nt = t + a;
+              const s = nc + nt;
+              const ratio = s > 0 ? (nc / s).toFixed(3) : '?';
+              normSuf = ` — normalized (G→C, A→T): norm_C=${nc} norm_T=${nt}; C/(C+T)=${ratio}`;
+            }
+          }
+          rows.push([
+            'c.840 pileup (HGVS coding DNA, merged)',
+            `A=${hA[1]}, C=${hC[1]}, G=${hG[1]}, T=${hT[1]}; depth=${hD ? hD[1] : '?'}; C/(C+T)=${hr ? hr[1] : '?'}. ${note}${normSuf}`,
+          ]);
+        }
+      } else if (mC840Merged) {
+        rows.push(['c.840 pileup (merged)', fmtC840MergedExplanation(raw, mC840Merged[1])]);
+      }
+      if (!hasC840MergedFwd && !hasC840MergedHgvs && !hasC840Smn1Locus) {
+        if (mC840U) rows.push(['c.840 unified pileup C,T (coding)', fmtC840CtPair(mC840U[1])]);
+        if (mC840S1) rows.push(['c.840 SMN1 locus C,T (coding)', fmtC840CtPair(mC840S1[1])]);
+        if (mC840S2) rows.push(['c.840 SMN2 locus C,T (coding)', fmtC840CtPair(mC840S2[1])]);
+      }
       const inner = rows
         .map(([lab, val]) => `<dt>${escapeHtml(lab)}</dt><dd>${escapeHtml(val)}</dd>`)
         .join('');
@@ -4854,9 +5145,9 @@
     function darkGenesDisplayTitle(raw) {
       const t = String(raw || '').trim();
       if (!t) return 'Section';
+      if (/^smaca\s+check\b/i.test(t)) return 'Spinal Muscular Atrophy';
       const k = t.toLowerCase().replace(/\s+/g, ' ').trim();
       const map = {
-        'smaca check (silent carrier + coverage)': 'Spinal Muscular Atrophy',
         'hba analysis (alpha thalassemia - dosage)': 'Alpha Thalassemia',
         'cyp21a2 analysis (cah - dosage)': 'Congenital Adrenal Hyperplasia (CAH)',
         'expansion hunter (fragile x / fmr1)': 'Fragile X',
@@ -4906,7 +5197,7 @@
         return null;
       }
       if (/smaca|smn|paraphase/i.test(tl)) {
-        if (hasIgv) return { target: 'igv', label: 'SMN / SMA IGV' };
+        if (hasIgv) return { target: 'igv', label: 'SMN / SMA IGV', smnModal: true };
         return null;
       }
       if (/hba|alpha\s*thal/i.test(tl)) {
@@ -4945,8 +5236,58 @@
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
+    function smnIgvModalClose() {
+      const m = qs('smnIgvModal');
+      const host = qs('smnIgvModalFrameHost');
+      if (m) {
+        m.classList.add('hidden');
+        m.setAttribute('aria-hidden', 'true');
+      }
+      if (host) host.innerHTML = '';
+    }
+
+    document.addEventListener('keydown', ev => {
+      if (ev.key === 'Escape' && qs('smnIgvModal') && !qs('smnIgvModal').classList.contains('hidden')) {
+        smnIgvModalClose();
+      }
+    });
+
+    /** Large popup with same igv-reports HTML as the Review page (SMN c.840 + unified track). */
+    async function openSmnIgvModal() {
+      const oid = typeof getActiveReviewOrderId === 'function' ? getActiveReviewOrderId() : null;
+      const modal = qs('smnIgvModal');
+      const host = qs('smnIgvModalFrameHost');
+      if (!modal || !host) return;
+      host.innerHTML = '<span class="muted" style="padding:12px;display:inline-block">Loading IGV…</span>';
+      modal.classList.remove('hidden');
+      modal.setAttribute('aria-hidden', 'false');
+      let blobUrl = window._dgIgvBlobUrl;
+      if (!blobUrl && oid && reviewData && reviewData.dark_genes) {
+        const rel = (reviewData.dark_genes.visual_evidence || {}).igv_report_html;
+        if (rel) {
+          try {
+            const r = await fetch(orderArtifactFileUrl(oid, rel), { headers: apiFetchHeaders() });
+            if (r.ok) {
+              const blob = await r.blob();
+              blobUrl = URL.createObjectURL(blob);
+              if (!window._dgIgvModalExtraBlobUrls) window._dgIgvModalExtraBlobUrls = [];
+              window._dgIgvModalExtraBlobUrls.push(blobUrl);
+            }
+          } catch (e) {
+            console.warn('smn IGV modal fetch', e);
+          }
+        }
+      }
+      if (!blobUrl) {
+        host.innerHTML =
+          '<p class="muted" style="padding:12px">IGV report not loaded yet. Scroll to <strong>Visual evidence (IGV)</strong> below, or re-open after the page finishes loading.</p>';
+        return;
+      }
+      host.innerHTML = `<iframe title="SMN SMA IGV" class="dg-visual-iframe" src="${blobUrl}" style="width:100%;height:min(72vh,820px);min-height:480px;display:block"></iframe>`;
+    }
+
     /** Structured sections from backend (parse of *_detailed_report.txt) — lab-review layout */
-    function renderDarkGenesDetailedSections(sections, sectionReviews, ve) {
+    function renderDarkGenesDetailedSections(sections, sectionReviews, ve, reviewVariants, reviewMeta) {
       if (!Array.isArray(sections) || !sections.length) return '';
       const rev = padDarkGenesSectionReviews(sectionReviews, sections.length, sections);
       const chunks = [];
@@ -4966,7 +5307,7 @@
               : 'dark-genes-sec';
         const bodyNorm = normalizeDarkGenesSectionBody(sec.body || '');
         const kv =
-          tryRenderSmacaCheckSection({ ...sec, body: bodyNorm }) ||
+          tryRenderSmacaCheckSection({ ...sec, body: bodyNorm }, reviewVariants, reviewMeta) ||
           tryRenderDosageAnalysisSection({ ...sec, body: bodyNorm });
         const bodyHtml = kv
           ? `<div class="dark-genes-sec-body dark-genes-sec-body--kv">${kv}</div>`
@@ -5002,9 +5343,10 @@
         }
         const skipAttr = skipReviewUi ? ' data-dg-skip-review="1"' : '';
         const vis = darkGenesSectionVisualTarget(sec, ve);
+        const smnAttr = vis && vis.smnModal ? ' data-dg-smn-igv="1"' : '';
         const visBtn =
           vis
-            ? `<button type="button" class="dg-sec-visual" data-dg-visual-target="${escapeHtml(vis.target)}" title="Jump to pipeline visuals below">${escapeHtml(vis.label)}</button>`
+            ? `<button type="button" class="dg-sec-visual" data-dg-visual-target="${escapeHtml(vis.target)}"${smnAttr} title="${vis.smnModal ? 'Open IGV popup (c.840) and jump to visuals below' : 'Jump to pipeline visuals below'}">${escapeHtml(vis.label)}</button>`
             : '';
         const titleBlock = `<div class="dark-genes-sec-title-wrap ${riskWrapCls}"><div class="dark-genes-sec-title-row"><div class="dark-genes-sec-title">${title}</div>${visBtn}</div></div>`;
         chunks.push(
@@ -5038,6 +5380,9 @@
         if (vb) {
           ev.preventDefault();
           const t = vb.getAttribute('data-dg-visual-target');
+          if (vb.getAttribute('data-dg-smn-igv') === '1') {
+            void openSmnIgvModal();
+          }
           if (t) scrollToDarkGenesVisual(t);
           return;
         }
@@ -5156,7 +5501,7 @@
       if (hasVe && reviewData.order_id) {
         html += `<div id="dark-genes-visual-evidence" class="dark-genes-visual-evidence">
           <h4 class="dark-genes-section-title" style="margin-top:0">Visual evidence (IGV)</h4>
-          <p class="muted" style="font-size:11px;margin:0 0 10px">Unified igv-reports output includes SMN1/SMN2/SMA, HBA, CYP21A2, Fragile X (FMR1), and other loci. ExpansionHunter repeat plots (SVG) are listed when present.</p>
+          <p class="muted" style="font-size:11px;margin:0 0 10px">igv-reports includes a <strong>SMN1+SMN2 Pileup (Unified)</strong> track plus the main BAM (default region: c.840). Use <strong>SMN / SMA IGV</strong> on the Spinal Muscular Atrophy section for a large popup. ExpansionHunter SVGs when present.</p>
           <div class="dg-visual-evidence-igv"></div>
           <div class="dg-visual-evidence-repeat"></div>
           <div class="dg-visual-evidence-png"></div>
@@ -5168,7 +5513,7 @@
           <div class="dg-report-details-body">`;
         if (detSec.length) {
           const srv = dg.section_reviews;
-          html += `<div class="dark-genes-stack">${renderDarkGenesDetailedSections(detSec, srv, ve)}</div>`;
+          html += `<div class="dark-genes-stack">${renderDarkGenesDetailedSections(detSec, srv, ve, reviewData.variants || [], reviewData.metadata || {})}</div>`;
           html += `<div class="dark-genes-save-row">
             <button type="button" class="btn primary" id="btnSaveDarkGenesReviews">Save section reviews</button>
             <span class="muted" style="font-size:11px;line-height:1.45;max-width:52rem">Persists approval, PDF tone, and notes. Default tone is low (green) unless the pipeline flagged a warning. Customer PDF uses the same labels as below. Overview / quality-alert blocks are excluded from the PDF.</span>

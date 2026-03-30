@@ -36,6 +36,99 @@ from ...datetime_kst import now_kst_iso
 
 logger = logging.getLogger(__name__)
 
+# GRCh38 — SMN1/SMN2 discriminating SNP (NM_022876.3(SMN2):c.*3+80) genomic position
+_SMN_DISCRIMINATING_GRCH38 = ("chr5", 70941981)
+
+
+def enrich_review_build_with_smaca_vcf_depths(
+    review_build: Optional[Dict[str, Any]],
+    sample_name: str = "",
+) -> None:
+    """
+    Record ref/alt allele depths from ``main_vcf`` at the SMN *3+80 locus so the portal
+    can show counts next to SMAca (panel variant list often omits this intronic site).
+
+    Writes ``review_build["smaca_snp_depths"]`` when a matching record exists.
+    """
+    if not isinstance(review_build, dict):
+        return
+    if review_build.get("smaca_snp_depths"):
+        return
+    path = review_build.get("main_vcf")
+    if not path or not isinstance(path, str) or not os.path.isfile(path):
+        return
+    try:
+        import pysam
+    except ImportError:
+        return
+    pos = _SMN_DISCRIMINATING_GRCH38[1]
+    vf = None
+    try:
+        vf = pysam.VariantFile(path)
+    except Exception as e:
+        logger.debug("smaca VCF read skipped for %s: %s", path, e)
+        return
+    contig = None
+    for c in ("chr5", "5"):
+        if c in vf.header.contigs:
+            contig = c
+            break
+    if not contig:
+        try:
+            vf.close()
+        except Exception:
+            pass
+        return
+    try:
+        for rec in vf.fetch(contig, pos - 1, pos):
+            if rec.pos != pos:
+                continue
+            sample_keys = list(rec.samples)
+            if not sample_keys:
+                break
+            sn = (sample_name or "").strip()
+            if sn and sn in rec.samples:
+                sname = sn
+            else:
+                sname = sample_keys[0]
+            samp = rec.samples[sname]
+            ad = samp.get("AD")
+            dp = samp.get("DP")
+            ref_ad: Optional[int] = None
+            alt_ad: Optional[int] = None
+            if ad is not None:
+                try:
+                    ads = [int(x) for x in ad]
+                    if len(ads) >= 2:
+                        ref_ad = ads[0]
+                        alt_ad = sum(ads[1:]) if len(ads) > 2 else ads[1]
+                except (TypeError, ValueError):
+                    pass
+            if ref_ad is None or alt_ad is None:
+                continue
+            if dp is None:
+                try:
+                    dp = int(ref_ad) + int(alt_ad)
+                except (TypeError, ValueError):
+                    dp = None
+            review_build["smaca_snp_depths"] = {
+                "chrom": contig,
+                "pos": pos,
+                "ref_ad": ref_ad,
+                "alt_ad": alt_ad,
+                "dp": dp,
+                "sample": sname,
+            }
+            break
+    except (ValueError, OSError) as e:
+        logger.debug("smaca fetch at %s:%s: %s", contig, pos, e)
+    finally:
+        if vf is not None:
+            try:
+                vf.close()
+            except Exception:
+                pass
+
 
 def normalize_variants_for_portal(variants: Any) -> Any:
     """
@@ -1810,6 +1903,9 @@ def generate_result_json(
 
     # 유전자별 변이 그룹핑
     gene_variant_groups = _group_variants_by_gene(variants_for_review)
+
+    if review_build_metadata:
+        enrich_review_build_with_smaca_vcf_depths(review_build_metadata, sample_name)
 
     result = {
         "version": "2.0",

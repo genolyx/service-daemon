@@ -17,6 +17,7 @@ from .models import Job, OrderStatus, NotificationStatus
 from .queue_manager import get_queue_manager
 from .platform_client import get_platform_client
 from .services import get_plugin
+from .telegram_notify import schedule_order_telegram
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,7 @@ class PipelineRunner:
             await self._platform_client.notify_analysis_failed(
                 job.order_id, job.service_code, error_msg
             )
+            schedule_order_telegram("failed", job)
             return
 
         logger.info(
@@ -132,6 +134,7 @@ class PipelineRunner:
 
         await self._queue_manager.mark_running(job)
         await plugin.on_job_start(job)
+        schedule_order_telegram("started", job)
 
         try:
             # ── Step 1: 입력 준비 ──
@@ -153,6 +156,7 @@ class PipelineRunner:
                     job, OrderStatus.CANCELLED, 0, "Cancelled by user"
                 )
                 await self._queue_manager.mark_cancelled(job)
+                schedule_order_telegram("cancelled", job)
                 try:
                     await plugin.on_job_failed(job, "Cancelled by user")
                 except Exception:
@@ -180,6 +184,7 @@ class PipelineRunner:
                         job, OrderStatus.CANCELLED, 0, "Cancelled by user"
                     )
                     await self._queue_manager.mark_cancelled(job)
+                    schedule_order_telegram("cancelled", job)
                     try:
                         await plugin.on_job_failed(job, "Cancelled by user")
                     except Exception:
@@ -194,6 +199,7 @@ class PipelineRunner:
                     job, OrderStatus.CANCELLED, 0, "Cancelled by user"
                 )
                 await self._queue_manager.mark_cancelled(job)
+                schedule_order_telegram("cancelled", job)
                 try:
                     await plugin.on_job_failed(job, "Cancelled by user")
                 except Exception:
@@ -224,6 +230,7 @@ class PipelineRunner:
                 job.order_id, job.service_code, success=True
             )
             await self._queue_manager.mark_completed(job)
+            schedule_order_telegram("completed", job)
             await plugin.on_job_complete(job)
 
         except Exception as e:
@@ -233,6 +240,7 @@ class PipelineRunner:
                     job, OrderStatus.CANCELLED, 0, "Cancelled by user"
                 )
                 await self._queue_manager.mark_cancelled(job)
+                schedule_order_telegram("cancelled", job)
                 try:
                     await plugin.on_job_failed(job, "Cancelled by user")
                 except Exception:
@@ -247,6 +255,7 @@ class PipelineRunner:
                 await self._platform_client.notify_analysis_failed(
                     job.order_id, job.service_code, error_msg
                 )
+                schedule_order_telegram("failed", job)
                 await plugin.on_job_failed(job, error_msg)
 
         finally:

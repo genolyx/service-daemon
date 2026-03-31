@@ -933,6 +933,47 @@ def _normalize_cah_hotspot_token(token: str) -> Optional[str]:
     return None
 
 
+def _cah_hotspot_call_from_nm_screening_block(raw: str) -> Optional[str]:
+    """
+    NM_000500 hotspot screening: lines like ``[IVS2-13] … : not_detected`` until ``BAM pileup``.
+    All sites ``not_detected`` → Negative; any other site line → Positive.
+    """
+    s = raw or ""
+    lines = s.splitlines()
+    in_block = False
+    site: List[str] = []
+    for ln in lines:
+        if re.search(r"NM_000500\s+hotspot screening", ln, re.I) or re.search(
+            r"hotspot screening\s*\([^)]*variant caller", ln, re.I
+        ):
+            in_block = True
+            continue
+        if in_block and re.match(r"^\s*BAM pileup\b", ln, re.I):
+            break
+        if not in_block:
+            continue
+        t = ln.strip()
+        if not t.startswith("["):
+            continue
+        m = re.match(r"^\[[^\]]+\]\s+[^:]+:\s*(.+)$", t, re.I)
+        if not m:
+            continue
+        rest = (m.group(1) or "").strip()
+        if not rest:
+            continue
+        if re.match(r"^not_detected\b", rest, re.I):
+            site.append("neg")
+        else:
+            site.append("pos")
+    if not site:
+        return None
+    if any(x == "pos" for x in site):
+        return "Positive"
+    if all(x == "neg" for x in site):
+        return "Negative"
+    return None
+
+
 def _cah_hotspot_call(raw: str) -> Optional[str]:
     """
     Parse 7-hotspot mutation screening call from CAH detailed text (key=value or labeled lines).
@@ -955,6 +996,15 @@ def _cah_hotspot_call(raw: str) -> Optional[str]:
         "cah_7hotspot_result",
         "cyp21_7hotspot_result",
         "cyp21_hotspot_mutations",
+        "hotspot_screening",
+        "cah_hotspot_screening",
+        "hs7_result",
+        "HS7_RESULT",
+        "seven_hotspot_result",
+        "hotspot_hit",
+        "hotspot_variants_found",
+        "n_hotspot_variants",
+        "hotspot_n_variants",
     ]
     for name in keys:
         v = _alpha_thal_pick_scalar(s, [name]) or _alpha_thal_pick_scalar_anywhere(s, [name])
@@ -989,7 +1039,7 @@ def _cah_hotspot_call(raw: str) -> Optional[str]:
         if "=" not in ln:
             continue
         left, right = ln.split("=", 1)
-        if not re.search(r"hotspot", left, re.I):
+        if not re.search(r"hotspot|hs7|7hs|7_hs", left, re.I):
             continue
         first = (right.strip().split()[0] if right.strip() else "") or ""
         n = _normalize_cah_hotspot_token(first.split(",")[0])
@@ -1004,6 +1054,35 @@ def _cah_hotspot_call(raw: str) -> Optional[str]:
         n = _normalize_cah_hotspot_token(m.group(1))
         if n:
             return n
+    m = re.search(
+        r"\b(?:n_)?hotspot(?:_variants|_var|s)?(?:_found|_called)?\s*=\s*(\d+)\b",
+        s,
+        re.I,
+    )
+    if m:
+        k = int(m.group(1))
+        return "Negative" if k == 0 else "Positive"
+    m = re.search(r"\b(?:hs7|7hs|7_hs)[\w_]*\s*=\s*(\d+)\b", s, re.I)
+    if m:
+        k = int(m.group(1))
+        return "Negative" if k == 0 else "Positive"
+    m = re.search(
+        r"\bhotspot\b[\s\S]{0,400}?\b(positive|negative|pos|neg)\b",
+        s,
+        re.I,
+    )
+    if m:
+        n = _normalize_cah_hotspot_token(m.group(1))
+        if n:
+            return n
+    m = re.search(r"\bhotspot_(?:hit|detected|called)\s*=\s*(\S+)", s, re.I)
+    if m:
+        n = _normalize_cah_hotspot_token(m.group(1))
+        if n:
+            return n
+    nm = _cah_hotspot_call_from_nm_screening_block(s)
+    if nm:
+        return nm
     return None
 
 

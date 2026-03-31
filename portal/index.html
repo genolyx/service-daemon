@@ -5903,6 +5903,36 @@
     }
 
     /**
+     * NM_000500 hotspot screening block: per-site lines `[TAG] … : not_detected` (no KEY=positive).
+     * Stops at "BAM pileup". All sites not_detected → Negative; any other site call → Positive.
+     */
+    function cyp21InferHotspotFromNmScreening(raw) {
+      const lines = String(raw || '').split(/\r?\n/);
+      let inBlock = false;
+      const site = [];
+      for (const ln of lines) {
+        if (/NM_000500\s+hotspot screening/i.test(ln) || /hotspot screening\s*\([^)]*variant caller/i.test(ln)) {
+          inBlock = true;
+          continue;
+        }
+        if (inBlock && /^\s*BAM pileup\b/i.test(ln)) break;
+        if (!inBlock) continue;
+        const t = ln.trim();
+        if (!/^\[[^\]]+\]/.test(t)) continue;
+        const m = t.match(/^\[[^\]]+\]\s+[^:]+:\s*(.+)$/);
+        if (!m) continue;
+        const rest = String(m[1] || '').trim();
+        if (!rest) continue;
+        if (/^not_detected\b/i.test(rest)) site.push('neg');
+        else site.push('pos');
+      }
+      if (!site.length) return null;
+      if (site.some(x => x === 'pos')) return 'Positive';
+      if (site.every(x => x === 'neg')) return 'Negative';
+      return null;
+    }
+
+    /**
      * CAH 7-hotspot screening: key=value or labeled lines in detailed report → Positive / Negative.
      */
     function cyp21PickHotspotCall(raw) {
@@ -5924,6 +5954,15 @@
         'cah_7hotspot_result',
         'cyp21_7hotspot_result',
         'cyp21_hotspot_mutations',
+        'hotspot_screening',
+        'cah_hotspot_screening',
+        'hs7_result',
+        'HS7_RESULT',
+        'seven_hotspot_result',
+        'hotspot_hit',
+        'hotspot_variants_found',
+        'n_hotspot_variants',
+        'hotspot_n_variants',
       ];
       for (const k of keys) {
         const v = alphaThalPickScalar(s, [k]) || alphaThalPickScalarAnywhere(s, [k]);
@@ -5973,6 +6012,33 @@
         const n = normalizeCahHotspotToken(loose[1]);
         if (n) return n;
       }
+      // Integer counts: 0 variants = Negative, ≥1 = Positive (common pipeline pattern)
+      const mCnt = s.match(
+        /\b(?:n_)?hotspot(?:_variants|_var|s)?(?:_found|_called)?\s*=\s*(\d+)\b/i
+      );
+      if (mCnt) {
+        const k = parseInt(mCnt[1], 10);
+        if (!Number.isNaN(k)) return k === 0 ? 'Negative' : 'Positive';
+      }
+      const mHs = s.match(/\b(?:hs7|7hs|7_hs)[\w_]*\s*=\s*(\d+)\b/i);
+      if (mHs) {
+        const k = parseInt(mHs[1], 10);
+        if (!Number.isNaN(k)) return k === 0 ? 'Negative' : 'Positive';
+      }
+      // "hotspot" … then positive/negative within ~400 chars (prose / wrapped lines)
+      const mSpan = s.match(/\bhotspot\b[\s\S]{0,400}?\b(positive|negative|pos|neg)\b/i);
+      if (mSpan) {
+        const n = normalizeCahHotspotToken(mSpan[1]);
+        if (n) return n;
+      }
+      // Boolean hit flags
+      const mHit = s.match(/\bhotspot_(?:hit|detected|called)\s*=\s*(\S+)/i);
+      if (mHit) {
+        const n = normalizeCahHotspotToken(mHit[1]);
+        if (n) return n;
+      }
+      const nm = cyp21InferHotspotFromNmScreening(s);
+      if (nm) return nm;
       return null;
     }
 
@@ -6117,11 +6183,11 @@
       if (/^overview$/i.test(t)) return null;
       if (alphaThalassemiaDosageTitleMatches(t)) return null;
       const raw = String(sec.body || '');
-      if (!/(?i)(hotspot_|cyp21_hotspot|hotspot_mutations|7\s*hotspot|\bhotspot\b)/.test(raw)) return null;
+      if (!/(hotspot_|cyp21_hotspot|hotspot_mutations|7\s*hotspot|\bhotspot\b)/i.test(raw)) return null;
       const h = cyp21PickHotspotCall(raw);
       if (!h) return null;
       const titleOk =
-        /(?i)cyp21|CAH|hotspot|21oh|congenital adrenal|adrenal hyperplasia/.test(t) ||
+        /cyp21|CAH|hotspot|21oh|congenital adrenal|adrenal hyperplasia/i.test(t) ||
         darkGenesDisplayTitle(t) === 'Congenital Adrenal Hyperplasia (CAH)';
       if (!titleOk) return null;
       return `<dl class="dark-genes-kv"><dt>Hotspot mutations (7)</dt><dd>${escapeHtml(h)}</dd></dl>`;

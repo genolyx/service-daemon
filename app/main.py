@@ -1491,6 +1491,17 @@ async def get_order_result(order_id: str):
         raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
 
     store = queue_manager.store
+
+    # 경로가 DB에 저장되지 않은 경우 현재 설정으로 보정
+    if job.service_code == "sgnipt" and not job.output_dir:
+        from app.services.sgnipt import apply_sgnipt_layout_directories
+        if apply_sgnipt_layout_directories(job):
+            await queue_manager.persist_job(job)
+    elif job.service_code == "carrier_screening" and not job.output_dir:
+        from app.services.carrier_screening.layout_norm import apply_carrier_layout_directories
+        if apply_carrier_layout_directories(job):
+            await queue_manager.persist_job(job)
+
     result_json_path = None
     if job.service_code == "carrier_screening":
         from app.services.carrier_screening.plugin import carrier_result_json_path
@@ -1502,43 +1513,25 @@ async def get_order_result(order_id: str):
     if result_json_path and os.path.isfile(result_json_path):
         with open(result_json_path, "r", encoding="utf-8") as f:
             result_data = json.load(f)
-        if isinstance(result_data, dict) and job.service_code == "sgnipt":
-            # sgNIPT: result.json은 samples[] 구조의 요약 JSON.
-            # 포털 Review에 필요한 clinical_findings 등은 variant_report.json에 있으므로 병합.
+        # sgNIPT: process_results() 가 이미 variant_report 를 병합한 완성본을 저장합니다.
+        # 구버전 result.json (clinical_findings 없는 요약 전용) 에 대한 즉석 fallback 병합.
+        if isinstance(result_data, dict) and job.service_code == "sgnipt" \
+                and not result_data.get("clinical_findings") \
+                and result_data.get("samples"):
+            logger.info("[sgnipt] result.json has no clinical_findings — running on-the-fly merge (legacy file)")
+            from app.services.sgnipt import SgNIPTPlugin
             samples = result_data.get("samples") or []
             sample0 = samples[0] if samples else {}
             sample_id = sample0.get("sample_id") or (job.order_id or "").strip()
-            vr_path = os.path.join(
-                job.output_dir or "",
-                sample_id,
-                "variants",
-                f"{sample_id}.variant_report.json",
-            )
+            vr_path = SgNIPTPlugin._find_variant_report_json(job.analysis_dir, job.output_dir, sample_id)
             vr: dict = {}
-            if os.path.isfile(vr_path):
+            if vr_path:
                 try:
                     with open(vr_path, "r", encoding="utf-8") as _f:
                         vr = json.load(_f) or {}
                 except Exception as _e:
                     logger.warning("[sgnipt] Could not load variant_report.json %s: %s", vr_path, _e)
-            # 병합: variant_report 필드를 최상위에 주입, samples[] 는 QC 용으로 유지
-            result_data = {
-                **result_data,
-                "sample_id": vr.get("sample_id", sample_id),
-                "panel": vr.get("panel"),
-                "fetal_fraction_used": vr.get("fetal_fraction_used"),
-                "summary": vr.get("summary"),
-                "clinical_findings": vr.get("clinical_findings") or [],
-                "all_target_variants": vr.get("all_target_variants") or [],
-                "gene_coverage_validation": vr.get("gene_coverage_validation"),
-                # QC: samples[0] 하위 필드를 최상위로 올림
-                "sgnipt_status": result_data.get("status"),
-                "sgnipt_status_flags": sample0.get("status_flags") or [],
-                "fastq_qc": sample0.get("fastq_qc"),
-                "bam_qc": sample0.get("bam_qc"),
-                "fetal_fraction_detail": sample0.get("fetal_fraction"),
-                "variant_analysis_summary": sample0.get("variant_analysis"),
-            }
+            result_data = SgNIPTPlugin._build_merged_result(result_data, vr)
         if isinstance(result_data, dict):
             from app.services import get_plugin
             from app.services.carrier_screening.dark_genes import (

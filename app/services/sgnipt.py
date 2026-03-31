@@ -289,6 +289,60 @@ class SgNIPTPlugin(ServicePlugin):
             return False
         return True
 
+    @staticmethod
+    def _find_variant_report_json(analysis_dir: Optional[str], output_dir: Optional[str], sample_id: str) -> Optional[str]:
+        """
+        variant_report.json 위치를 탐색합니다.
+        파이프라인 버전/레이아웃에 따라 경로가 다를 수 있으므로
+        고정 경로를 먼저 시도하고, 없으면 glob으로 탐색 (work/ 제외).
+        """
+        fixed = [
+            os.path.join(analysis_dir or "", sample_id, "variants", f"{sample_id}.variant_report.json"),
+            os.path.join(analysis_dir or "", "variant", f"{sample_id}.variant_report.json"),
+            os.path.join(analysis_dir or "", "variants", f"{sample_id}.variant_report.json"),
+            os.path.join(output_dir or "", sample_id, "variants", f"{sample_id}.variant_report.json"),
+        ]
+        found = next((p for p in fixed if p and os.path.isfile(p)), None)
+        if found:
+            return found
+        for root in filter(None, [analysis_dir, output_dir]):
+            hits = [
+                p for p in glob.glob(os.path.join(root, "**", f"{sample_id}.variant_report.json"), recursive=True)
+                if os.sep + "work" + os.sep not in p
+            ]
+            if hits:
+                return sorted(hits)[0]
+        return None
+
+    @staticmethod
+    def _build_merged_result(summary: dict, vr: dict) -> dict:
+        """
+        파이프라인 요약 JSON(summary)과 variant_report JSON(vr)을 병합하여
+        포털 Review에서 바로 사용할 수 있는 완성된 result.json 구조를 반환합니다.
+        carrier_screening의 result.json과 동일한 단일-파일 구조가 목표입니다.
+        """
+        samples = summary.get("samples") or []
+        sample0 = samples[0] if samples else {}
+        sample_id = vr.get("sample_id") or sample0.get("sample_id") or ""
+        return {
+            **summary,
+            # variant_report 상세 필드 (Review 핵심 데이터)
+            "sample_id": sample_id,
+            "panel": vr.get("panel"),
+            "fetal_fraction_used": vr.get("fetal_fraction_used"),
+            "summary": vr.get("summary"),
+            "clinical_findings": vr.get("clinical_findings") or [],
+            "all_target_variants": vr.get("all_target_variants") or [],
+            "gene_coverage_validation": vr.get("gene_coverage_validation"),
+            # QC: samples[0] 하위 필드를 최상위로 올림
+            "sgnipt_status": summary.get("status"),
+            "sgnipt_status_flags": sample0.get("status_flags") or [],
+            "fastq_qc": sample0.get("fastq_qc"),
+            "bam_qc": sample0.get("bam_qc"),
+            "fetal_fraction_detail": sample0.get("fetal_fraction"),
+            "variant_analysis_summary": sample0.get("variant_analysis"),
+        }
+
     async def process_results(self, job: Job) -> bool:
         src = self._order_result_json(job)
         dst = os.path.join(job.output_dir, "result.json")
@@ -296,11 +350,34 @@ class SgNIPTPlugin(ServicePlugin):
             if not os.path.isfile(src):
                 logger.error("[sgnipt] Expected result not found: %s", src)
                 return False
-            if os.path.exists(dst) and os.path.samefile(src, dst):
-                logger.info("[sgnipt] result.json already same as %s", os.path.basename(src))
-                return True
-            shutil.copyfile(src, dst)
-            logger.info("[sgnipt] Copied order result to result.json for portal")
+
+            with open(src, "r", encoding="utf-8") as f:
+                summary: dict = json.load(f)
+
+            samples = summary.get("samples") or []
+            sample0 = samples[0] if samples else {}
+            sample_id = sample0.get("sample_id") or (job.order_id or "").strip()
+
+            vr_path = self._find_variant_report_json(job.analysis_dir, job.output_dir, sample_id)
+            vr: dict = {}
+            if vr_path:
+                logger.info("[sgnipt] variant_report.json found at %s", vr_path)
+                try:
+                    with open(vr_path, "r", encoding="utf-8") as f:
+                        vr = json.load(f) or {}
+                except Exception as e:
+                    logger.warning("[sgnipt] Could not read variant_report.json %s: %s", vr_path, e)
+            else:
+                logger.warning(
+                    "[sgnipt] variant_report.json not found (sample_id=%s, analysis_dir=%s)",
+                    sample_id, job.analysis_dir,
+                )
+
+            merged = self._build_merged_result(summary, vr)
+            text = json.dumps(merged, ensure_ascii=False, indent=2, default=str)
+            with open(dst, "w", encoding="utf-8") as f:
+                f.write(text)
+            logger.info("[sgnipt] Merged result.json written to %s", dst)
             return True
         except OSError as e:
             logger.error("[sgnipt] process_results failed: %s", e)

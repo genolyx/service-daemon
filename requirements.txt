@@ -16,6 +16,9 @@ intervaltree>=3.1.0
 jinja2>=3.1.0
 weasyprint>=61.0
 
+# System resource monitoring
+psutil>=5.9.0
+
 # AI / Literature
 openai>=1.30.0
 google-genai>=1.0.0

@@ -178,6 +178,37 @@
     #tblDashBucket thead th.sortable{cursor:pointer}
     #tblDashBucket td.dash-bucket-msg{white-space:normal;max-width:420px}
 
+    /* Resource Monitor */
+    .rm-section{margin-top:20px;border-top:1px solid var(--line);padding-top:16px}
+    .rm-section-title{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;margin:0 0 12px}
+    .rm-refresh-btn{margin-left:auto;font-size:11px;padding:3px 10px;border-radius:999px;background:var(--chip);border:1px solid var(--chip-line);color:var(--muted);cursor:pointer;transition:.15s all}
+    .rm-refresh-btn:hover{border-color:var(--brand);color:var(--brand)}
+    .rm-auto-label{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px}
+    .rm-cpu-toggle{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;background:none;border:none;font:inherit;color:inherit;padding:0}
+    .rm-cpu-toggle:hover .rm-cpu-toggle-label{color:var(--brand)}
+    .rm-cpu-toggle-chevron{display:inline-flex;align-items:center;color:var(--muted);transition:transform .25s}
+    .rm-cpu-toggle-chevron.open{transform:rotate(90deg)}
+    .rm-cpu-collapsible{overflow:hidden;max-height:0;transition:max-height .3s ease,opacity .25s;opacity:0}
+    .rm-cpu-collapsible.open{max-height:600px;opacity:1}
+    .rm-cpu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:6px;margin-bottom:4px}
+    .rm-core-cell{background:var(--card-2);border:1px solid var(--line);border-radius:8px;padding:5px 4px;text-align:center;font-size:11px}
+    .rm-core-label{color:var(--muted);font-size:10px;margin-bottom:3px}
+    .rm-core-bar{height:36px;background:var(--chip);border-radius:5px;overflow:hidden;display:flex;align-items:flex-end}
+    .rm-core-fill{width:100%;transition:height .5s;border-radius:5px 5px 0 0}
+    .rm-core-pct{margin-top:3px;font-weight:600;font-size:11px}
+    .rm-bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+    .rm-bar-label{min-width:56px;font-size:12px;color:var(--muted);white-space:nowrap}
+    .rm-bar-wrap{flex:1;height:14px;background:var(--chip);border-radius:999px;overflow:hidden}
+    .rm-bar-fill{height:100%;border-radius:999px;transition:width .5s}
+    .rm-bar-meta{font-size:11px;color:var(--muted);min-width:110px;text-align:right;white-space:nowrap}
+    .rm-bar-fill.ok{background:linear-gradient(90deg,#22c55e,#16a34a)}
+    .rm-bar-fill.warn{background:linear-gradient(90deg,#f59e0b,#d97706)}
+    .rm-bar-fill.err{background:linear-gradient(90deg,#ef4444,#dc2626)}
+    .rm-disk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px}
+    .rm-disk-card{background:var(--card-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+    .rm-disk-mount{font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .rm-last-update{font-size:10px;color:var(--muted);text-align:right;margin-top:6px}
+
     /* Review-specific */
     .variant-row{cursor:pointer;transition:background .15s}
     .variant-row:hover{background:rgba(106,163,255,.08)!important}
@@ -754,6 +785,65 @@
             <tbody id="dashBucketBody"></tbody>
           </table>
         </div>
+      </div>
+
+      <!-- Resource Monitor -->
+      <div class="rm-section" id="resourceMonitor">
+        <div class="rm-section-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          Resource Monitor
+          <span class="rm-auto-label" style="margin-left:6px">
+            <span id="rmAutoIndicator" style="width:7px;height:7px;border-radius:50%;background:var(--ok);display:inline-block"></span>
+            auto&nbsp;<span id="rmCountdown">5s</span>
+          </span>
+          <button class="rm-refresh-btn" onclick="loadResourceMonitor(true)">↻ Refresh</button>
+        </div>
+
+        <!-- CPU -->
+        <div style="margin-bottom:14px">
+          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px;display:flex;align-items:center;gap:8px">
+            CPU
+            <span id="rmCpuMeta" class="muted" style="font-size:11px;font-weight:400"></span>
+          </div>
+          <div class="rm-bar-row" style="margin-bottom:8px">
+            <span class="rm-bar-label" style="font-weight:600">Total</span>
+            <div class="rm-bar-wrap"><div class="rm-bar-fill ok" id="rmCpuTotalBar" style="width:0%"></div></div>
+            <span class="rm-bar-meta" id="rmCpuTotalPct">—</span>
+          </div>
+          <button class="rm-cpu-toggle" id="rmCpuToggleBtn" onclick="toggleRmCpuCores()" title="Show / hide per-core detail">
+            <span class="rm-cpu-toggle-chevron" id="rmCpuChevron">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </span>
+            <span class="rm-cpu-toggle-label muted" style="font-size:11px" id="rmCpuToggleLabel">Per-core detail</span>
+          </button>
+          <div class="rm-cpu-collapsible" id="rmCpuCollapsible">
+            <div style="height:8px"></div>
+            <div class="rm-cpu-grid" id="rmCpuCores"></div>
+          </div>
+        </div>
+
+        <!-- Memory -->
+        <div style="margin-bottom:14px">
+          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">Memory</div>
+          <div class="rm-bar-row">
+            <span class="rm-bar-label">RAM</span>
+            <div class="rm-bar-wrap"><div class="rm-bar-fill ok" id="rmRamBar" style="width:0%"></div></div>
+            <span class="rm-bar-meta" id="rmRamMeta">—</span>
+          </div>
+          <div class="rm-bar-row" id="rmSwapRow" style="display:none">
+            <span class="rm-bar-label">Swap</span>
+            <div class="rm-bar-wrap"><div class="rm-bar-fill ok" id="rmSwapBar" style="width:0%"></div></div>
+            <span class="rm-bar-meta" id="rmSwapMeta">—</span>
+          </div>
+        </div>
+
+        <!-- Disk -->
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">Disk</div>
+          <div class="rm-disk-grid" id="rmDiskGrid"></div>
+        </div>
+
+        <div class="rm-last-update" id="rmLastUpdate"></div>
       </div>
     </section>
 
@@ -2927,6 +3017,9 @@
       if (name === 'dash') {
         stopOrdersListPolling();
         loadDashboard();
+        startResourceMonitorAutoRefresh();
+      } else {
+        stopResourceMonitorAutoRefresh();
       }
       if (name === 'orders') {
         showOrdersListOnly();
@@ -3371,17 +3464,17 @@
       if (!host) return;
       if (running.length > 0) {
         host.innerHTML = '<div class="muted" style="font-weight:600;margin-bottom:6px">Running jobs</div>' +
-          running.map(j => `
-              <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)">
-                <span class="pill inp">${dashSvcLabel(j.service_code)}</span>
-                <span style="font-weight:600">${escapeHtml(j.order_id)}</span>
-                <div style="flex:1;max-width:200px">
-                  <div class="progress-bar"><div class="progress-fill" style="width:${j.progress || 0}%"></div></div>
-                </div>
-                <span class="muted">${j.progress != null ? j.progress : 0}%</span>
-                <span class="muted">${escapeHtml(j.message || '')}</span>
-              </div>
-            `).join('');
+          running.map(j => {
+            const pct = j.progress != null ? j.progress : 0;
+            return `
+              <div style="display:grid;grid-template-columns:140px 220px 1fr auto auto;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)">
+                <span class="pill inp" style="justify-self:start">${dashSvcLabel(j.service_code)}</span>
+                <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(j.order_id)}">${escapeHtml(j.order_id)}</span>
+                <div class="progress-bar" style="margin:0"><div class="progress-fill" style="width:${pct}%"></div></div>
+                <span class="muted" style="min-width:36px;text-align:right">${pct}%</span>
+                <span class="muted" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px" title="${escapeHtml(j.message || '')}">${escapeHtml(j.message || '')}</span>
+              </div>`;
+          }).join('');
       } else {
         host.innerHTML = `<div class="muted" style="text-align:center;padding:20px">${emptyMsg}</div>`;
       }
@@ -3501,6 +3594,169 @@
         qs('connStatus').innerHTML = `<span class="conn-dot err"></span>Disconnected`;
         toast('Cannot connect to daemon at ' + API_BASE, false);
       }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Resource Monitor
+    // ═══════════════════════════════════════════════════════════
+    let _rmTimer = null;
+    let _rmCountdownTimer = null;
+    let _rmCpuExpanded = false;
+
+    function toggleRmCpuCores() {
+      _rmCpuExpanded = !_rmCpuExpanded;
+      const col = qs('rmCpuCollapsible');
+      const chev = qs('rmCpuChevron');
+      const lbl = qs('rmCpuToggleLabel');
+      if (col) col.classList.toggle('open', _rmCpuExpanded);
+      if (chev) chev.classList.toggle('open', _rmCpuExpanded);
+      if (lbl) lbl.textContent = 'Per-core detail';
+      try { localStorage.setItem('rmCpuExpanded', _rmCpuExpanded ? '1' : '0'); } catch (_) {}
+    }
+    let _rmCountdownVal = 5;
+    const RM_INTERVAL = 5000;
+
+    function fmtBytes(b) {
+      if (b == null) return '—';
+      const units = ['B','KB','MB','GB','TB'];
+      let i = 0;
+      while (b >= 1024 && i < units.length - 1) { b /= 1024; i++; }
+      return b.toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+    }
+
+    function barColorClass(pct) {
+      if (pct >= 85) return 'err';
+      if (pct >= 65) return 'warn';
+      return 'ok';
+    }
+
+    function coreBarColor(pct) {
+      if (pct >= 85) return '#ef4444';
+      if (pct >= 65) return '#f59e0b';
+      return '#6aa3ff';
+    }
+
+    async function loadResourceMonitor(manual = false) {
+      try {
+        const data = await apiGet('/api/portal/resources');
+        renderResourceMonitor(data);
+      } catch (e) {
+        if (manual) toast('Resource Monitor 조회 실패: ' + e.message, false);
+      }
+      if (manual) {
+        _rmCountdownVal = RM_INTERVAL / 1000;
+        qs('rmCountdown').textContent = _rmCountdownVal + 's';
+      }
+    }
+
+    function renderResourceMonitor(d) {
+      const cpu = d.cpu || {};
+      const mem = d.memory || {};
+      const swap = d.swap || {};
+      const disks = d.disk || [];
+
+      // CPU meta
+      const freq = cpu.freq_mhz ? ` · ${cpu.freq_mhz} MHz` : '';
+      qs('rmCpuMeta').textContent =
+        `${cpu.logical_cores || '?'} logical / ${cpu.physical_cores || '?'} physical cores${freq}`;
+
+      // CPU per-core bars
+      const cores = cpu.per_core || [];
+      qs('rmCpuCores').innerHTML = cores.map((pct, i) => {
+        const fillH = Math.max(2, Math.round(pct * 0.36));
+        const color = coreBarColor(pct);
+        return `<div class="rm-core-cell">
+          <div class="rm-core-label">C${i}</div>
+          <div class="rm-core-bar">
+            <div style="width:100%;height:${fillH}px;background:${color};border-radius:4px 4px 0 0;transition:height .5s"></div>
+          </div>
+          <div class="rm-core-pct" style="color:${color}">${Math.round(pct)}%</div>
+        </div>`;
+      }).join('');
+
+      // CPU total bar
+      const cpuPct = cpu.total_percent ?? 0;
+      const cpuBar = qs('rmCpuTotalBar');
+      cpuBar.style.width = cpuPct + '%';
+      cpuBar.className = `rm-bar-fill ${barColorClass(cpuPct)}`;
+      qs('rmCpuTotalPct').textContent = `${Math.round(cpuPct)}%`;
+
+      // RAM
+      const ramPct = mem.percent ?? 0;
+      const ramBar = qs('rmRamBar');
+      ramBar.style.width = ramPct + '%';
+      ramBar.className = `rm-bar-fill ${barColorClass(ramPct)}`;
+      qs('rmRamMeta').textContent =
+        `${fmtBytes(mem.used)} / ${fmtBytes(mem.total)}  (${Math.round(ramPct)}%)`;
+
+      // Swap
+      if (swap.total && swap.total > 0) {
+        qs('rmSwapRow').style.display = '';
+        const swapPct = swap.percent ?? 0;
+        const swapBar = qs('rmSwapBar');
+        swapBar.style.width = swapPct + '%';
+        swapBar.className = `rm-bar-fill ${barColorClass(swapPct)}`;
+        qs('rmSwapMeta').textContent =
+          `${fmtBytes(swap.used)} / ${fmtBytes(swap.total)}  (${Math.round(swapPct)}%)`;
+      } else {
+        qs('rmSwapRow').style.display = 'none';
+      }
+
+      // Disk
+      qs('rmDiskGrid').innerHTML = disks.map(dk => {
+        const cls = barColorClass(dk.percent);
+        return `<div class="rm-disk-card">
+          <div class="rm-disk-mount" title="${escapeHtml(dk.mount)}">${escapeHtml(dk.mount)}</div>
+          <div class="rm-bar-wrap" style="height:10px;margin-bottom:5px">
+            <div class="rm-bar-fill ${cls}" style="width:${dk.percent}%;height:100%;border-radius:999px;transition:width .5s"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)">
+            <span>${fmtBytes(dk.used)} used</span>
+            <span>${fmtBytes(dk.free)} free</span>
+            <span style="font-weight:600;color:${dk.percent>=85?'var(--err)':dk.percent>=65?'#f59e0b':'var(--muted)'}">${Math.round(dk.percent)}%</span>
+          </div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px">Total: ${fmtBytes(dk.total)}</div>
+        </div>`;
+      }).join('');
+
+      // Last updated
+      const now = new Date();
+      qs('rmLastUpdate').textContent =
+        `Last updated: ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+    }
+
+    function startResourceMonitorAutoRefresh() {
+      if (_rmTimer) return;
+      // localStorage에서 펼침 상태 복원
+      try {
+        const saved = localStorage.getItem('rmCpuExpanded');
+        if (saved !== null) {
+          _rmCpuExpanded = saved === '1';
+          const col = qs('rmCpuCollapsible');
+          const chev = qs('rmCpuChevron');
+          const lbl = qs('rmCpuToggleLabel');
+          if (col) col.classList.toggle('open', _rmCpuExpanded);
+          if (chev) chev.classList.toggle('open', _rmCpuExpanded);
+          if (lbl) lbl.textContent = 'Per-core detail';
+        }
+      } catch (_) {}
+      loadResourceMonitor();
+      _rmCountdownVal = RM_INTERVAL / 1000;
+      _rmCountdownTimer = setInterval(() => {
+        _rmCountdownVal--;
+        const el = qs('rmCountdown');
+        if (el) el.textContent = _rmCountdownVal + 's';
+        if (_rmCountdownVal <= 0) _rmCountdownVal = RM_INTERVAL / 1000;
+      }, 1000);
+      _rmTimer = setInterval(() => {
+        loadResourceMonitor();
+        _rmCountdownVal = RM_INTERVAL / 1000;
+      }, RM_INTERVAL);
+    }
+
+    function stopResourceMonitorAutoRefresh() {
+      if (_rmTimer) { clearInterval(_rmTimer); _rmTimer = null; }
+      if (_rmCountdownTimer) { clearInterval(_rmCountdownTimer); _rmCountdownTimer = null; }
     }
 
     // ═══════════════════════════════════════════════════════════

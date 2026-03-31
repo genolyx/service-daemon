@@ -1085,6 +1085,73 @@ async def read_bam_csv_sample_ids(
     return {"abs_path": path_clean, "sample_ids": sample_ids}
 
 
+@app.get("/api/portal/resources")
+async def get_system_resources():
+    """시스템 리소스 현황 (CPU/Memory/Disk) — 포털 대시보드용 (인증 면제)."""
+    try:
+        import psutil  # type: ignore
+    except ImportError:
+        raise HTTPException(status_code=503, detail="psutil not installed — run: pip install psutil")
+
+    # CPU per-core (non-blocking: interval=None uses accumulated since last call)
+    cpu_per_core = psutil.cpu_percent(interval=None, percpu=True)
+    cpu_total = psutil.cpu_percent(interval=None)
+    cpu_freq = psutil.cpu_freq(percpu=False)
+    cpu_count_logical = psutil.cpu_count(logical=True)
+    cpu_count_physical = psutil.cpu_count(logical=False)
+
+    # Memory
+    vm = psutil.virtual_memory()
+    swap = psutil.swap_memory()
+
+    # Disk — report each unique mount point visible inside the container
+    _seen: set = set()
+    disk_list = []
+    priority_paths = ["/", "/data", "/home", "/tmp"]
+    candidate_paths = priority_paths + [p.mountpoint for p in psutil.disk_partitions(all=False)]
+    for mp in candidate_paths:
+        if not os.path.isdir(mp):
+            continue
+        try:
+            usage = psutil.disk_usage(mp)
+        except (PermissionError, OSError):
+            continue
+        key = (usage.total, usage.used)
+        if key in _seen:
+            continue
+        _seen.add(key)
+        disk_list.append({
+            "mount": mp,
+            "total": usage.total,
+            "used": usage.used,
+            "free": usage.free,
+            "percent": usage.percent,
+        })
+
+    return {
+        "cpu": {
+            "total_percent": cpu_total,
+            "per_core": cpu_per_core,
+            "logical_cores": cpu_count_logical,
+            "physical_cores": cpu_count_physical,
+            "freq_mhz": round(cpu_freq.current, 1) if cpu_freq else None,
+        },
+        "memory": {
+            "total": vm.total,
+            "available": vm.available,
+            "used": vm.used,
+            "percent": vm.percent,
+        },
+        "swap": {
+            "total": swap.total,
+            "used": swap.used,
+            "free": swap.free,
+            "percent": swap.percent,
+        },
+        "disk": disk_list,
+    }
+
+
 @app.patch("/order/{order_id}/fastq", response_model=None)
 async def patch_order_fastq_paths(order_id: str, request: UpdateFastqPathsRequest):
     """

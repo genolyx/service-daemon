@@ -1251,7 +1251,7 @@
                 <th class="sortable" data-key="transcript_nm_sort" title="MANE RefSeq (NM_…); may show ENST if NM unavailable">Transcript (NM)</th>
                 <th class="sortable col-effect" data-key="effect" title="Consequence (truncated; hover cell for full)">Effect</th>
                 <th class="sortable" data-key="zygosity">Zygosity</th>
-                <th class="sortable" data-key="allele_depth_sort" title="REF / ALT read depth (VCF AD); DP when AD unavailable">Allele depth</th>
+                <th class="sortable" data-key="allele_depth_sort" title="Read counts: REF = reference allele, ALT = variant (mutation) allele. At heterozygous sites both are expected. VCF AD; else DP.">Allele depth</th>
                 <th class="sortable" data-key="gnomad_af">gnomAD AF</th>
                 <th class="sortable" data-key="clinvar_sig_primary">ClinVar</th>
                 <th class="sortable" data-key="acmg_classification">ACMG</th>
@@ -1998,21 +1998,63 @@
       return isNaN(n) ? '-' : n < 0.0001 ? n.toExponential(2) : n.toFixed(4);
     };
 
-    /** Ref/alt read depths for review table; DP fallback when AD missing. */
+    /**
+     * Ref/alt read depths for review table; DP fallback when AD missing.
+     * Labels REF vs ALT (with bases for SNVs) so het sites are not read as “two genotypes side by side.”
+     */
     function fmtVariantAlleleDepth(v) {
       if (!v || typeof v !== 'object') return '-';
       const rd = v.ref_depth;
       const ad = v.alt_depth;
+      const refB = String(v.ref || '').trim();
+      const altB = String(v.alt || '').trim();
+      const snv =
+        refB.length === 1 &&
+        altB.length === 1 &&
+        /^[ACGTN]$/i.test(refB) &&
+        /^[ACGTN]$/i.test(altB);
       if (rd != null && rd !== '' && ad != null && ad !== '') {
         const r = Number(rd);
         const a = Number(ad);
-        if (!Number.isNaN(r) && !Number.isNaN(a)) return `${r} / ${a}`;
+        if (!Number.isNaN(r) && !Number.isNaN(a)) {
+          if (snv) return `REF(${refB})=${r} / ALT(${altB})=${a}`;
+          return `REF=${r} / ALT=${a}`;
+        }
       }
       if (v.dp != null && v.dp !== '') {
         const d = Number(v.dp);
         if (!Number.isNaN(d)) return `DP ${d}`;
       }
       return '-';
+    }
+
+    /** Variant detail: one line for DP + ref/alt support + VAF (explicit REF/ALT wording). */
+    function fmtVariantDepthVafDetail(v) {
+      if (!v || typeof v !== 'object') return '-';
+      const parts = [];
+      if (v.dp != null && v.dp !== '') parts.push(`DP=${v.dp}`);
+      const rd = v.ref_depth;
+      const ad = v.alt_depth;
+      const refB = String(v.ref || '').trim();
+      const altB = String(v.alt || '').trim();
+      const snv =
+        refB.length === 1 &&
+        altB.length === 1 &&
+        /^[ACGTN]$/i.test(refB) &&
+        /^[ACGTN]$/i.test(altB);
+      if (rd != null && rd !== '' && ad != null && ad !== '') {
+        const r = Number(rd);
+        const a = Number(ad);
+        if (!Number.isNaN(r) && !Number.isNaN(a)) {
+          if (snv) parts.push(`reads REF(${refB})=${r}, ALT(${altB})=${a}`);
+          else parts.push(`reads REF=${r}, ALT=${a}`);
+        }
+      }
+      if (v.vaf != null && v.vaf !== '') {
+        const vf = Number(v.vaf);
+        if (!Number.isNaN(vf)) parts.push(`VAF=${(vf * 100).toFixed(1)}%`);
+      }
+      return parts.length ? parts.join(' · ') : '-';
     }
 
     /** Align with server ``normalize_variants_for_portal`` — alternate keys + gnomAD fallback */
@@ -5744,6 +5786,8 @@
       if (/Alpha\s*Thalassemia/i.test(u) && /Dosage/i.test(u)) return true;
       if (/CYP21A2/i.test(u) && /CAH/i.test(u)) return true;
       if (/CAH/i.test(u) && /Dosage/i.test(u) && /CYP21/i.test(u)) return true;
+      if (/CYP21A2/i.test(u) && /hotspot/i.test(u)) return true;
+      if (/CAH/i.test(u) && /hotspot/i.test(u)) return true;
       return false;
     }
 
@@ -5754,6 +5798,19 @@
       if (/HBA\s+ANALYSIS/i.test(u)) return true;
       if (/Alpha\s*Thalassemia/i.test(u) && /Dosage/i.test(u)) return true;
       return darkGenesDisplayTitle(t) === 'Alpha Thalassemia';
+    }
+
+    /** CAH / CYP21A2 dosage block (paralog gene vs pseudogene); not Alpha thal. */
+    function cyp21CahDosageTitleMatches(t) {
+      if (alphaThalassemiaDosageTitleMatches(t)) return false;
+      const u = (t || '').trim();
+      if (!u) return false;
+      if (/CYP21A2\s+ANALYSIS/i.test(u)) return true;
+      if (/CYP21A2/i.test(u) && /CAH/i.test(u)) return true;
+      if (/CAH/i.test(u) && /Dosage/i.test(u) && /CYP21/i.test(u)) return true;
+      if (/CYP21A2/i.test(u) && /hotspot/i.test(u)) return true;
+      if (/CAH/i.test(u) && /hotspot/i.test(u)) return true;
+      return darkGenesDisplayTitle(t) === 'Congenital Adrenal Hyperplasia (CAH)';
     }
 
     /** Split detailed text on newlines / pipes / semicolons / tabs so `Est_CN=…|hba1=…` or tab-separated lines parse. */
@@ -5816,9 +5873,114 @@
       return /^[\d.eE+-]+$/.test(tail) ? tail : null;
     }
 
+    /** Normalize pipeline token to Positive / Negative for CAH 7-hotspot row. */
+    function normalizeCahHotspotToken(tok) {
+      const t = String(tok || '')
+        .trim()
+        .toLowerCase();
+      if (!t) return null;
+      if (
+        /^(positive|pos|yes|y|true|1|detected|variant|mut|mutation|variants|present)$/.test(t)
+      ) {
+        return 'Positive';
+      }
+      if (
+        /^(negative|neg|no|n|false|0|undetected|wild-type|wildtype|wt|normal|clear|absent|none)$/.test(
+          t
+        )
+      ) {
+        return 'Negative';
+      }
+      if (t === 'pass') return 'Negative';
+      if (/^(fail|failed)$/.test(t)) return 'Positive';
+      if (/^(not_detected|no_variant|no_variants|novariant|no_variant_detected|neg_result)$/.test(t)) {
+        return 'Negative';
+      }
+      if (/^(variant_found|variantfound|pathogenic_hit|mutation_detected)$/.test(t)) {
+        return 'Positive';
+      }
+      return null;
+    }
+
+    /**
+     * CAH 7-hotspot screening: key=value or labeled lines in detailed report → Positive / Negative.
+     */
+    function cyp21PickHotspotCall(raw) {
+      const s = String(raw || '');
+      const keys = [
+        'hotspot_result',
+        'hotspot_mutations_result',
+        'hotspot_mutations',
+        'cah_hotspot_result',
+        'cyp21_hotspot_result',
+        'hotspot_7_result',
+        'hotspot_7_mutations',
+        'hotspot_panel_result',
+        'cyp21_hotspot',
+        'mutations_hotspot_7',
+        'hotspot_7',
+        'hotspot_status',
+        'cyp21_hotspot_status',
+        'cah_7hotspot_result',
+        'cyp21_7hotspot_result',
+        'cyp21_hotspot_mutations',
+      ];
+      for (const k of keys) {
+        const v = alphaThalPickScalar(s, [k]) || alphaThalPickScalarAnywhere(s, [k]);
+        if (v) {
+          const n = normalizeCahHotspotToken(v);
+          if (n) return n;
+        }
+      }
+      const lineRes = [
+        /^\s*Hotspot(?:\s+mutations)?(?:\s*\(7\))?\s*:\s*(positive|negative|pos|neg)\s*$/im,
+        /^\s*(?:7\s+)?hotspot(?:\s+mutations)?\s*:\s*(positive|negative|pos|neg)\s*$/im,
+        /^\s*CYP21\s+hotspot[^\n:]{0,80}:\s*(positive|negative|pos|neg)\s*$/im,
+      ];
+      for (const re of lineRes) {
+        const m = s.match(re);
+        if (m) {
+          const n = normalizeCahHotspotToken(m[1]);
+          if (n) return n;
+        }
+      }
+      const inlineRes = [
+        /\bCYP21_HOTSPOT(?:_RESULT)?\s*=\s*(positive|negative|pos|neg)\b/i,
+        /\bhotspot(?:_7)?_result\s*=\s*(positive|negative|pos|neg)\b/i,
+        /\bhotspot(?:_mutations)?_call\s*=\s*(positive|negative|pos|neg)\b/i,
+        /\bCYP21_HOTSPOT_MUTATIONS\s*=\s*(\S+)/i,
+      ];
+      for (const re of inlineRes) {
+        const m = s.match(re);
+        if (m) {
+          const n = normalizeCahHotspotToken(m[1]);
+          if (n) return n;
+        }
+      }
+      // Any KEY=value where KEY contains "hotspot" (pipeline-specific names)
+      for (const ln of s.split(/\r?\n/)) {
+        const eq = ln.match(/^([^=]+)=(.+)$/);
+        if (!eq || !/hotspot/i.test(eq[1])) continue;
+        const first = String(eq[2]).trim().split(/[\s,|;]/)[0];
+        const n = normalizeCahHotspotToken(first);
+        if (n) return n;
+      }
+      // Phrase lines: "Hotspot … : positive" without strict EOL
+      const loose = s.match(
+        /\bhotspot(?:\s+mutations)?(?:\s*\(7\))?\s*:\s*(positive|negative|pos|neg)\b/i
+      );
+      if (loose) {
+        const n = normalizeCahHotspotToken(loose[1]);
+        if (n) return n;
+      }
+      return null;
+    }
+
     /**
      * HBA / CYP21A2 dosage blocks: Est_CN, Ratio, WARNING line → Estimated CNV, Ratio, Warning.
-     * Alpha thal: append hba1/hba2 (paralog) when present (same block as Est_CN/Ratio/Warning).
+     * Alpha thal: append hba1/hba2 when present.
+     * CAH: depth-screening lines (CYP21A2 interval depth, Chr6 median, labeled depth ratio, Status: WARNING)
+     * plus paralog cyp21a2 / cyp21a1p — not only `Est_CN=` / `Ratio=` (those often absent).
      * Line-anchored keys so `C_Ratio=…` does not satisfy `Ratio=…`.
      */
     function tryRenderDosageAnalysisSection(sec) {
@@ -5826,10 +5988,17 @@
       if (!dosageAnalysisTitleMatches(t)) return null;
       const raw = String(sec.body || '');
       const isAlpha = alphaThalassemiaDosageTitleMatches(t);
+      const isCyp21Title = cyp21CahDosageTitleMatches(t);
       const mEst = raw.match(/^\s*Est_CN\s*=\s*(\S+)/im);
       const mRatio = raw.match(/^\s*Ratio\s*=\s*(\S+)/im);
       const mWarn = raw.match(/^\s*WARNING:\s*(.+)/im);
-      if (!mEst && !mRatio && !mWarn) return null;
+      /** CAH depth proxy: `Status: WARNING: …` (line does not start with `WARNING:`). */
+      const mWarnStatus = raw.match(/^\s*Status\s*:\s*WARNING\s*:\s*(.+)$/im);
+      const mCypIntDepth = raw.match(/CYP21A2\s+Interval\s+Mean\s+Depth\s*:\s*(\S+)/i);
+      const mChr6Med = raw.match(/Chr6\s+Median\s+Target\s+Depth\s*:\s*(\S+)/i);
+      const mDepthRatio = raw.match(
+        /Ratio\s*\(\s*CYP21A2\s*\/\s*Median\s+Chr6\s*\)\s*:\s*(\S+)/i
+      );
       const hba1Keys = [
         'est_copies_hba1',
         'hba1',
@@ -5854,16 +6023,108 @@
         : null;
       if (isAlpha && hba1Val == null) hba1Val = alphaThalPickResultFromFormulaLine(raw, 'formula_est_hba1');
       if (isAlpha && hba2Val == null) hba2Val = alphaThalPickResultFromFormulaLine(raw, 'formula_est_hba2');
+      const cyp21a2Keys = [
+        'est_copies_cyp21a2',
+        'cyp21a2',
+        'paralog_cyp21a2',
+        'est_copies_21oh_gene',
+        'gene_copies',
+      ];
+      const cyp21a1pKeys = [
+        'est_copies_cyp21a1p',
+        'est_copies_cyp21a1p_arm',
+        'cyp21a1p',
+        'paralog_cyp21a1p',
+        'est_copies_21oh_pseudogene',
+        'pseudogene_copies',
+      ];
+      const cyp21DeletionKeys = [
+        'paralog_deletion',
+        'cyp21_paralog_deletion',
+        'paralog_deletion_call',
+        'deletion_paralog',
+      ];
+      let cyp21a2Val = null;
+      let cyp21a1pVal = null;
+      let paralogDeletionVal = null;
+      /** Parse hotspot on any non–Alpha dosage section (CYP21); infer CAH block if call is found. */
+      const hotspotCall =
+        !isAlpha && dosageAnalysisTitleMatches(t) ? cyp21PickHotspotCall(raw) : null;
+      const isCyp21 = isCyp21Title || hotspotCall != null;
+      if (isCyp21) {
+        cyp21a2Val =
+          alphaThalPickScalar(raw, cyp21a2Keys) || alphaThalPickScalarAnywhere(raw, cyp21a2Keys);
+        cyp21a1pVal =
+          alphaThalPickScalar(raw, cyp21a1pKeys) || alphaThalPickScalarAnywhere(raw, cyp21a1pKeys);
+        if (cyp21a2Val == null) cyp21a2Val = alphaThalPickResultFromFormulaLine(raw, 'formula_est_cyp21a2');
+        if (cyp21a1pVal == null) cyp21a1pVal = alphaThalPickResultFromFormulaLine(raw, 'formula_est_cyp21a1p');
+        if (cyp21a1pVal == null) cyp21a1pVal = alphaThalPickResultFromFormulaLine(raw, 'formula_est_cyp21a1p_arm');
+        paralogDeletionVal =
+          alphaThalPickScalar(raw, cyp21DeletionKeys) ||
+          alphaThalPickScalarAnywhere(raw, cyp21DeletionKeys);
+      }
+      if (!isCyp21) {
+        if (!mEst && !mRatio && !mWarn) return null;
+      } else {
+        const hasCahBody =
+          mEst ||
+          mRatio ||
+          mWarn ||
+          mWarnStatus ||
+          mCypIntDepth ||
+          mChr6Med ||
+          mDepthRatio ||
+          cyp21a2Val != null ||
+          cyp21a1pVal != null ||
+          paralogDeletionVal != null ||
+          hotspotCall != null;
+        if (!hasCahBody) return null;
+      }
       const rows = [];
-      if (mEst) rows.push(['Estimated CNV', mEst[1]]);
-      if (mRatio) rows.push(['Ratio', mRatio[1]]);
-      if (mWarn) rows.push(['Warning', mWarn[1].trim().replace(/\s+/g, ' ')]);
-      if (hba1Val != null) rows.push(['hba1', hba1Val]);
-      if (hba2Val != null) rows.push(['hba2', hba2Val]);
+      if (isCyp21) {
+        if (mCypIntDepth) rows.push(['CYP21A2 interval mean depth', mCypIntDepth[1]]);
+        if (mChr6Med) rows.push(['Chr6 median target depth', mChr6Med[1]]);
+        if (mDepthRatio) rows.push(['Depth ratio (CYP21/Chr6)', mDepthRatio[1]]);
+        if (mEst) rows.push(['Estimated CNV', mEst[1]]);
+        if (mRatio) rows.push(['Ratio', mRatio[1]]);
+        let warnText = null;
+        if (mWarn) warnText = mWarn[1].trim().replace(/\s+/g, ' ');
+        else if (mWarnStatus) warnText = mWarnStatus[1].trim().replace(/\s+/g, ' ');
+        if (warnText) rows.push(['Warning', warnText]);
+        if (hotspotCall != null) rows.push(['Hotspot mutations (7)', hotspotCall]);
+        if (cyp21a2Val != null) rows.push(['cyp21a2', cyp21a2Val]);
+        if (cyp21a1pVal != null) rows.push(['cyp21a1p', cyp21a1pVal]);
+        if (paralogDeletionVal != null) rows.push(['Paralog deletion', paralogDeletionVal]);
+      } else {
+        if (mEst) rows.push(['Estimated CNV', mEst[1]]);
+        if (mRatio) rows.push(['Ratio', mRatio[1]]);
+        if (mWarn) rows.push(['Warning', mWarn[1].trim().replace(/\s+/g, ' ')]);
+        if (hba1Val != null) rows.push(['hba1', hba1Val]);
+        if (hba2Val != null) rows.push(['hba2', hba2Val]);
+      }
       const inner = rows
         .map(([lab, val]) => `<dt>${escapeHtml(lab)}</dt><dd>${escapeHtml(val)}</dd>`)
         .join('');
       return `<dl class="dark-genes-kv">${inner}</dl>`;
+    }
+
+    /**
+     * CAH hotspot row when the section is not matched by ``tryRenderDosageAnalysisSection`` but the
+     * body contains a parseable hotspot call (e.g. supplementary block). Skips Overview (same as stack).
+     */
+    function tryRenderCahHotspotStandaloneSection(sec) {
+      const t = (sec.title || '').trim();
+      if (/^overview$/i.test(t)) return null;
+      if (alphaThalassemiaDosageTitleMatches(t)) return null;
+      const raw = String(sec.body || '');
+      if (!/(?i)(hotspot_|cyp21_hotspot|hotspot_mutations|7\s*hotspot|\bhotspot\b)/.test(raw)) return null;
+      const h = cyp21PickHotspotCall(raw);
+      if (!h) return null;
+      const titleOk =
+        /(?i)cyp21|CAH|hotspot|21oh|congenital adrenal|adrenal hyperplasia/.test(t) ||
+        darkGenesDisplayTitle(t) === 'Congenital Adrenal Hyperplasia (CAH)';
+      if (!titleOk) return null;
+      return `<dl class="dark-genes-kv"><dt>Hotspot mutations (7)</dt><dd>${escapeHtml(h)}</dd></dl>`;
     }
 
     /** Same rules as server ``_infer_pipeline_section_high_risk`` — default low unless pipeline warns. */
@@ -5874,7 +6135,9 @@
       const title = String(sec.title || '').toUpperCase();
       if (title.includes('WARNING') && !title.includes('QUALITY')) return true;
       const body = String(sec.body || '');
-      return /^\s*WARNING:\s*\S/im.test(body);
+      if (/^\s*WARNING:\s*\S/im.test(body)) return true;
+      if (/^\s*Status\s*:\s*WARNING\s*:/im.test(body)) return true;
+      return false;
     }
 
     /** Same mapping as server ``dark_genes_display_title`` — pipeline title → report title. */
@@ -6044,7 +6307,8 @@
         const bodyNorm = normalizeDarkGenesSectionBody(sec.body || '');
         const kv =
           tryRenderSmacaCheckSection({ ...sec, body: bodyNorm }, reviewVariants, reviewMeta) ||
-          tryRenderDosageAnalysisSection({ ...sec, body: bodyNorm });
+          tryRenderDosageAnalysisSection({ ...sec, body: bodyNorm }) ||
+          tryRenderCahHotspotStandaloneSection({ ...sec, body: bodyNorm });
         const bodyHtml = kv
           ? `<div class="dark-genes-sec-body dark-genes-sec-body--kv">${kv}</div>`
           : `<pre class="dark-genes-sec-body">${escapeHtml(bodyNorm)}</pre>`;
@@ -6480,7 +6744,7 @@
           <th class="sortable" data-key="transcript_nm_sort" title="MANE RefSeq (NM_…); may show ENST if NM unavailable">Transcript (NM)</th>
           <th class="sortable col-effect" data-key="effect" title="Consequence (truncated; hover cell for full)">Effect</th>
           <th class="sortable" data-key="zygosity">Zygosity</th>
-          <th class="sortable" data-key="allele_depth_sort" title="REF / ALT read depth (VCF AD); DP when AD unavailable">Allele depth</th>
+          <th class="sortable" data-key="allele_depth_sort" title="Read counts: REF = reference allele, ALT = variant allele. At heterozygous sites both are expected. VCF AD; else DP.">Allele depth</th>
           <th class="sortable" data-key="gnomad_af">gnomAD AF</th>
           <th class="sortable" data-key="clinvar_sig_primary">ClinVar</th>
           <th class="sortable" data-key="acmg_classification">ACMG</th>
@@ -6590,7 +6854,7 @@
           <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px" title="${txTitle || ''}">${variantTranscriptNmCellHtml(v)}</td>
           <td class="muted col-effect" title="${escapeAttr(effRaw)}">${escapeHtml(effRaw)}</td>
           <td>${v.zygosity || '-'}</td>
-          <td style="font-size:11px;white-space:nowrap" title="REF / ALT depth">${fmtVariantAlleleDepth(v)}</td>
+          <td style="font-size:11px;white-space:nowrap" title="REF = reads matching reference; ALT = reads matching the called variant. Both appear at het sites.">${fmtVariantAlleleDepth(v)}</td>
           <td>${fmtAF(v.gnomad_af)}</td>
           <td>${v.clinvar_sig_primary ? pill(v.clinvar_sig_primary, v.clinvar_sig_primary.toLowerCase().includes('pathogenic') ? 'err' : v.clinvar_sig_primary.toLowerCase().includes('benign') ? 'done' : 'warn') : '-'}</td>
           <td><span class="${acmgClass(v.acmg_classification)}">${v.acmg_classification || '-'}</span></td>
@@ -6681,7 +6945,11 @@
           <div class="detail-item"><div class="detail-label">HGVSp</div><div class="detail-value">${v.hgvsp || '-'}</div></div>
           <div class="detail-item"><div class="detail-label">Effect</div><div class="detail-value">${v.effect || '-'}</div></div>
           <div class="detail-item"><div class="detail-label">Zygosity</div><div class="detail-value">${v.zygosity || '-'} (${v.gt || '-'})</div></div>
-          <div class="detail-item"><div class="detail-label">Depth / VAF</div><div class="detail-value">DP=${v.dp || '-'}, REF=${v.ref_depth || '-'}, ALT=${v.alt_depth || '-'}, VAF=${v.vaf ? (v.vaf * 100).toFixed(1) + '%' : '-'}</div></div>
+          <div class="detail-item" style="grid-column:1/-1">
+            <div class="detail-label">Read support (pileup)</div>
+            <div class="detail-value">${fmtVariantDepthVafDetail(v)}</div>
+            <div class="muted" style="font-size:11px;margin-top:6px;line-height:1.45">REF counts reads matching the <strong>reference</strong> base; ALT counts reads matching the <strong>called variant</strong> (mutation). At a heterozygous site both are expected—this is not two unrelated genotypes. Zygosity is summarized above.</div>
+          </div>
           <div class="detail-item"><div class="detail-label">gnomAD AF</div><div class="detail-value">${fmtAF(v.gnomad_af)} (${v.gnomad_source || '-'})</div></div>
           <div class="detail-item"><div class="detail-label">ClinVar</div><div class="detail-value">${v.clinvar_sig || '-'} (${v.clinvar_revstat || '-'}, ${v.clinvar_stars || 0} stars)</div></div>
           <div class="detail-item"><div class="detail-label">ClinVar Disease</div><div class="detail-value">${v.clinvar_dn || '-'}</div></div>

@@ -62,6 +62,8 @@ def _infer_pipeline_section_high_risk(sec: Dict[str, Any]) -> bool:
     body = (sec.get("body") or "")
     if re.search(r"(?im)^\s*WARNING:\s*\S", body):
         return True
+    if re.search(r"(?im)^\s*Status\s*:\s*WARNING\s*:", body):
+        return True
     return False
 
 
@@ -801,6 +803,10 @@ def _dosage_title_matches(title: str) -> bool:
         return True
     if re.search(r"CAH", u, re.I) and re.search(r"Dosage", u, re.I) and re.search(r"CYP21", u, re.I):
         return True
+    if re.search(r"CYP21A2", u, re.I) and re.search(r"hotspot", u, re.I):
+        return True
+    if re.search(r"CAH", u, re.I) and re.search(r"hotspot", u, re.I):
+        return True
     return False
 
 
@@ -814,6 +820,26 @@ def _is_alpha_thalassemia_dosage_title(title: Optional[str]) -> bool:
     if re.search(r"Alpha\s*Thalassemia", u, re.I) and re.search(r"Dosage", u, re.I):
         return True
     return dark_genes_display_title(title) == "Alpha Thalassemia"
+
+
+def _is_cyp21_cah_dosage_title(title: Optional[str]) -> bool:
+    """CAH / CYP21A2 dosage or hotspot block. Matches portal ``cyp21CahDosageTitleMatches``."""
+    if _is_alpha_thalassemia_dosage_title(title):
+        return False
+    u = (title or "").strip()
+    if not u:
+        return False
+    if re.search(r"CYP21A2\s+ANALYSIS", u, re.I):
+        return True
+    if re.search(r"CYP21A2", u, re.I) and re.search(r"CAH", u, re.I):
+        return True
+    if re.search(r"CAH", u, re.I) and re.search(r"Dosage", u, re.I) and re.search(r"CYP21", u, re.I):
+        return True
+    if re.search(r"CYP21A2", u, re.I) and re.search(r"hotspot", u, re.I):
+        return True
+    if re.search(r"CAH", u, re.I) and re.search(r"hotspot", u, re.I):
+        return True
+    return dark_genes_display_title(title) == "Congenital Adrenal Hyperplasia (CAH)"
 
 
 def _split_alpha_thal_kv_segments(raw: str) -> List[str]:
@@ -852,6 +878,162 @@ def _alpha_thal_pick_scalar_anywhere(raw: str, key_names: List[str]) -> Optional
     return None
 
 
+def _normalize_cah_hotspot_token(token: str) -> Optional[str]:
+    """Map pipeline token to ``Positive`` / ``Negative`` for 7-hotspot display."""
+    t = (token or "").strip().lower()
+    if not t:
+        return None
+    if t in (
+        "positive",
+        "pos",
+        "yes",
+        "y",
+        "true",
+        "1",
+        "detected",
+        "variant",
+        "mut",
+        "mutation",
+        "variants",
+        "present",
+    ):
+        return "Positive"
+    if t in (
+        "negative",
+        "neg",
+        "no",
+        "n",
+        "false",
+        "0",
+        "undetected",
+        "wild-type",
+        "wildtype",
+        "wt",
+        "normal",
+        "clear",
+        "absent",
+        "none",
+    ):
+        return "Negative"
+    if t == "pass":
+        return "Negative"
+    if t in ("fail", "failed"):
+        return "Positive"
+    if t in (
+        "not_detected",
+        "no_variant",
+        "no_variants",
+        "novariant",
+        "no_variant_detected",
+        "neg_result",
+    ):
+        return "Negative"
+    if t in ("variant_found", "variantfound", "pathogenic_hit", "mutation_detected"):
+        return "Positive"
+    return None
+
+
+def _cah_hotspot_call(raw: str) -> Optional[str]:
+    """
+    Parse 7-hotspot mutation screening call from CAH detailed text (key=value or labeled lines).
+    """
+    s = raw or ""
+    keys = [
+        "hotspot_result",
+        "hotspot_mutations_result",
+        "hotspot_mutations",
+        "cah_hotspot_result",
+        "cyp21_hotspot_result",
+        "hotspot_7_result",
+        "hotspot_7_mutations",
+        "hotspot_panel_result",
+        "cyp21_hotspot",
+        "mutations_hotspot_7",
+        "hotspot_7",
+        "hotspot_status",
+        "cyp21_hotspot_status",
+        "cah_7hotspot_result",
+        "cyp21_7hotspot_result",
+        "cyp21_hotspot_mutations",
+    ]
+    for name in keys:
+        v = _alpha_thal_pick_scalar(s, [name]) or _alpha_thal_pick_scalar_anywhere(s, [name])
+        if v:
+            n = _normalize_cah_hotspot_token(v)
+            if n:
+                return n
+    line_patterns = [
+        r"^\s*Hotspot(?:\s+mutations)?(?:\s*\(7\))?\s*:\s*(positive|negative|pos|neg)\s*$",
+        r"^\s*(?:7\s+)?hotspot(?:\s+mutations)?\s*:\s*(positive|negative|pos|neg)\s*$",
+        r"^\s*CYP21\s+hotspot[^\n:]{0,80}:\s*(positive|negative|pos|neg)\s*$",
+    ]
+    for pat in line_patterns:
+        m = re.search(pat, s, re.I | re.M)
+        if m:
+            n = _normalize_cah_hotspot_token(m.group(1))
+            if n:
+                return n
+    inline_patterns = [
+        r"(?i)\bCYP21_HOTSPOT(?:_RESULT)?\s*=\s*(positive|negative|pos|neg)\b",
+        r"(?i)\bhotspot(?:_7)?_result\s*=\s*(positive|negative|pos|neg)\b",
+        r"(?i)\bhotspot(?:_mutations)?_call\s*=\s*(positive|negative|pos|neg)\b",
+        r"(?i)\bCYP21_HOTSPOT_MUTATIONS\s*=\s*(\S+)",
+    ]
+    for pat in inline_patterns:
+        m = re.search(pat, s)
+        if m:
+            n = _normalize_cah_hotspot_token(m.group(1))
+            if n:
+                return n
+    for ln in s.splitlines():
+        if "=" not in ln:
+            continue
+        left, right = ln.split("=", 1)
+        if not re.search(r"hotspot", left, re.I):
+            continue
+        first = (right.strip().split()[0] if right.strip() else "") or ""
+        n = _normalize_cah_hotspot_token(first.split(",")[0])
+        if n:
+            return n
+    m = re.search(
+        r"\bhotspot(?:\s+mutations)?(?:\s*\(7\))?\s*:\s*(positive|negative|pos|neg)\b",
+        s,
+        re.I,
+    )
+    if m:
+        n = _normalize_cah_hotspot_token(m.group(1))
+        if n:
+            return n
+    return None
+
+
+def _try_cah_hotspot_standalone_kv_html(title: str, body: str) -> Optional[str]:
+    """
+    When the section title is not a dosage block but the body carries a CAH hotspot call
+    (same parser as ``_cah_hotspot_call``). Skips Overview (portal also skips Overview sections).
+    """
+    if _is_alpha_thalassemia_dosage_title(title):
+        return None
+    if (title or "").strip().lower() == "overview":
+        return None
+    raw = body or ""
+    if not re.search(
+        r"(?i)(hotspot_|cyp21_hotspot|hotspot_mutations|7\s*hotspot|\bhotspot\b)",
+        raw,
+    ):
+        return None
+    h = _cah_hotspot_call(raw)
+    if not h:
+        return None
+    u = (title or "").strip()
+    if not (
+        re.search(r"(?i)cyp21|CAH|hotspot|21oh|congenital adrenal|adrenal hyperplasia", u)
+        or dark_genes_display_title(title) == "Congenital Adrenal Hyperplasia (CAH)"
+    ):
+        return None
+    return _dl_kv_pdf_rows([("Hotspot mutations (7)", h)])
+
+
 def _alpha_thal_result_from_formula_line(raw: str, formula_key: str) -> Optional[str]:
     """
     Pipeline may only emit ``formula_est_hba1=4*505/(505+480)=2.0508``.
@@ -872,16 +1054,23 @@ def _alpha_thal_result_from_formula_line(raw: str, formula_key: str) -> Optional
 
 
 def _try_dosage_kv_html(title: str, body: str) -> Optional[str]:
-    """Match portal ``tryRenderDosageAnalysisSection`` (Est_CN/Ratio/WARNING; Alpha thal appends hba1/hba2)."""
+    """Match portal ``tryRenderDosageAnalysisSection`` (Est_CN/Ratio/WARNING; Alpha thal hba1/hba2; CAH depth + paralog)."""
     if not _dosage_title_matches(title):
         return None
     raw = body or ""
     is_alpha = _is_alpha_thalassemia_dosage_title(title)
+    is_cyp21_title = _is_cyp21_cah_dosage_title(title)
     m_est = re.search(r"^\s*Est_CN\s*=\s*(\S+)", raw, re.I | re.M)
     m_ratio = re.search(r"^\s*Ratio\s*=\s*(\S+)", raw, re.I | re.M)
     m_warn = re.search(r"^\s*WARNING:\s*(.+)", raw, re.I | re.M)
-    if not m_est and not m_ratio and not m_warn:
-        return None
+    m_warn_status = re.search(r"^\s*Status\s*:\s*WARNING\s*:\s*(.+)$", raw, re.I | re.M)
+    m_cyp_int_depth = re.search(
+        r"CYP21A2\s+Interval\s+Mean\s+Depth\s*:\s*(\S+)", raw, re.I
+    )
+    m_chr6_med = re.search(r"Chr6\s+Median\s+Target\s+Depth\s*:\s*(\S+)", raw, re.I)
+    m_depth_ratio = re.search(
+        r"Ratio\s*\(\s*CYP21A2\s*/\s*Median\s+Chr6\s*\)\s*:\s*(\S+)", raw, re.I
+    )
     hba1_keys = [
         "est_copies_hba1",
         "hba1",
@@ -912,17 +1101,105 @@ def _try_dosage_kv_html(title: str, body: str) -> Optional[str]:
         hba1_val = _alpha_thal_result_from_formula_line(raw, "formula_est_hba1")
     if is_alpha and hba2_val is None:
         hba2_val = _alpha_thal_result_from_formula_line(raw, "formula_est_hba2")
+    cyp21a2_keys = [
+        "est_copies_cyp21a2",
+        "cyp21a2",
+        "paralog_cyp21a2",
+        "est_copies_21oh_gene",
+        "gene_copies",
+    ]
+    cyp21a1p_keys = [
+        "est_copies_cyp21a1p",
+        "est_copies_cyp21a1p_arm",
+        "cyp21a1p",
+        "paralog_cyp21a1p",
+        "est_copies_21oh_pseudogene",
+        "pseudogene_copies",
+    ]
+    cyp21_deletion_keys = [
+        "paralog_deletion",
+        "cyp21_paralog_deletion",
+        "paralog_deletion_call",
+        "deletion_paralog",
+    ]
+    cyp21a2_val: Optional[str] = None
+    cyp21a1p_val: Optional[str] = None
+    paralog_deletion_val: Optional[str] = None
+    hotspot_val: Optional[str] = None if is_alpha else _cah_hotspot_call(raw)
+    is_cyp21 = bool(is_cyp21_title or hotspot_val is not None)
+    if is_cyp21:
+        cyp21a2_val = _alpha_thal_pick_scalar(raw, cyp21a2_keys) or _alpha_thal_pick_scalar_anywhere(
+            raw, cyp21a2_keys
+        )
+        cyp21a1p_val = _alpha_thal_pick_scalar(raw, cyp21a1p_keys) or _alpha_thal_pick_scalar_anywhere(
+            raw, cyp21a1p_keys
+        )
+        if cyp21a2_val is None:
+            cyp21a2_val = _alpha_thal_result_from_formula_line(raw, "formula_est_cyp21a2")
+        if cyp21a1p_val is None:
+            cyp21a1p_val = _alpha_thal_result_from_formula_line(raw, "formula_est_cyp21a1p")
+        if cyp21a1p_val is None:
+            cyp21a1p_val = _alpha_thal_result_from_formula_line(raw, "formula_est_cyp21a1p_arm")
+        paralog_deletion_val = _alpha_thal_pick_scalar(raw, cyp21_deletion_keys) or _alpha_thal_pick_scalar_anywhere(
+            raw, cyp21_deletion_keys
+        )
+    if not is_cyp21:
+        if not m_est and not m_ratio and not m_warn:
+            return None
+    else:
+        has_cah_body = bool(
+            m_est
+            or m_ratio
+            or m_warn
+            or m_warn_status
+            or m_cyp_int_depth
+            or m_chr6_med
+            or m_depth_ratio
+            or cyp21a2_val is not None
+            or cyp21a1p_val is not None
+            or paralog_deletion_val is not None
+            or hotspot_val is not None
+        )
+        if not has_cah_body:
+            return None
     rows: List[Tuple[str, str]] = []
-    if m_est:
-        rows.append(("Estimated CNV", m_est.group(1)))
-    if m_ratio:
-        rows.append(("Ratio", m_ratio.group(1)))
-    if m_warn:
-        rows.append(("Warning", re.sub(r"\s+", " ", m_warn.group(1).strip())))
-    if hba1_val is not None:
-        rows.append(("hba1", hba1_val))
-    if hba2_val is not None:
-        rows.append(("hba2", hba2_val))
+    if is_cyp21:
+        if m_cyp_int_depth:
+            rows.append(("CYP21A2 interval mean depth", m_cyp_int_depth.group(1)))
+        if m_chr6_med:
+            rows.append(("Chr6 median target depth", m_chr6_med.group(1)))
+        if m_depth_ratio:
+            rows.append(("Depth ratio (CYP21/Chr6)", m_depth_ratio.group(1)))
+        if m_est:
+            rows.append(("Estimated CNV", m_est.group(1)))
+        if m_ratio:
+            rows.append(("Ratio", m_ratio.group(1)))
+        warn_text: Optional[str] = None
+        if m_warn:
+            warn_text = re.sub(r"\s+", " ", m_warn.group(1).strip())
+        elif m_warn_status:
+            warn_text = re.sub(r"\s+", " ", m_warn_status.group(1).strip())
+        if warn_text:
+            rows.append(("Warning", warn_text))
+        if hotspot_val is not None:
+            rows.append(("Hotspot mutations (7)", hotspot_val))
+        if cyp21a2_val is not None:
+            rows.append(("cyp21a2", cyp21a2_val))
+        if cyp21a1p_val is not None:
+            rows.append(("cyp21a1p", cyp21a1p_val))
+        if paralog_deletion_val is not None:
+            rows.append(("Paralog deletion", paralog_deletion_val))
+    else:
+        if m_est:
+            rows.append(("Estimated CNV", m_est.group(1)))
+        if m_ratio:
+            rows.append(("Ratio", m_ratio.group(1)))
+        if m_warn:
+            rows.append(("Warning", re.sub(r"\s+", " ", m_warn.group(1).strip())))
+        if hba1_val is not None:
+            rows.append(("hba1", hba1_val))
+        if hba2_val is not None:
+            rows.append(("hba2", hba2_val))
     return _dl_kv_pdf_rows(rows)
 
 
@@ -986,6 +1263,9 @@ def _section_body_portal_html_for_pdf(sec: Dict[str, Any]) -> str:
     if h:
         return h
     h = _try_dosage_kv_html(title, body)
+    if h:
+        return h
+    h = _try_cah_hotspot_standalone_kv_html(title, body)
     if h:
         return h
     gh = _try_generic_pipeline_kv_html(body)

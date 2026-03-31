@@ -474,8 +474,78 @@
     .dark-genes-save-row{margin-top:10px;display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
     .dark-genes-visual-evidence{margin:12px 0 18px;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--table-bg)}
     .dark-genes-visual-evidence .dg-visual-iframe{width:100%;min-height:480px;border:1px solid var(--line);border-radius:10px;background:#fff}
-    #smnIgvModal .modal{max-width:min(1200px,98vw);width:96vw;max-height:92vh;overflow:hidden;display:flex;flex-direction:column}
-    #smnIgvModalFrameHost iframe{width:100%;min-height:min(72vh,820px);border:0;border-radius:8px;background:#fff}
+    /* SMN/SMA and other loci: large igv-reports popup; light “viewport” so tracks aren’t washed by dark UI */
+    #smnIgvModal .modal.dg-smn-igv-modal{
+      max-width:min(98vw,1920px);
+      width:min(98vw,1920px);
+      max-height:96vh;
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+      padding:14px 18px 16px;
+    }
+    #smnIgvModalFrameHost.dg-smn-igv-host{
+      color-scheme:light;
+      flex:1;
+      min-width:0;
+      min-height:min(78vh,920px);
+      max-height:min(90vh,1240px);
+      overflow:hidden;
+      background:#eceff1;
+      border:1px solid #b0bec5;
+      border-radius:12px;
+      padding:10px;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.75);
+    }
+    #smnIgvModalFrameHost.dg-smn-igv-host iframe.dg-smn-igv-frame{
+      width:100%;
+      height:min(82vh,1000px);
+      min-height:min(78vh,920px);
+      border:0;
+      border-radius:8px;
+      background:#fff;
+      display:block;
+      box-shadow:0 1px 4px rgba(0,0,0,.08);
+    }
+    #smnIgvModalFrameHost .dg-smn-igv-msg{color:#455a64;font-size:13px;padding:14px;margin:0;line-height:1.5}
+    /* Repeat plots: large viewport + light “paper” region that ignores portal dark theme variables */
+    #repeatPlotsModal .modal{
+      max-width:min(98vw,1920px);
+      width:min(98vw,1920px);
+      max-height:96vh;
+      overflow:auto;
+    }
+    #repeatPlotsModalHost.dg-repeat-plots-modal-host{
+      color-scheme:light;
+      --rp-text:#263238;
+      --rp-muted:#546e7a;
+      --rp-line:#b0bec5;
+      --rp-paper:#eceff1;
+      min-height:min(60vh,720px);
+      max-height:min(90vh,1680px);
+      overflow:auto;
+      background:var(--rp-paper);
+      color:var(--rp-text);
+      border:1px solid var(--rp-line);
+      border-radius:12px;
+      padding:18px 20px;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.75);
+    }
+    #repeatPlotsModalHost .dg-repeat-plots-head{color:#37474f;font-size:13px;font-weight:600;margin:0 0 12px}
+    #repeatPlotsModalHost .dg-repeat-plots-path{color:#546e7a;font-size:11px;margin:0 0 8px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    #repeatPlotsModalHost .dg-repeat-plots-item{margin-bottom:20px}
+    #repeatPlotsModalHost .dg-repeat-plots-item:last-child{margin-bottom:0}
+    #repeatPlotsModalHost .dg-repeat-modal-img{
+      width:100%;
+      max-width:100%;
+      height:auto;
+      display:block;
+      border-radius:8px;
+      border:1px solid #cfd8dc;
+      background:#fff;
+      box-sizing:border-box;
+    }
+    #repeatPlotsModalHost .dg-repeat-plots-msg{color:#455a64;font-size:13px;padding:12px;margin:0;line-height:1.45}
     .dark-genes-visual-evidence .dg-visual-sub{margin:10px 0 6px;font-size:12px;font-weight:600;color:var(--text)}
     .dark-genes-visual-evidence .dg-repeat-row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start}
     .dark-genes-visual-evidence .dg-repeat-svg,.dark-genes-visual-evidence .dg-snap-png{max-width:100%;max-height:520px;border-radius:8px;border:1px solid var(--line);background:var(--card)}
@@ -1467,15 +1537,27 @@
   </div>
 
   <div id="smnIgvModal" class="modal-overlay hidden" style="z-index:20002" aria-hidden="true" onclick="if(event.target===this)smnIgvModalClose()">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="smnIgvModalTitle" onclick="event.stopPropagation()" style="padding:16px 18px">
-      <h3 id="smnIgvModalTitle" style="font-size:15px;margin:0 0 6px">SMN / SMA — IGV (c.840)</h3>
-      <p class="muted" style="font-size:11px;margin:0 0 10px;line-height:1.45">Same igv-reports bundle as below. Default view opens the <strong>SMA_c840_SNP_Zoom</strong> region. On hg38, summary lists <strong>c840_SMN1_*</strong> and <strong>c840_SMN2_*</strong> separately at each c.840 alignment column; <strong>c840_merged_*</strong> is used only for the unified realignment BAM (single exon 7 column).</p>
-      <div id="smnIgvModalFrameHost" style="min-height:200px;background:var(--table-bg);border-radius:8px;border:1px solid var(--line);overflow:hidden"><span class="muted" style="padding:12px;display:inline-block">Loading…</span></div>
+    <div class="modal dg-smn-igv-modal" role="dialog" aria-modal="true" aria-labelledby="smnIgvModalTitle" onclick="event.stopPropagation()">
+      <h3 id="smnIgvModalTitle" style="font-size:15px;margin:0 0 6px">IGV report</h3>
+      <p id="smnIgvModalHelp" class="muted" style="font-size:11px;margin:0 0 10px;line-height:1.45">Interactive igv-reports HTML for this order. Use the locus table inside the report to select regions and tracks.</p>
+      <div id="smnIgvModalFrameHost" class="dg-smn-igv-host"><p class="dg-smn-igv-msg">Loading…</p></div>
       <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px">
         <button type="button" class="btn" onclick="smnIgvModalClose()">Close</button>
       </div>
     </div>
   </div>
+
+  <div id="repeatPlotsModal" class="modal-overlay hidden" style="z-index:20002" aria-hidden="true" onclick="if(event.target===this)repeatPlotsModalClose()">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="repeatPlotsModalTitle" onclick="event.stopPropagation()" style="padding:14px 18px 16px">
+      <h3 id="repeatPlotsModalTitle" style="font-size:15px;margin:0 0 6px">Repeat expansion plots</h3>
+      <p class="muted" style="font-size:11px;margin:0 0 10px;line-height:1.45">ExpansionHunter REViewer graphs from <code>visual_evidence.repeat_svgs</code> (e.g. FMR1). Same assets as the former inline block.</p>
+      <div id="repeatPlotsModalHost" class="dg-repeat-plots-modal-host"><span class="dg-repeat-plots-msg">Loading…</span></div>
+      <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px">
+        <button type="button" class="btn" onclick="repeatPlotsModalClose()">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div id="qcImageModal" class="modal-overlay hidden" style="z-index:20001" aria-hidden="true" onclick="qcImageModalBackdropClick(event)">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="qcImageModalTitle" onclick="event.stopPropagation()" style="max-width:min(920px,94vw);max-height:90vh;overflow:auto">
       <h3 id="qcImageModalTitle" style="font-size:15px;margin:0 0 12px">QC chart</h3>
@@ -1633,6 +1715,20 @@
       return `${API_BASE}${apiPath(`/order/${encodeURIComponent(orderId)}/file/${encodeURIComponent(p)}`)}`;
     }
 
+    /**
+     * SVG in <img src="blob:..."> often fails when the Response blob type is application/octet-stream
+     * (server default for unknown extensions). Re-wrap with image/svg+xml so the image paints.
+     */
+    async function blobForArtifactDisplay(blob, relPath) {
+      const lower = String(relPath || '').toLowerCase();
+      const ct = (blob && blob.type) || '';
+      if (lower.endsWith('.svg') || /\bsvg\b/i.test(ct)) {
+        const buf = await blob.arrayBuffer();
+        return new Blob([buf], { type: 'image/svg+xml' });
+      }
+      return blob;
+    }
+
     async function mountDarkGenesVisualEvidence(host, ve, orderId) {
       if (!host || !ve || !orderId) return;
       if (window._darkGenesVisualBlobUrls) {
@@ -1682,7 +1778,7 @@
             const url = orderArtifactFileUrl(orderId, rel);
             const r = await fetch(url, { headers: apiFetchHeaders() });
             if (!r.ok) continue;
-            const blob = await r.blob();
+            const blob = await blobForArtifactDisplay(await r.blob(), rel);
             const blobUrl = pushBlob(URL.createObjectURL(blob));
             parts.push(`<img class="dg-repeat-svg" src="${blobUrl}" alt="${escapeHtml(rel)}" />`);
           } catch (e) {
@@ -6257,33 +6353,33 @@
       if (/^overview$/i.test(raw.trim())) return null;
 
       if (/expansion\s*hunter|fragile|fmr1/i.test(raw)) {
-        if (hasRep) return { target: 'repeat', label: 'Repeat plots' };
-        if (hasIgv) return { target: 'igv', label: 'FMR1 IGV' };
+        if (hasRep) return { target: 'repeat', label: 'Repeat plots', repeatFilter: 'fragile' };
+        if (hasIgv) return { target: 'igv', label: 'FMR1 IGV', igvHint: 'generic' };
         return null;
       }
       if (/smaca|smn|paraphase/i.test(tl)) {
-        if (hasIgv) return { target: 'igv', label: 'SMN / SMA IGV', smnModal: true };
+        if (hasIgv) return { target: 'igv', label: 'SMN / SMA IGV', igvHint: 'smn' };
         return null;
       }
       if (/hba|alpha\s*thal/i.test(tl)) {
-        if (hasIgv) return { target: 'igv', label: 'HBA IGV' };
+        if (hasIgv) return { target: 'igv', label: 'HBA IGV', igvHint: 'generic' };
         return null;
       }
       if (/cyp21|ca\s*h/i.test(tl)) {
-        if (hasIgv) return { target: 'igv', label: 'CYP21A2 IGV' };
+        if (hasIgv) return { target: 'igv', label: 'CYP21A2 IGV', igvHint: 'generic' };
         return null;
       }
       if (/\bdmd\b/i.test(tl)) {
-        if (hasIgv) return { target: 'igv', label: 'DMD IGV' };
+        if (hasIgv) return { target: 'igv', label: 'DMD IGV', igvHint: 'generic' };
         return null;
       }
       if (/large\s*sv|manta|gcnv/i.test(tl)) {
         if (hasPng) return { target: 'png', label: 'SV images' };
-        if (hasIgv) return { target: 'igv', label: 'IGV' };
+        if (hasIgv) return { target: 'igv', label: 'IGV', igvHint: 'generic' };
         return null;
       }
-      if (hasIgv) return { target: 'igv', label: 'IGV report' };
-      if (hasRep) return { target: 'repeat', label: 'Repeat plots' };
+      if (hasIgv) return { target: 'igv', label: 'IGV report', igvHint: 'generic' };
+      if (hasRep) return { target: 'repeat', label: 'Repeat plots', repeatFilter: 'all' };
       if (hasPng) return { target: 'png', label: 'Images' };
       return null;
     }
@@ -6291,7 +6387,12 @@
     function scrollToDarkGenesVisual(target) {
       const root = document.getElementById('dark-genes-visual-evidence');
       if (!root) {
-        toast('No visual evidence files for this order (check analysis_dir/snapshots and reprocess).', false);
+        if (target === 'repeat' || target === 'png') {
+          toast(
+            'Repeat or snapshot plots are not shown inline here. See pipeline outputs under analysis_dir.',
+            false
+          );
+        }
         return;
       }
       let el = root;
@@ -6315,15 +6416,35 @@
       if (ev.key === 'Escape' && qs('smnIgvModal') && !qs('smnIgvModal').classList.contains('hidden')) {
         smnIgvModalClose();
       }
+      if (ev.key === 'Escape' && qs('repeatPlotsModal') && !qs('repeatPlotsModal').classList.contains('hidden')) {
+        repeatPlotsModalClose();
+      }
     });
 
-    /** Large popup with same igv-reports HTML as the Review page (SMN c.840 + unified track). */
+    function setSmnIgvModalCopy(hint) {
+      const titleEl = qs('smnIgvModalTitle');
+      const helpEl = qs('smnIgvModalHelp');
+      if (!titleEl || !helpEl) return;
+      if (hint === 'smn') {
+        titleEl.textContent = 'SMN / SMA — IGV report';
+        helpEl.innerHTML =
+          'Interactive igv-reports bundle. Default locus: <strong>SMA_c840_SNP_Zoom</strong> (exon 7 c.840 SNP). On hg38, summary lists <strong>c840_SMN1_*</strong> and <strong>c840_SMN2_*</strong> at each c.840 column; <strong>c840_merged_*</strong> applies to the unified realignment BAM (single exon 7 column). Use the locus table inside the report to jump tracks.';
+      } else {
+        titleEl.textContent = 'IGV report';
+        helpEl.textContent =
+          'Interactive igv-reports HTML for this order. Use the locus table inside the report to select regions and tracks.';
+      }
+    }
+
+    /** Large popup with same igv-reports HTML as the Review page (SMN c.840 + unified track when applicable). */
     async function openSmnIgvModal() {
       const oid = typeof getActiveReviewOrderId === 'function' ? getActiveReviewOrderId() : null;
       const modal = qs('smnIgvModal');
       const host = qs('smnIgvModalFrameHost');
       if (!modal || !host) return;
-      host.innerHTML = '<span class="muted" style="padding:12px;display:inline-block">Loading IGV…</span>';
+      const hint = window._lastDgIgvHint || 'generic';
+      setSmnIgvModalCopy(hint);
+      host.innerHTML = '<p class="dg-smn-igv-msg">Loading IGV…</p>';
       modal.classList.remove('hidden');
       modal.setAttribute('aria-hidden', 'false');
       let blobUrl = window._dgIgvBlobUrl;
@@ -6345,10 +6466,82 @@
       }
       if (!blobUrl) {
         host.innerHTML =
-          '<p class="muted" style="padding:12px">IGV report not loaded yet. Scroll to <strong>Visual evidence (IGV)</strong> below, or re-open after the page finishes loading.</p>';
+          '<p class="dg-smn-igv-msg">Could not load IGV report. Ensure the order has <code>visual_evidence.igv_report_html</code> and daemon file access, then try again.</p>';
         return;
       }
-      host.innerHTML = `<iframe title="SMN SMA IGV" class="dg-visual-iframe" src="${blobUrl}" style="width:100%;height:min(72vh,820px);min-height:480px;display:block"></iframe>`;
+      host.innerHTML = `<iframe title="IGV report" class="dg-visual-iframe dg-smn-igv-frame" src="${blobUrl}"></iframe>`;
+    }
+
+    function repeatPlotsModalClose() {
+      const m = qs('repeatPlotsModal');
+      const host = qs('repeatPlotsModalHost');
+      if (window._repeatPlotsModalBlobUrls) {
+        window._repeatPlotsModalBlobUrls.forEach(u => {
+          try {
+            URL.revokeObjectURL(u);
+          } catch (e) {
+            /* ignore */
+          }
+        });
+      }
+      window._repeatPlotsModalBlobUrls = [];
+      if (m) {
+        m.classList.add('hidden');
+        m.setAttribute('aria-hidden', 'true');
+      }
+      if (host) host.innerHTML = '';
+    }
+
+    function filterRepeatSvgRelPaths(rels, scope) {
+      const list = Array.isArray(rels) ? rels.slice() : [];
+      if (scope !== 'fragile') return list;
+      const hit = list.filter(r => /fmr1|fragile|fmr_1/i.test(String(r)));
+      return hit.length ? hit : list;
+    }
+
+    /** Loads ExpansionHunter REViewer SVGs from visual_evidence.repeat_svgs (same as inline mount). */
+    async function openRepeatPlotsModal(scope) {
+      const oid = typeof getActiveReviewOrderId === 'function' ? getActiveReviewOrderId() : null;
+      const modal = qs('repeatPlotsModal');
+      const host = qs('repeatPlotsModalHost');
+      if (!modal || !host) return;
+      repeatPlotsModalClose();
+      const dg = reviewData && reviewData.dark_genes;
+      const ve = (dg && dg.visual_evidence) || {};
+      let rels = filterRepeatSvgRelPaths(ve.repeat_svgs, scope || 'all');
+      if (!rels.length) {
+        host.innerHTML =
+          '<p class="dg-repeat-plots-msg">No <code>repeat_svgs</code> paths for this order. Reprocess or check pipeline <code>visual_evidence</code>.</p>';
+        modal.classList.remove('hidden');
+        modal.setAttribute('aria-hidden', 'false');
+        return;
+      }
+      window._repeatPlotsModalBlobUrls = [];
+      const pushBlob = u => {
+        window._repeatPlotsModalBlobUrls.push(u);
+        return u;
+      };
+      host.innerHTML = '<p class="dg-repeat-plots-msg">Loading repeat plots…</p>';
+      modal.classList.remove('hidden');
+      modal.setAttribute('aria-hidden', 'false');
+      const parts = [];
+      for (const rel of rels) {
+        try {
+          const url = orderArtifactFileUrl(oid, rel);
+          const r = await fetch(url, { headers: apiFetchHeaders() });
+          if (!r.ok) continue;
+          const blob = await blobForArtifactDisplay(await r.blob(), rel);
+          const blobUrl = pushBlob(URL.createObjectURL(blob));
+          parts.push(
+            `<div class="dg-repeat-plots-item"><div class="dg-repeat-plots-path">${escapeHtml(rel)}</div><img class="dg-repeat-svg dg-repeat-modal-img" src="${blobUrl}" alt="${escapeHtml(rel)}" /></div>`
+          );
+        } catch (e) {
+          console.warn('repeat plot fetch', rel, e);
+        }
+      }
+      host.innerHTML = parts.length
+        ? `<div class="dg-repeat-plots-head">Repeat expansion</div>${parts.join('')}`
+        : '<p class="dg-repeat-plots-msg">Could not load repeat SVGs. Check daemon file access to analysis paths.</p>';
     }
 
     /** Structured sections from backend (parse of *_detailed_report.txt) — lab-review layout */
@@ -6409,10 +6602,25 @@
         }
         const skipAttr = skipReviewUi ? ' data-dg-skip-review="1"' : '';
         const vis = darkGenesSectionVisualTarget(sec, ve);
-        const smnAttr = vis && vis.smnModal ? ' data-dg-smn-igv="1"' : '';
+        const visTitle =
+          vis && vis.target === 'igv'
+            ? 'Open unified IGV report (popup; use locus table inside the report)'
+            : vis && vis.target === 'repeat'
+              ? 'Open repeat expansion plots (REViewer) in popup'
+              : vis && vis.target === 'png'
+                ? 'Jump to snapshot images (when shown inline below)'
+                : 'Jump to pipeline visuals below';
+        const repeatScopeAttr =
+          vis && vis.target === 'repeat'
+            ? ` data-dg-repeat-scope="${escapeHtml(vis.repeatFilter || 'all')}"`
+            : '';
+        const igvHintAttr =
+          vis && vis.target === 'igv'
+            ? ` data-dg-igv-hint="${escapeHtml(vis.igvHint || 'generic')}"`
+            : '';
         const visBtn =
           vis
-            ? `<button type="button" class="dg-sec-visual" data-dg-visual-target="${escapeHtml(vis.target)}"${smnAttr} title="${vis.smnModal ? 'Open IGV popup (c.840) and jump to visuals below' : 'Jump to pipeline visuals below'}">${escapeHtml(vis.label)}</button>`
+            ? `<button type="button" class="dg-sec-visual" data-dg-visual-target="${escapeHtml(vis.target)}"${repeatScopeAttr}${igvHintAttr} title="${escapeHtml(visTitle)}">${escapeHtml(vis.label)}</button>`
             : '';
         const titleBlock = `<div class="dark-genes-sec-title-wrap ${riskWrapCls}"><div class="dark-genes-sec-title-row"><div class="dark-genes-sec-title">${title}</div>${visBtn}</div></div>`;
         chunks.push(
@@ -6446,8 +6654,15 @@
         if (vb) {
           ev.preventDefault();
           const t = vb.getAttribute('data-dg-visual-target');
-          if (vb.getAttribute('data-dg-smn-igv') === '1') {
+          if (t === 'igv') {
+            window._lastDgIgvHint = vb.getAttribute('data-dg-igv-hint') || 'generic';
             void openSmnIgvModal();
+            return;
+          }
+          if (t === 'repeat') {
+            const scope = vb.getAttribute('data-dg-repeat-scope') || 'all';
+            void openRepeatPlotsModal(scope);
+            return;
           }
           if (t) scrollToDarkGenesVisual(t);
           return;
@@ -6559,20 +6774,6 @@
         detSec = parseDarkGenesDetailedToSections(det);
       }
       const ve = dg.visual_evidence || {};
-      const hasVe = !!(
-        ve.igv_report_html ||
-        (ve.repeat_svgs && ve.repeat_svgs.length) ||
-        (ve.snapshots_png && ve.snapshots_png.length)
-      );
-      if (hasVe && reviewData.order_id) {
-        html += `<div id="dark-genes-visual-evidence" class="dark-genes-visual-evidence">
-          <h4 class="dark-genes-section-title" style="margin-top:0">Visual evidence (IGV)</h4>
-          <p class="muted" style="font-size:11px;margin:0 0 10px">igv-reports includes a <strong>SMN1+SMN2 Pileup (Unified)</strong> track plus the main BAM (default region: c.840). Use <strong>SMN / SMA IGV</strong> on the Spinal Muscular Atrophy section for a large popup. ExpansionHunter SVGs when present.</p>
-          <div class="dg-visual-evidence-igv"></div>
-          <div class="dg-visual-evidence-repeat"></div>
-          <div class="dg-visual-evidence-png"></div>
-        </div>`;
-      }
       if (det || detSec.length) {
         html += `<details class="dg-report-details" open>
           <summary class="dg-report-summary">Detailed report <span class="dg-report-summary-hint">Supplementary blocks · collapse to save space</span></summary>
@@ -6604,10 +6805,6 @@
       }
       box.innerHTML = html;
       wireDarkGenesSaveOnce();
-      if (hasVe && reviewData.order_id) {
-        const vhost = box.querySelector('#dark-genes-visual-evidence');
-        void mountDarkGenesVisualEvidence(vhost, ve, reviewData.order_id);
-      }
     }
 
     // ── Statistics ──

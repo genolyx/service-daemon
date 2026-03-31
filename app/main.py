@@ -2125,6 +2125,8 @@ def _guess_content_type(filename: str) -> str:
         "png": "image/png",
         "jpg": "image/jpeg",
         "jpeg": "image/jpeg",
+        "svg": "image/svg+xml",
+        "webp": "image/webp",
     }
     return ct_map.get(ext, "application/octet-stream")
 

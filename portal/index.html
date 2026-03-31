@@ -1139,6 +1139,21 @@
           </div>
         </div>
 
+        <div class="col-12" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
+          <div class="muted" style="font-weight:600;margin-bottom:6px">BAM Simulation <span class="muted" style="font-weight:400;font-size:12px">(optional)</span></div>
+          <p class="muted" style="margin:0 0 10px;font-size:12px">
+            BAM samplesheet CSV를 지정하면 FASTQ 대신 BAM부터 파이프라인이 시작됩니다 (<code>--input-bam</code> 모드).
+            CSV 포맷: <code>sample_id,bam,bai</code> — 경로는 컨테이너 내부 경로
+            (<code>/Work/SgNIPT/data/…</code>)이며, 파일은 데이터 루트(<code>SGNIPT_WORK_ROOT/data/</code>) 하위에 있어야 합니다.
+            선택하지 않으면 FASTQ 모드로 실행됩니다.
+          </p>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:nowrap">
+            <button type="button" class="btn" id="btnBrowseBamCsv" style="white-space:nowrap">Browse BAM CSV…</button>
+            <input id="bamCsvPath" placeholder="선택 또는 절대 경로 직접 입력" style="flex:1;min-width:0" oninput="updateBamCsvClearBtn()" />
+            <button type="button" class="btn" id="btnClearBamCsv" style="display:none;white-space:nowrap">Clear</button>
+          </div>
+        </div>
+
         <div id="carrierParams" class="col-12" style="margin-top:12px">
           <div class="muted" style="font-weight:600;margin-bottom:6px">Carrier Screening Parameters</div>
           <div class="row">
@@ -1579,6 +1594,23 @@
       <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
         <button type="button" class="btn" id="fastqBrowseCancel">Cancel</button>
         <button type="button" class="btn primary" id="fastqBrowseApply" disabled>Apply R1 / R2</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="bamCsvBrowseModal" class="modal-overlay hidden" style="z-index:1000">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="bamCsvBrowseTitle" onclick="event.stopPropagation()" style="max-width:700px">
+      <h3 id="bamCsvBrowseTitle">Select BAM Samplesheet CSV</h3>
+      <p class="muted" style="margin-top:-8px;margin-bottom:10px;font-size:12px">서버의 <code>.csv</code> 파일을 선택하거나 경로를 직접 입력하세요.</p>
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <input id="bamCsvBrowsePathInput" placeholder="/home/ken/sgNIPT/data  또는  /data/sgnipt_work/data/test/sim_bam" style="flex:1;font-size:12px;font-family:monospace" />
+        <button type="button" class="btn" id="bamCsvBrowseGoBtn" style="white-space:nowrap">Go ↵</button>
+      </div>
+      <div id="bamCsvBrowseBreadcrumb" class="muted" style="margin-bottom:8px;font-size:12px;line-height:1.5"></div>
+      <div id="bamCsvBrowseErr" style="color:var(--err);font-size:13px;margin-bottom:8px;white-space:pre-wrap"></div>
+      <div id="bamCsvBrowseList" class="fb-list"></div>
+      <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+        <button type="button" class="btn" id="bamCsvBrowseCancel">Cancel</button>
       </div>
     </div>
   </div>
@@ -2654,6 +2686,202 @@
       if (ba) ba.onclick = (e) => { e.stopPropagation(); applyFastqBrowsePair(); };
     }
 
+    // ── BAM CSV Browser ────────────────────────────────────────
+    let bamCsvBrowseServiceCode = 'sgnipt';
+
+    function updateBamCsvClearBtn() {
+      const btn = qs('btnClearBamCsv');
+      const inp = qs('bamCsvPath');
+      if (btn) btn.style.display = (inp && inp.value.trim()) ? '' : 'none';
+    }
+
+    function closeBamCsvBrowse() {
+      const m = qs('bamCsvBrowseModal');
+      if (m) m.classList.add('hidden');
+    }
+
+    // 현재 브라우저의 절대 루트 (API가 반환한 root 값 보관 — "Go" 기능에 사용)
+    let bamCsvBrowseRoot = '';
+
+    async function openBamCsvBrowse() {
+      const svc = document.querySelector('input[name="fService"]:checked');
+      bamCsvBrowseServiceCode = (svc && svc.value) ? svc.value : 'sgnipt';
+      const m = qs('bamCsvBrowseModal');
+      if (m) m.classList.remove('hidden');
+      const pi = qs('bamCsvBrowsePathInput');
+      if (pi) pi.value = '';
+      await renderBamCsvBrowse('');
+    }
+
+    async function renderBamCsvBrowse(rel, absOverride) {
+      const errEl = qs('bamCsvBrowseErr');
+      const listEl = qs('bamCsvBrowseList');
+      const bcEl = qs('bamCsvBrowseBreadcrumb');
+      if (!listEl || !bcEl || !errEl) return;
+      errEl.textContent = '';
+      bcEl.innerHTML = '';
+      listEl.innerHTML = '';
+      const loading = document.createElement('div');
+      loading.className = 'muted';
+      loading.style.padding = '12px';
+      loading.textContent = 'Loading…';
+      listEl.appendChild(loading);
+      try {
+        const sc = encodeURIComponent(bamCsvBrowseServiceCode);
+        let apiUrl;
+        if (absOverride) {
+          apiUrl = `/api/portal/bam-csv/browse?abs_path=${encodeURIComponent(absOverride)}&service_code=${sc}`;
+        } else {
+          const q = encodeURIComponent(rel || '');
+          apiUrl = `/api/portal/bam-csv/browse?path=${q}&service_code=${sc}`;
+        }
+        const fallbackUrl = apiUrl.replace('/api/portal/', '/api/');
+        let data = null;
+        for (const url of [apiUrl, fallbackUrl]) {
+          const r = await fetch(`${API_BASE || ''}${url}`, { headers: apiFetchHeaders() });
+          if (r.ok) { data = await r.json(); break; }
+          if (r.status !== 404) { const err = await r.json().catch(() => ({})); throw new Error(err.detail || `${r.status}`); }
+        }
+        if (!data) throw new Error('BAM CSV browse endpoint not available (HTTP 404)');
+        const isAbsMode = !!absOverride;
+
+        // 루트 경로 보관 (breadcrumb [root] 클릭용)
+        if (data.root) bamCsvBrowseRoot = data.root;
+        // path input에 현재 위치 표시
+        const pi = qs('bamCsvBrowsePathInput');
+        if (pi) pi.value = data.current_abs || (data.root && data.rel_path ? data.root + '/' + data.rel_path : data.root) || '';
+
+        listEl.innerHTML = '';
+        if (data.hint || !data.root_exists) {
+          errEl.textContent = data.hint || `BAM data root does not exist on the server: ${data.root || ''}`;
+        }
+
+        const norm = data.rel_path || '';
+        const rootLink = document.createElement('span');
+        rootLink.className = 'fb-crumb-link';
+        rootLink.textContent = '[root]';
+        rootLink.onclick = () => renderBamCsvBrowse('');
+        bcEl.appendChild(rootLink);
+        const parts = norm ? norm.split('/').filter(Boolean) : [];
+        let acc = '';
+        for (const p of parts) {
+          acc = acc ? `${acc}/${p}` : p;
+          bcEl.appendChild(document.createTextNode(' / '));
+          const sp = document.createElement('span');
+          sp.className = 'fb-crumb-link';
+          sp.textContent = p;
+          const relAcc = acc;
+          sp.onclick = () => renderBamCsvBrowse(relAcc);
+          bcEl.appendChild(sp);
+        }
+
+        if (norm || isAbsMode) {
+          const parentTarget = isAbsMode ? data.parent_abs : (data.parent_rel || '');
+          const parentLabel = isAbsMode ? (data.parent_abs || '..') : '..';
+          appendFbRow(listEl, `📁 .. (${parentLabel})`, '', () =>
+            isAbsMode ? renderBamCsvBrowse('', data.parent_abs) : renderBamCsvBrowse(data.parent_rel || '')
+          );
+        }
+        let hasItems = false;
+        for (const it of data.items || []) {
+          hasItems = true;
+          if (it.kind === 'dir') {
+            const clickTarget = isAbsMode ? it.abs_path : it.rel_path;
+            appendFbRow(listEl, '📁 ' + it.name, '', () =>
+              isAbsMode ? renderBamCsvBrowse('', clickTarget) : renderBamCsvBrowse(clickTarget)
+            );
+          } else if (it.kind === 'file' && it.abs_path) {
+            const row = document.createElement('div');
+            row.className = 'fb-row';
+            row.style.cursor = 'pointer';
+            row.textContent = '📄 ' + it.name;
+            row.title = it.abs_path;
+            row.onclick = async () => {
+              const inp = qs('bamCsvPath');
+              if (inp) inp.value = it.abs_path;
+              updateBamCsvClearBtn();
+              closeBamCsvBrowse();
+              await autoFillOrderIdFromBamCsv(it.abs_path);
+            };
+            listEl.appendChild(row);
+          }
+        }
+        if (!hasItems && !norm) {
+          const empty = document.createElement('div');
+          empty.className = 'muted';
+          empty.style.padding = '12px';
+          empty.textContent = 'No subfolders or CSV files here.';
+          listEl.appendChild(empty);
+        }
+      } catch (e) {
+        listEl.innerHTML = '';
+        errEl.textContent = e.message || String(e);
+      }
+    }
+
+    async function bamCsvBrowseGoToPath() {
+      const pi = qs('bamCsvBrowsePathInput');
+      const raw = (pi && pi.value.trim()) || '';
+      if (!raw) { await renderBamCsvBrowse(''); return; }
+      // 절대 경로이면 abs_path로, 상대 경로이면 rel로 처리
+      if (raw.startsWith('/')) {
+        await renderBamCsvBrowse('', raw);
+      } else {
+        await renderBamCsvBrowse(raw);
+      }
+    }
+
+    async function autoFillOrderIdFromBamCsv(absPath) {
+      try {
+        const r = await fetch(
+          `${API_BASE || ''}/api/portal/bam-csv/sample-ids?abs_path=${encodeURIComponent(absPath)}`,
+          { headers: apiFetchHeaders() }
+        );
+        if (!r.ok) { toast('BAM CSV 경로 설정됨'); return; }
+        const data = await r.json();
+        const ids = data.sample_ids || [];
+        if (!ids.length) { toast('BAM CSV 경로 설정됨 (sample_id 없음)'); return; }
+        const sampleId = ids[0];
+        const svc = document.querySelector('input[name="fService"]:checked');
+        const sc = svc ? svc.value : 'sgnipt';
+        if (sc === 'carrier_screening') {
+          const el = qs('cr_order_id');
+          if (el) { el.value = sampleId; el.readOnly = false; }
+        } else {
+          const el = qs('sgOrderId');
+          if (el) { el.value = sampleId; el.readOnly = false; }
+        }
+        if (ids.length > 1) {
+          toast(`BAM CSV 설정됨 — sample_id: ${ids.join(', ')} (첫 번째 사용)`);
+        } else {
+          toast(`BAM CSV 설정됨 — Order ID 자동 입력: ${sampleId}`);
+        }
+      } catch (_) {
+        toast('BAM CSV 경로 설정됨');
+      }
+    }
+
+    function wireBamCsvBrowseUi() {
+      const m = qs('bamCsvBrowseModal');
+      if (m) m.addEventListener('click', () => closeBamCsvBrowse());
+      const inner = m && m.querySelector('.modal');
+      if (inner) inner.addEventListener('click', ev => ev.stopPropagation());
+      const btn = qs('btnBrowseBamCsv');
+      if (btn) btn.onclick = () => openBamCsvBrowse();
+      const cancel = qs('bamCsvBrowseCancel');
+      if (cancel) cancel.onclick = (e) => { e.stopPropagation(); closeBamCsvBrowse(); };
+      const clear = qs('btnClearBamCsv');
+      if (clear) clear.onclick = () => {
+        const inp = qs('bamCsvPath');
+        if (inp) inp.value = '';
+        updateBamCsvClearBtn();
+      };
+      const goBtn = qs('bamCsvBrowseGoBtn');
+      if (goBtn) goBtn.onclick = (e) => { e.stopPropagation(); bamCsvBrowseGoToPath(); };
+      const pi = qs('bamCsvBrowsePathInput');
+      if (pi) pi.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.stopPropagation(); bamCsvBrowseGoToPath(); } });
+    }
+
     // ═══════════════════════════════════════════════════════════
     // View Navigation
     // ═══════════════════════════════════════════════════════════
@@ -2674,6 +2902,8 @@
       if (!editingOrderId) {
         const cr = document.querySelector('input[name="fService"][value="carrier_screening"]');
         if (cr) cr.checked = true;
+        setFormInput('bamCsvPath', '');
+        updateBamCsvClearBtn();
       }
       toggleServiceSubmitBlocks();
     }
@@ -2821,6 +3051,8 @@
       setFormInput('fMaxAf', p.max_af != null ? p.max_af : '');
       setFormInput('fHpoTerms', p.hpo_terms);
       setFormInput('fGeneFilter', p.gene_filter);
+      setFormInput('bamCsvPath', p.input_bam_csv || '');
+      updateBamCsvClearBtn();
       refreshCarrierConditionalUi();
     }
 
@@ -2861,6 +3093,9 @@
       if (qs('sg_trf')) qs('sg_trf').value = n.trf_consent || 'Yes';
       if (qs('sg_fetal_gender')) qs('sg_fetal_gender').value = n.show_fetal_gender || 'Yes';
       if (qs('sg_resample')) qs('sg_resample').value = n.resample || 'No';
+      const p = o.params || {};
+      setFormInput('bamCsvPath', p.input_bam_csv || '');
+      updateBamCsvClearBtn();
     }
 
     function openEditOrder(o) {
@@ -3350,13 +3585,14 @@
         orderId = qs('cr_order_id').value.trim();
         const carrier = collectCarrierOrderMeta();
         workDir = qs('cr_work_dir').value.trim();
+        const bamCsvCarrier = (qs('bamCsvPath') && qs('bamCsvPath').value.trim()) || undefined;
         body = {
           order_id: orderId,
           service_code: serviceCode,
           work_dir: workDir || undefined,
           fastq_r1_path: qs('fR1Path').value.trim() || undefined,
           fastq_r2_path: qs('fR2Path').value.trim() || undefined,
-          params: { carrier },
+          params: { carrier, ...(bamCsvCarrier ? { input_bam_csv: bamCsvCarrier } : {}) },
         };
         const bb = qs('fBackboneBed').value.trim();
         const db = qs('fDiseaseBed').value.trim();
@@ -3377,13 +3613,14 @@
         const vErr = validateSgniptClinical(nipt);
         if (vErr) return toast(vErr, false);
         workDir = qs('sgWorkDir').value.trim();
+        const bamCsvSgnipt = (qs('bamCsvPath') && qs('bamCsvPath').value.trim()) || undefined;
         body = {
           order_id: orderId,
           service_code: serviceCode,
           work_dir: workDir || undefined,
           fastq_r1_path: qs('fR1Path').value.trim() || undefined,
           fastq_r2_path: qs('fR2Path').value.trim() || undefined,
-          params: { nipt },
+          params: { nipt, ...(bamCsvSgnipt ? { input_bam_csv: bamCsvSgnipt } : {}) },
         };
       }
 
@@ -4226,6 +4463,38 @@
         ev.stopPropagation();
         if (root.classList.contains('collapsed')) return;
         loadLog();
+      });
+
+      // 터미널 select-to-copy: 드래그로 텍스트 선택 시 자동 클립보드 복사
+      let _logCopyHint = null;
+      function _showLogCopyHint(text) {
+        if (_logCopyHint) _logCopyHint.remove();
+        _logCopyHint = document.createElement('div');
+        Object.assign(_logCopyHint.style, {
+          position:'fixed', bottom:'68px', right:'24px', zIndex:'9999',
+          background:'#238636', color:'#fff', fontSize:'12px',
+          padding:'5px 12px', borderRadius:'6px', pointerEvents:'none',
+          opacity:'1', transition:'opacity .4s',
+        });
+        _logCopyHint.textContent = `✔ Copied ${text.length} chars`;
+        document.body.appendChild(_logCopyHint);
+        setTimeout(() => { _logCopyHint.style.opacity = '0'; }, 900);
+        setTimeout(() => { if (_logCopyHint) { _logCopyHint.remove(); _logCopyHint = null; } }, 1400);
+      }
+      pre.addEventListener('mouseup', () => {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed) return;
+        const text = sel.toString();
+        if (!text) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text)
+            .then(() => _showLogCopyHint(text))
+            .catch(() => {
+              try { document.execCommand('copy'); _showLogCopyHint(text); } catch (_) {}
+            });
+        } else {
+          try { document.execCommand('copy'); _showLogCopyHint(text); } catch (_) {}
+        }
       });
     }
 
@@ -7798,6 +8067,7 @@
       wireOrderIdNoSpace('sgOrderId');
       wireOrderIdNoSpace('sg_prev_order');
       wireFastqBrowseUi();
+      wireBamCsvBrowseUi();
       wireDashBucketTable();
       await detectOrderApiPrefix();
       let lastTab = localStorage.getItem('activeTab') || 'dash';

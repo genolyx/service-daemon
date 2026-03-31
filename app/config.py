@@ -96,6 +96,10 @@ class Settings(BaseSettings):
         default="/home/ken/sgNIPT/fastq",
         description="sgNIPT: 포털 FASTQ browse 루트 (비우면 sgnipt_job_root/fastq)"
     )
+    sgnipt_data_dir: str = Field(
+        default="/home/ken/sgNIPT/data",
+        description="sgNIPT: BAM samplesheet CSV browse 루트 (비우면 sgnipt_job_root/data)"
+    )
     sgnipt_layout_root: str = Field(
         default="/home/ken/sgNIPT",
         description=(

@@ -196,31 +196,39 @@ class SgNIPTPlugin(ServicePlugin):
                         f"sgnipt: cannot create job directory {d}: {e}"
                     ) from e
 
-        r1 = (job.fastq_r1_path or "").strip()
-        r2 = (job.fastq_r2_path or "").strip()
-        fqdir = os.path.abspath(job.fastq_dir or "")
-        if r1 and r2:
-            for label, src in (("R1", r1), ("R2", r2)):
-                src_abs = os.path.abspath(src)
-                if not os.path.isfile(src_abs):
-                    raise RuntimeError(
-                        f"sgnipt: {label} FASTQ not found at path visible to daemon: {src_abs}"
-                    )
-                if fqdir and self._file_is_under_dir(fqdir, src_abs):
-                    continue
-                dst = os.path.join(job.fastq_dir or "", os.path.basename(src_abs))
-                if os.path.lexists(dst):
-                    continue
-                try:
-                    os.symlink(src_abs, dst)
-                except OSError as e:
-                    raise RuntimeError(
-                        f"sgnipt: could not symlink FASTQ into {dst}: {e}"
-                    ) from e
-        elif r1 or r2:
-            raise RuntimeError(
-                "sgnipt: both fastq_r1_path and fastq_r2_path are required"
-            )
+        input_bam_csv = (job.params or {}).get("input_bam_csv", "").strip()
+        if input_bam_csv:
+            if not os.path.isfile(input_bam_csv):
+                raise RuntimeError(
+                    f"sgnipt: BAM samplesheet CSV not found at path visible to daemon: {input_bam_csv}"
+                )
+            logger.info("[sgnipt] BAM simulation mode — using CSV: %s", input_bam_csv)
+        else:
+            r1 = (job.fastq_r1_path or "").strip()
+            r2 = (job.fastq_r2_path or "").strip()
+            fqdir = os.path.abspath(job.fastq_dir or "")
+            if r1 and r2:
+                for label, src in (("R1", r1), ("R2", r2)):
+                    src_abs = os.path.abspath(src)
+                    if not os.path.isfile(src_abs):
+                        raise RuntimeError(
+                            f"sgnipt: {label} FASTQ not found at path visible to daemon: {src_abs}"
+                        )
+                    if fqdir and self._file_is_under_dir(fqdir, src_abs):
+                        continue
+                    dst = os.path.join(job.fastq_dir or "", os.path.basename(src_abs))
+                    if os.path.lexists(dst):
+                        continue
+                    try:
+                        os.symlink(src_abs, dst)
+                    except OSError as e:
+                        raise RuntimeError(
+                            f"sgnipt: could not symlink FASTQ into {dst}: {e}"
+                        ) from e
+            elif r1 or r2:
+                raise RuntimeError(
+                    "sgnipt: both fastq_r1_path and fastq_r2_path are required"
+                )
 
         script = self._resolve_run_script()
         if not script or not os.path.isfile(script):
@@ -238,13 +246,27 @@ class SgNIPTPlugin(ServicePlugin):
         script = os.path.abspath(raw) if raw else ""
         oid = (job.order_id or "").strip()
         wd = (job.work_dir or "").strip()
-        # run_sgnipt.sh itself calls docker run (like carrier's run_analysis.sh).
-        # cwd 는 get_pipeline_cwd → 저장소 루트(수동 실행과 동일).
-        parts: List[str] = ["bash", script, "--order_id", oid, "--work_dir", wd]
-        fr1, fr2 = self._run_sgnipt_fastq_rel_paths(job)
-        if fr1 and fr2:
-            parts.extend(["--fastq_r1", fr1, "--fastq_r2", fr2])
-        if (job.params or {}).get("_pipeline_fresh"):
+        params = job.params or {}
+
+        input_bam_csv = params.get("input_bam_csv", "").strip()
+        if input_bam_csv:
+            # BAM simulation mode: pass CSV path directly to run_sgnipt.sh --input-bam
+            parts: List[str] = [
+                "bash", script,
+                "--order-id", oid,
+                "--work-id", wd,
+                "--input-bam", input_bam_csv,
+            ]
+            logger.info("[sgnipt] BAM simulation command — input-bam=%s", input_bam_csv)
+        else:
+            # run_sgnipt.sh itself calls docker run (like carrier's run_analysis.sh).
+            # cwd 는 get_pipeline_cwd → 저장소 루트(수동 실행과 동일).
+            parts = ["bash", script, "--order_id", oid, "--work_dir", wd]
+            fr1, fr2 = self._run_sgnipt_fastq_rel_paths(job)
+            if fr1 and fr2:
+                parts.extend(["--fastq_r1", fr1, "--fastq_r2", fr2])
+
+        if params.get("_pipeline_fresh"):
             parts.append("--fresh")
         return parts
 

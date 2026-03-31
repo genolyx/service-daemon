@@ -93,6 +93,135 @@ def _is_fastq_filename(name: str) -> bool:
     return any(lower.endswith(s) for s in _FASTQ_NAME_SUFFIXES)
 
 
+def _is_csv_filename(name: str) -> bool:
+    return name.lower().endswith(".csv")
+
+
+def _bam_csv_root_for_service(service_code: Optional[str]) -> str:
+    """BAM samplesheet CSV 브라우져용 루트 디렉터리 (서비스별)."""
+    sc = (service_code or "").strip().lower().replace("-", "_")
+    if sc == "carrier_screening":
+        return os.path.realpath(os.path.join(settings.carrier_screening_work_root, "data"))
+    # sgnipt (default): SGNIPT_DATA_DIR 우선, 없으면 sgnipt_job_root/data
+    data_dir = (settings.sgnipt_data_dir or "").strip()
+    if data_dir:
+        return os.path.realpath(data_dir)
+    return os.path.realpath(os.path.join(settings.sgnipt_job_root, "data"))
+
+
+def _browse_bam_csv_directory_payload(
+    path: str,
+    service_code: Optional[str],
+    abs_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    BAM samplesheet CSV 브라우져 공통 구현.
+
+    abs_path 가 주어지면 임의 절대 경로를 직접 탐색 (루트 제한 없음).
+    path 는 서비스별 데이터 루트 기준 상대 경로.
+    """
+    default_root = _bam_csv_root_for_service(service_code)
+
+    # abs_path 직접 이동 모드
+    if abs_path:
+        target = os.path.realpath(abs_path.strip())
+        if not os.path.exists(target):
+            raise HTTPException(status_code=404, detail=f"Path not found: {abs_path}")
+        if not os.path.isdir(target):
+            raise HTTPException(status_code=400, detail=f"Not a directory: {abs_path}")
+        root = target  # 이 디렉토리를 임시 루트로 사용
+        norm_prefix = ""
+        parent_abs = os.path.dirname(target)
+    else:
+        root = default_root
+        norm_prefix = _normalize_rel_path(path)
+
+        if not norm_prefix and not os.path.isdir(root):
+            return {
+                "root": root,
+                "rel_path": "",
+                "parent_rel": "",
+                "root_exists": False,
+                "service_code": service_code,
+                "items": [],
+                "hint": (
+                    f"BAM data root does not exist: {root}. "
+                    "Create the directory or check SGNIPT_DATA_DIR / SGNIPT_WORK_ROOT in .env."
+                ),
+            }
+
+        target = os.path.realpath(os.path.join(root, norm_prefix) if norm_prefix else root)
+        root_sep = root if root.endswith(os.sep) else root + os.sep
+        if target != root and not target.startswith(root_sep):
+            raise HTTPException(status_code=400, detail="Path escapes BAM data root")
+
+        if not os.path.exists(target):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Path not found under BAM data root: {norm_prefix or '(root)'}",
+            )
+        if not os.path.isdir(target):
+            raise HTTPException(status_code=400, detail="Not a directory")
+
+        parent_abs = os.path.dirname(target) if norm_prefix else None
+
+    items: List[Dict[str, Any]] = []
+    try:
+        names = sorted(os.listdir(target))
+    except OSError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+
+    for name in names:
+        if name.startswith("."):
+            continue
+        full = os.path.join(target, name)
+        if abs_path:
+            rel_child = name
+            child_abs = full
+        else:
+            rel_child = f"{norm_prefix}/{name}" if norm_prefix else name
+            rel_child = rel_child.replace("\\", "/")
+            child_abs = full
+        if os.path.isdir(full):
+            entry: Dict[str, Any] = {"name": name, "kind": "dir"}
+            if abs_path:
+                entry["abs_path"] = child_abs
+            else:
+                entry["rel_path"] = rel_child
+            items.append(entry)
+        elif os.path.isfile(full) and _is_csv_filename(name):
+            entry = {"name": name, "abs_path": child_abs, "kind": "file"}
+            if not abs_path:
+                entry["rel_path"] = rel_child
+            items.append(entry)
+
+    if abs_path:
+        return {
+            "root": root,
+            "current_abs": target,
+            "parent_abs": parent_abs,
+            "rel_path": "",
+            "parent_rel": "",
+            "root_exists": True,
+            "service_code": service_code,
+            "items": items,
+        }
+
+    parent_rel = ""
+    if norm_prefix:
+        parent_rel = "/".join(norm_prefix.split("/")[:-1])
+
+    return {
+        "root": root,
+        "current_abs": target,
+        "rel_path": norm_prefix,
+        "parent_rel": parent_rel,
+        "root_exists": True,
+        "service_code": service_code,
+        "items": items,
+    }
+
+
 def _validate_optional_fastq_file(abs_path: str, service_code: str) -> str:
     full = os.path.realpath(abs_path.strip())
     if not os.path.isfile(full):
@@ -912,6 +1041,48 @@ async def browse_fastq_directory(
 ):
     """`/api/fastq/browse` 와 동일 (하위 호환)."""
     return _browse_fastq_directory_payload(path, service_code)
+
+
+@app.get("/api/portal/bam-csv/browse")
+async def browse_bam_csv_portal(
+    path: str = Query(default="", description="BAM 데이터 루트 아래 상대 경로"),
+    service_code: Optional[str] = Query(default=None, description="sgnipt | carrier_screening"),
+    abs_path: Optional[str] = Query(default=None, description="임의 절대 경로 직접 탐색"),
+):
+    """BAM samplesheet CSV 파일 브라우져 (포털용 — 인증 면제 경로)."""
+    return _browse_bam_csv_directory_payload(path, service_code, abs_path)
+
+
+@app.get("/api/bam-csv/browse")
+async def browse_bam_csv(
+    path: str = Query(default="", description="BAM 데이터 루트 아래 상대 경로"),
+    service_code: Optional[str] = Query(default=None, description="sgnipt | carrier_screening"),
+    abs_path: Optional[str] = Query(default=None, description="임의 절대 경로 직접 탐색"),
+):
+    """BAM samplesheet CSV 파일 브라우져."""
+    return _browse_bam_csv_directory_payload(path, service_code, abs_path)
+
+
+@app.get("/api/portal/bam-csv/sample-ids")
+async def read_bam_csv_sample_ids(
+    abs_path: str = Query(description="BAM samplesheet CSV 절대 경로"),
+):
+    """CSV 첫 번째 컬럼(sample_id)을 읽어 반환합니다 (포털용 — 인증 면제)."""
+    path_clean = abs_path.strip()
+    if not os.path.isfile(path_clean):
+        raise HTTPException(status_code=404, detail=f"File not found: {path_clean}")
+    sample_ids: List[str] = []
+    try:
+        import csv as _csv
+        with open(path_clean, newline="", encoding="utf-8-sig") as fh:
+            reader = _csv.DictReader(fh)
+            for row in reader:
+                sid = (row.get("sample_id") or "").strip()
+                if sid:
+                    sample_ids.append(sid)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cannot parse CSV: {e}") from e
+    return {"abs_path": path_clean, "sample_ids": sample_ids}
 
 
 @app.patch("/order/{order_id}/fastq", response_model=None)

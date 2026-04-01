@@ -19,9 +19,10 @@ import asyncio
 import json
 import logging
 import shlex
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..base import ServicePlugin
+from ..wes_panels import interpretation_gene_set_for_job, should_apply_interpretation_post_filter
 from ...config import settings
 from ...models import Job, OutputFile
 from .layout_norm import carrier_sequencing_folder
@@ -70,6 +71,28 @@ def _extra_result_json_paths_for_carrier_report(job: Job) -> List[str]:
         if os.path.normpath(os.path.abspath(alt)) != primary:
             out.append(alt)
     return out
+
+
+def _filter_variants_by_interpretation_genes(
+    annotated_variants: List[Dict[str, Any]],
+    acmg_results: List[Dict[str, Any]],
+    gene_set: Set[str],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Keep variants whose annotated gene symbol is in ``gene_set`` (HGNC uppercase)."""
+    if not gene_set:
+        return annotated_variants, acmg_results
+    out_ann: List[Dict[str, Any]] = []
+    out_acmg: List[Dict[str, Any]] = []
+    for i, a in enumerate(annotated_variants):
+        g = (a.get("gene") or "").strip().upper()
+        if g not in gene_set:
+            continue
+        out_ann.append(a)
+        if i < len(acmg_results):
+            out_acmg.append(acmg_results[i])
+        else:
+            out_acmg.append({})
+    return out_ann, out_acmg
 
 
 def carrier_result_json_path(job: Job) -> Optional[str]:
@@ -783,6 +806,10 @@ class CarrierScreeningPlugin(ServicePlugin):
 
     async def get_pipeline_command(self, job: Job) -> str:
         """src/run_analysis.sh 가 있으면 우선 사용, 없으면 Nextflow 직접 실행."""
+        from ..wes_panels import apply_wes_panel_to_job_params
+
+        apply_wes_panel_to_job_params(job)
+
         script_path = self._effective_run_analysis_script()
         if script_path:
             cmd = self._shell_command_run_analysis(job, script_path)
@@ -1063,6 +1090,10 @@ class CarrierScreeningPlugin(ServicePlugin):
                 logger.error(f"Main VCF not found: {main_vcf}")
                 return False
             align_carrier_job_dirs_from_main_vcf(job, main_vcf)
+
+            from ..wes_panels import apply_wes_panel_to_job_params
+
+            apply_wes_panel_to_job_params(job)
 
             dirs = self._get_dirs(job)
             analysis_dir = dirs["analysis"]
@@ -1390,6 +1421,20 @@ class CarrierScreeningPlugin(ServicePlugin):
                         }
                     acmg_results.append(acmg)
 
+            if should_apply_interpretation_post_filter(job):
+                ig = interpretation_gene_set_for_job(job)
+                if ig:
+                    n_before = len(annotated_variants)
+                    annotated_variants, acmg_results = _filter_variants_by_interpretation_genes(
+                        annotated_variants, acmg_results, ig
+                    )
+                    logger.info(
+                        "  Interpretation post-filter: %d gene(s) in set → %d variant(s) (was %d)",
+                        len(ig),
+                        len(annotated_variants),
+                        n_before,
+                    )
+
             if _job_stop_requested(job.order_id):
                 logger.info("[process_results] User stop requested before QC extract")
                 return False
@@ -1426,6 +1471,19 @@ class CarrierScreeningPlugin(ServicePlugin):
                 }
 
             # ── 11. 필터 요약 ──
+            wes_pid = (job.params or {}).get("wes_panel_id")
+            if not wes_pid and isinstance((job.params or {}).get("carrier"), dict):
+                wes_pid = job.params["carrier"].get("wes_panel_id")
+            wes_plabel = None
+            if wes_pid:
+                from ..wes_panels import get_panel_by_id
+
+                _wp = get_panel_by_id(str(wes_pid))
+                wes_plabel = (_wp.get("label") if _wp else None) or None
+
+            _ig_set = interpretation_gene_set_for_job(job)
+            _post_applied = should_apply_interpretation_post_filter(job) and bool(_ig_set)
+
             filter_summary = {
                 "backbone_bed": os.path.basename(backbone_bed_path) if backbone_bed_path else None,
                 "disease_bed": os.path.basename(disease_bed_path) if disease_bed_path else None,
@@ -1434,6 +1492,11 @@ class CarrierScreeningPlugin(ServicePlugin):
                 "max_af": max_af,
                 "clinvar_filter": list(clinvar_filter) if clinvar_filter else None,
                 "require_protein_altering": filter_config.require_protein_altering,
+                "wes_panel_id": str(wes_pid).strip() if wes_pid else None,
+                "wes_panel_label": wes_plabel,
+                "panel_filter_after_analysis": bool((job.params or {}).get("panel_filter_after_analysis")),
+                "interpretation_post_filter_genes": len(_ig_set) if _post_applied else 0,
+                "interpretation_post_filter_applied": _post_applied,
             }
 
             if _job_stop_requested(job.order_id):

@@ -155,6 +155,42 @@ class DarkGenesReviewRequest(BaseModel):
     )
 
 
+class WesPanelCustomSave(BaseModel):
+    """Portal: create or replace a user-defined WES/exome panel (saved to ``wes_panels_custom_json``)."""
+
+    id: str = Field(..., min_length=2, max_length=64, description="Stable slug (letters, digits, _ -)")
+    label: str = Field(..., min_length=1, max_length=220)
+    category: str = Field(default="other", max_length=64)
+    description: Optional[str] = Field(default=None, max_length=4000)
+    backbone_bed: Optional[str] = Field(default=None, description="Optional absolute or repo-relative backbone BED")
+    disease_bed: Optional[str] = Field(
+        default=None,
+        description="Existing disease/panel BED path (absolute or repo-relative); used if genes not set",
+    )
+    genes: Optional[List[str]] = Field(
+        default=None,
+        description="HGNC symbols etc.; intervals taken from GENE_BED / settings.gene_bed",
+    )
+    genes_text: Optional[str] = Field(
+        default=None,
+        description="Alternative to genes: comma/newline-separated list",
+    )
+    gene_source_bed: Optional[str] = Field(
+        default=None,
+        description=(
+            "BED to subset by gene symbols (e.g. Twist exome); column 4 = gene. "
+            "Defaults to WES_PANEL_GENE_SOURCE_BED then GENE_BED."
+        ),
+    )
+    skip_generated_bed: bool = Field(
+        default=False,
+        description=(
+            "If true, only ``interpretation_genes`` are stored (post-analysis filtering). "
+            "No generated panel BED; source interval BED is not required."
+        ),
+    )
+
+
 # ─── Internal Job Model ───────────────────────────────────
 
 class Job(BaseModel):

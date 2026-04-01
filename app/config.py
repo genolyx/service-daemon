@@ -254,6 +254,34 @@ class Settings(BaseSettings):
         default=None,
         description="Default disease/panel BED if job params omit disease_bed",
     )
+    wes_panels_json: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional path to WES/exome panel catalog JSON (default: data/wes_panels.json under repo root). "
+            "Relative paths resolve from repo root."
+        ),
+    )
+    wes_panels_custom_json: Optional[str] = Field(
+        default=None,
+        description=(
+            "Portal-saved custom panels (default: data/wes_panels_custom.json). "
+            "Merged with wes_panels_json; custom entries override same id."
+        ),
+    )
+    wes_panels_generated_dir: Optional[str] = Field(
+        default=None,
+        description=(
+            "Directory for BED files built from gene lists in the panel builder "
+            "(default: data/bed/wes_panels_generated under repo root)."
+        ),
+    )
+    wes_panel_gene_source_bed: Optional[str] = Field(
+        default=None,
+        description=(
+            "Default BED used when building a panel from a gene list (Twist/exome capture, etc.); "
+            "column 4 = gene symbol. Falls back to GENE_BED if unset."
+        ),
+    )
     nipt_pipeline_dir: str = Field(
         default="/opt/pipelines/nipt",
         description="NIPT pipeline directory"

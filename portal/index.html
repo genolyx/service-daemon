@@ -636,7 +636,7 @@
 
     /* Create Order — service picker (single-line labels) */
     .create-service-pick{
-      display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;max-width:560px
+      display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;max-width:min(840px,100%)
     }
     @media(max-width:520px){.create-service-pick{grid-template-columns:1fr}}
     .create-service-pick label{
@@ -751,6 +751,7 @@
       <button id="tabOrders" class="btn" onclick="showView('orders')">Orders</button>
       <button id="tabReview" class="btn" onclick="showView('review')">Review</button>
       <button id="tabLiterature" class="btn" onclick="showView('literature')">Literature</button>
+      <button id="tabPanels" class="btn" onclick="showView('panels')">Panels</button>
 
       <div class="header-theme-rail" role="group" aria-label="Theme: dark or light">
         <span class="theme-label theme-label-dark">Dark</span>
@@ -956,17 +957,40 @@
       <div id="ordersCreatePanel" class="hidden">
         <button type="button" class="detail-back" id="btnBackFromCreate" style="margin-bottom:12px">← Order list</button>
       <div class="row">
-        <div class="col-12" style="margin-bottom:8px">
-          <div class="muted" style="font-weight:600;margin-bottom:8px">Service</div>
-          <div class="create-service-pick" role="radiogroup" aria-label="Service">
-            <label>
-              <input type="radio" name="fService" value="carrier_screening" checked />
-              <span class="create-service-pick-text">Carrier Screening</span>
-            </label>
-            <label>
-              <input type="radio" name="fService" value="sgnipt" />
-              <span class="create-service-pick-text">Single-gene NIPT</span>
-            </label>
+        <div class="col-12" style="margin-bottom:12px">
+          <div id="createServiceBox" class="form-section-card" style="max-width:min(560px,100%)">
+            <h4 style="margin:0 0 12px;font-size:14px">Service</h4>
+            <select id="fServiceSelect" name="fService" aria-label="Service" style="width:100%;max-width:100%;box-sizing:border-box;font:inherit;font-size:14px;padding:10px 12px;border-radius:10px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">
+              <option value="carrier_screening">Carrier screening</option>
+              <option value="sgnipt">Single-gene NIPT</option>
+              <option value="extended_services">Extended services</option>
+            </select>
+            <div id="cr_extended_program_wrap" class="hidden" style="margin-top:14px">
+              <label for="cr_extended_program">Primary</label>
+              <select id="cr_extended_program" style="width:100%;max-width:100%;box-sizing:border-box;margin-top:6px">
+                <option value="">— Select extended program —</option>
+                <option value="Exome">Exome</option>
+                <option value="ExomeDuo">ExomeDuo</option>
+                <option value="ExomeTrio">ExomeTrio</option>
+                <option value="ExomeRapid">ExomeRapid</option>
+                <option value="ExomeMax">ExomeMax</option>
+                <option value="ExomeMaxDuo">ExomeMaxDuo</option>
+                <option value="ExomeMaxTrio">ExomeMaxTrio</option>
+                <option value="KaryoSeq_1Mb">KaryoSeq &gt;1MB</option>
+                <option value="KaryoSeqHD_50kb">KaryoSeqHD &gt;50kb</option>
+                <option value="WGS">WGS</option>
+                <option value="HereditaryCancer">Hereditary Cancer</option>
+                <option value="CouplesCarrier">CouplesCarrier</option>
+              </select>
+            </div>
+            <div id="cr_wes_panel_wrap" style="margin-top:14px">
+              <label for="cr_wes_panel" id="cr_wes_panel_scope_label">Primary</label>
+              <select id="cr_wes_panel" style="width:100%;max-width:100%;box-sizing:border-box;margin-top:6px">
+                <option value="">— Select panel —</option>
+              </select>
+              <p id="cr_wes_panel_hint" class="muted" style="font-size:11px;margin:6px 0 0;line-height:1.45"></p>
+            </div>
+            <input type="hidden" id="cr_interpretation_genes_extra" value="" />
           </div>
         </div>
 
@@ -987,36 +1011,9 @@
 
           <div class="order-create-grid">
             <div class="order-create-left" style="display:flex;flex-direction:column;gap:16px">
-              <div class="form-section-card">
-                <h4>Package code (test type)</h4>
-                <div class="row">
-                  <div class="col-12">
-                    <label class="required">Primary</label>
-                    <select id="cr_test_category">
-                      <option value="standard_carrier">Carrier screening (standard)</option>
-                      <option value="other">Other — extended test type…</option>
-                    </select>
-                  </div>
-                  <div class="col-12 hidden" id="cr_other_type_wrap">
-                    <label class="required">Other test type</label>
-                    <select id="cr_other_type">
-                      <option value="">Select…</option>
-                      <option value="Exome">Exome</option>
-                      <option value="ExomeDuo">ExomeDuo</option>
-                      <option value="ExomeTrio">ExomeTrio</option>
-                      <option value="ExomeRapid">ExomeRapid</option>
-                      <option value="ExomeMax">ExomeMax</option>
-                      <option value="ExomeMaxDuo">ExomeMaxDuo</option>
-                      <option value="ExomeMaxTrio">ExomeMaxTrio</option>
-                      <option value="KaryoSeq_1Mb">KaryoSeq &gt;1MB</option>
-                      <option value="KaryoSeqHD_50kb">KaryoSeqHD &gt;50kb</option>
-                      <option value="WGS">WGS</option>
-                      <option value="HereditaryCancer">Hereditary Cancer</option>
-                      <option value="CouplesCarrier">CouplesCarrier</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
+              <input type="hidden" id="cr_carrier_program" value="standard_carrier" />
+              <input type="hidden" id="cr_test_category" value="standard_carrier" />
+              <input type="hidden" id="cr_other_type" value="" />
 
               <div class="form-section-card">
                 <h4>Patient</h4>
@@ -1057,7 +1054,7 @@
                 </div>
               </div>
 
-              <div class="form-section-card">
+              <div class="form-section-card" id="cr_couples_report_wrap">
                 <h4>Couples carrier report</h4>
                 <p class="muted" style="margin:0 0 12px;font-size:12px;line-height:1.45">Choose how the carrier PDF/HTML is built: this order alone, or merged with a partner order’s carrier result (backend uses both <code>result.json</code>).</p>
                 <div class="row">
@@ -1245,7 +1242,10 @@
         </div>
 
         <div id="carrierParams" class="col-12" style="margin-top:12px">
-          <div class="muted" style="font-weight:600;margin-bottom:6px">Carrier Screening Parameters</div>
+          <div class="muted" style="font-weight:600;margin-bottom:6px">Advanced pipeline overrides</div>
+          <p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.45">
+            Optional paths and filters for the analysis pipeline. Leave blank to use server defaults and the panel selected above.
+          </p>
           <div class="row">
             <div class="col-4"><label>Backbone BED</label><input id="fBackboneBed" placeholder="Path to backbone.bed" /></div>
             <div class="col-4"><label>Disease BED</label><input id="fDiseaseBed" placeholder="Path to disease.bed" /></div>
@@ -1355,6 +1355,119 @@
             <button class="btn" onclick="qs('litDetailModal').classList.add('hidden')">✕</button>
           </div>
           <div id="litDetailBody" style="padding:16px;max-height:60vh;overflow-y:auto;font-size:14px;line-height:1.7"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- WES / exome panel packages (custom + built-in) -->
+    <section id="viewPanels" class="card hidden">
+      <h3 class="submit-page-title" style="margin-bottom:6px">WES / exome panel packages</h3>
+      <p class="submit-page-sub" style="margin-bottom:14px">
+        Create a <strong>named gene list</strong> and pick it on the carrier order as the <strong>WES / exome panel</strong>.
+        The report is filtered to these genes <strong>after</strong> sequencing analysis — you do not need interval files here unless your lab uses the options under <em>Advanced</em>.
+      </p>
+
+      <div class="form-section-card" style="margin-bottom:16px">
+        <h4 style="margin:0 0 10px">New or update package</h4>
+        <div class="row">
+          <div class="col-4">
+            <label class="required">Package id</label>
+            <input id="pfPanelId" placeholder="e.g. carrier_500_v1" autocomplete="off" />
+            <p class="muted" style="font-size:11px;margin:4px 0 0">Lowercase letters, digits, <code>_</code> <code>-</code> only.</p>
+          </div>
+          <div class="col-4">
+            <label class="required">Display name</label>
+            <input id="pfLabel" placeholder="e.g. Carrier screening 500 genes" autocomplete="off" />
+          </div>
+          <div class="col-4">
+            <label>Category</label>
+            <select id="pfCategory">
+              <option value="carrier_screening">Carrier screening</option>
+              <option value="proactive_health">Proactive health</option>
+              <option value="pgx">Pharmacogenomics (PGx)</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label>Description</label>
+            <input id="pfDescription" placeholder="Optional — internal note" />
+          </div>
+        </div>
+        <div style="margin:12px 0 8px;font-size:12px;font-weight:600">Gene list</div>
+        <input type="radio" name="pfMode" value="genes" checked class="hidden" id="pfModeGenes" aria-hidden="true" />
+        <input type="radio" name="pfMode" value="bed" class="hidden" id="pfModeBed" aria-hidden="true" />
+        <div id="pfGenesMainBlock">
+          <label for="pfGenes">Symbols (one per line or comma-separated)</label>
+          <textarea id="pfGenes" rows="6" placeholder="BRCA1&#10;CFTR&#10;SMN1" style="width:100%;max-width:640px;font-family:ui-monospace,monospace;font-size:12px;margin-top:6px;display:block"></textarea>
+          <div class="pf-gene-list-opt" style="display:flex;align-items:flex-start;gap:10px;margin-top:12px;max-width:640px;width:100%;box-sizing:border-box">
+            <input
+              type="checkbox"
+              id="pfInterpretationGenesOnly"
+              checked
+              style="margin:0.2em 0 0 0;width:16px;height:16px;min-width:16px;flex-shrink:0;cursor:pointer;accent-color:var(--accent, #3b82f6)"
+            />
+            <label for="pfInterpretationGenesOnly" style="margin:0;padding:0;cursor:pointer;line-height:1.45;font-size:13px;color:var(--text);flex:1;min-width:0">
+              <strong>Gene list only</strong> (recommended). Saves symbols for post-analysis reporting. No extra files.
+            </label>
+          </div>
+          <p style="margin:12px 0 0;max-width:640px">
+            <button type="button" class="btn" id="btnPfUseBedInstead" style="font-size:12px;padding:6px 12px">
+              Use an existing <code>.bed</code> file for this package instead…
+            </button>
+          </p>
+        </div>
+        <div id="pfBedMainBlock" class="hidden" style="margin-top:10px;max-width:640px">
+          <label class="required" for="pfDiseaseBed">Path to an existing panel <code>.bed</code> file</label>
+          <input id="pfDiseaseBed" placeholder="e.g. data/bed/MyPanel.bed" style="width:100%;max-width:640px;font-family:ui-monospace,monospace;font-size:12px;margin-top:6px;display:block;box-sizing:border-box" />
+          <p class="muted" style="font-size:11px;margin:8px 0 0;line-height:1.45">For packages already defined as intervals on disk.</p>
+          <p style="margin:12px 0 0">
+            <button type="button" class="btn" id="btnPfUseGeneListInstead" style="font-size:12px;padding:6px 12px">← Back to gene list</button>
+          </p>
+        </div>
+
+        <details id="pfAdvancedPanel" style="margin-top:14px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;max-width:660px">
+          <summary style="cursor:pointer;font-weight:600;font-size:13px;list-style-position:outside">Advanced — pipeline / IGV (optional)</summary>
+          <p class="muted" style="font-size:11px;margin:10px 0 12px;line-height:1.5">
+            Backbone override or generating a subset interval file for IGV. Not needed for the default “gene list only” report filter.
+          </p>
+          <div id="pfSourceBedWrap" class="hidden" style="margin-bottom:12px">
+            <label style="font-size:12px" for="pfGeneSourceBed">Source interval file (only if generating a subset BED)</label>
+            <input
+              id="pfGeneSourceBed"
+              placeholder="Twist / exome BED — column 4 = gene"
+              style="width:100%;max-width:640px;font-family:ui-monospace,monospace;font-size:12px;margin-top:6px;display:block;box-sizing:border-box"
+            />
+            <p class="muted" style="font-size:11px;margin:6px 0 0;line-height:1.45">Uncheck “Gene list only” above, then set this or server <code>WES_PANEL_GENE_SOURCE_BED</code> / <code>GENE_BED</code>.</p>
+          </div>
+          <div>
+            <label style="font-size:12px" for="pfBackboneBed">Backbone override (optional)</label>
+            <input id="pfBackboneBed" placeholder="Per-package backbone path" style="width:100%;max-width:640px;font-family:ui-monospace,monospace;font-size:12px;margin-top:6px;display:block;box-sizing:border-box" />
+          </div>
+        </details>
+        <p id="pfSaveMsg" class="muted" style="font-size:12px;margin:10px 0 0;min-height:1.2em"></p>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn primary" id="btnSaveWesPanel" onclick="saveWesPanelPackage()">Save package</button>
+        </div>
+      </div>
+
+      <div class="form-section-card">
+        <h4 style="margin:0 0 10px">Saved packages</h4>
+        <div class="table-wrap" style="max-height:min(50vh,420px)">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="background:var(--thead-bg);color:var(--thead-text)">
+                <th style="padding:8px 10px;text-align:left">Name</th>
+                <th style="padding:8px 10px;text-align:left">Id</th>
+                <th style="padding:8px 10px;text-align:left">Category</th>
+                <th style="padding:8px 10px;text-align:right">~Genes</th>
+                <th style="padding:8px 10px;text-align:left">Source</th>
+                <th style="padding:8px 10px;text-align:center">Action</th>
+              </tr>
+            </thead>
+            <tbody id="tblPanelsBody">
+              <tr><td colspan="6" class="muted" style="padding:12px">Loading…</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -1740,6 +1853,16 @@
     let editingOrderId = null;
     const qs = id => document.getElementById(id);
 
+    function getFServiceValue() {
+      const el = qs('fServiceSelect');
+      return el && el.value ? el.value : 'carrier_screening';
+    }
+
+    function setFServiceValue(v) {
+      const el = qs('fServiceSelect');
+      if (el) el.value = v || 'carrier_screening';
+    }
+
     function getDaemonApiKey() {
       const k = localStorage.getItem('daemonApiKey');
       if (!k) return null;
@@ -1851,6 +1974,46 @@
       return blob;
     }
 
+    /**
+     * Removes the embedded "Fragile X — FMR1 (CGG)" / ExpansionHunter block from unified igv-reports HTML.
+     * REViewer graphs stay available via Dark genes → Repeat expansion plots (repeat_svgs).
+     */
+    function stripFragileXFmr1BlockFromVisualReportHtml(html) {
+      try {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        if (doc.querySelector('parsererror')) return html;
+        let marker = null;
+        for (const h of doc.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
+          const text = (h.textContent || '').replace(/\s+/g, ' ').trim();
+          if (!/fragile\s*x/i.test(text)) continue;
+          if (!/fmr1|\(cgg\)/i.test(text)) continue;
+          marker = h;
+          break;
+        }
+        if (!marker) return html;
+        let el =
+          marker.closest('section') ||
+          marker.closest('[class*="fragile" i], [id*="fragile" i], [class*="fmr1" i], [id*="fmr1" i]');
+        if (!el) {
+          el = marker;
+          while (el.parentElement && el.parentElement !== doc.body) {
+            el = el.parentElement;
+          }
+        }
+        if (!el || !el.parentElement) return html;
+        const body = doc.body;
+        const fullLen = (body && body.textContent && body.textContent.length) || 0;
+        const chunkLen = (el.textContent || '').length;
+        if (fullLen > 200 && chunkLen > fullLen * 0.55) return html;
+        const chunk = (el.textContent || '').slice(0, 12000);
+        if (/\bVARIANTS\b/i.test(chunk) && /\b(chrom|chr[\dXY]+)\b/i.test(chunk)) return html;
+        el.remove();
+        return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+      } catch (e) {
+        return html;
+      }
+    }
+
     async function mountDarkGenesVisualEvidence(host, ve, orderId) {
       if (!host || !ve || !orderId) return;
       if (window._darkGenesVisualBlobUrls) {
@@ -1875,7 +2038,9 @@
           const url = orderArtifactFileUrl(orderId, ve.igv_report_html);
           const r = await fetch(url, { headers: apiFetchHeaders() });
           if (!r.ok) throw new Error('igv');
-          const blob = await r.blob();
+          const raw = await r.text();
+          const html = stripFragileXFmr1BlockFromVisualReportHtml(raw);
+          const blob = new Blob([html], { type: 'text/html' });
           const blobUrl = pushBlob(URL.createObjectURL(blob));
           window._dgIgvBlobUrl = blobUrl;
           window._dgIgvReportRelPath = String(ve.igv_report_html || '');
@@ -2363,7 +2528,17 @@
       if (!body || typeof body !== 'object') return null;
       const d = body.detail;
       if (typeof d === 'string') return d;
-      if (Array.isArray(d)) return d.map(x => (x && x.msg) || JSON.stringify(x)).join('; ');
+      if (Array.isArray(d)) {
+        return d
+          .map(x => {
+            if (!x || typeof x !== 'object') return '';
+            const msg = x.msg || JSON.stringify(x);
+            const loc = Array.isArray(x.loc) ? x.loc.filter(p => p !== 'body').join('.') : '';
+            return loc ? `${loc}: ${msg}` : msg;
+          })
+          .filter(Boolean)
+          .join(' ');
+      }
       return null;
     }
 
@@ -2476,6 +2651,23 @@
         return await r.json();
       } catch (e) {
         console.error('API PUT error:', e);
+        throw e;
+      }
+    }
+
+    async function apiDelete(path) {
+      try {
+        const r = await fetch(`${API_BASE}${apiPath(path)}`, {
+          method: 'DELETE',
+          headers: apiFetchHeaders(),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(errorDetailFromResponseBody(err) || `${r.status} ${r.statusText}`);
+        }
+        return await r.json();
+      } catch (e) {
+        console.error('API DELETE error:', e);
         throw e;
       }
     }
@@ -2658,8 +2850,8 @@
     }
 
     async function openFastqBrowsePair() {
-      const svc = document.querySelector('input[name="fService"]:checked');
-      fastqBrowseServiceCode = (svc && svc.value) ? svc.value : 'carrier_screening';
+      const raw = getFServiceValue();
+      fastqBrowseServiceCode = mapUiServiceToApiCode(raw);
       fastqBrowseSelected = [];
       fastqBrowseAnchorFileIdx = null;
       fastqBrowseCurrentFiles = [];
@@ -2794,8 +2986,9 @@
     let bamCsvBrowseRoot = '';
 
     async function openBamCsvBrowse() {
-      const svc = document.querySelector('input[name="fService"]:checked');
-      bamCsvBrowseServiceCode = (svc && svc.value) ? svc.value : 'sgnipt';
+      const el = qs('fServiceSelect');
+      const raw = el && el.value ? el.value : 'sgnipt';
+      bamCsvBrowseServiceCode = mapUiServiceToApiCode(raw);
       const m = qs('bamCsvBrowseModal');
       if (m) m.classList.remove('hidden');
       const pi = qs('bamCsvBrowsePathInput');
@@ -2932,9 +3125,8 @@
         const ids = data.sample_ids || [];
         if (!ids.length) { toast('BAM CSV 경로 설정됨 (sample_id 없음)'); return; }
         const sampleId = ids[0];
-        const svc = document.querySelector('input[name="fService"]:checked');
-        const sc = svc ? svc.value : 'sgnipt';
-        if (sc === 'carrier_screening') {
+        const sc = getFServiceValue();
+        if (sc === 'carrier_screening' || sc === 'extended_services') {
           const el = qs('cr_order_id');
           if (el) { el.value = sampleId; el.readOnly = false; }
         } else {
@@ -2990,17 +3182,20 @@
       if (lp) lp.classList.add('hidden');
       if (cp) cp.classList.remove('hidden');
       if (!editingOrderId) {
-        const cr = document.querySelector('input[name="fService"][value="carrier_screening"]');
-        if (cr) cr.checked = true;
+        setFServiceValue('carrier_screening');
         setFormInput('bamCsvPath', '');
         updateBamCsvClearBtn();
+        if (qs('cr_carrier_program')) qs('cr_carrier_program').value = 'standard_carrier';
+        if (qs('cr_extended_program')) qs('cr_extended_program').value = '';
+        syncCarrierProgramFromMaster();
+        refreshCarrierConditionalUi();
       }
       toggleServiceSubmitBlocks();
     }
 
     function showView(name, opts) {
       const opt = opts || {};
-      ['Dash', 'Orders', 'Review', 'Literature'].forEach(v => {
+      ['Dash', 'Orders', 'Review', 'Literature', 'Panels'].forEach(v => {
         const ve = qs('view' + v);
         const te = qs('tab' + v);
         if (ve) ve.classList.add('hidden');
@@ -3012,7 +3207,10 @@
       if (viewEl) viewEl.classList.remove('hidden');
       if (tabEl) tabEl.classList.add('active');
 
-      qs('mainWrap').classList.toggle('wide', name === 'orders' || name === 'review' || name === 'literature');
+      qs('mainWrap').classList.toggle(
+        'wide',
+        name === 'orders' || name === 'review' || name === 'literature' || name === 'panels'
+      );
 
       if (name === 'dash') {
         stopOrdersListPolling();
@@ -3035,31 +3233,72 @@
         loadLiterature();
         loadLiteratureStats();
       }
+      if (name === 'panels') {
+        stopOrdersListPolling();
+        void loadWesPanelCatalog();
+      }
 
       localStorage.setItem('activeTab', name);
     }
 
     function toggleServiceSubmitBlocks() {
-      const svc = document.querySelector('input[name="fService"]:checked');
-      const isCarrier = svc && svc.value === 'carrier_screening';
+      const ui = getFServiceValue();
+      const isCarrierFlow = isCarrierUiFlow(ui);
       const carrierBlock = qs('carrierSubmitBlock');
       const sgniptBlock = qs('sgniptSubmitBlock');
       const carrierParams = qs('carrierParams');
-      if (carrierBlock) carrierBlock.classList.toggle('hidden', !isCarrier);
-      if (sgniptBlock) sgniptBlock.classList.toggle('hidden', isCarrier);
-      if (carrierParams) carrierParams.style.display = isCarrier ? 'block' : 'none';
-      if (isCarrier) refreshCarrierConditionalUi();
+      const extWrap = qs('cr_extended_program_wrap');
+      const wesWrap = qs('cr_wes_panel_wrap');
+      const couplesWrap = qs('cr_couples_report_wrap');
+      if (carrierBlock) carrierBlock.classList.toggle('hidden', !isCarrierFlow);
+      if (sgniptBlock) sgniptBlock.classList.toggle('hidden', ui !== 'sgnipt');
+      if (carrierParams) carrierParams.style.display = isCarrierFlow ? 'block' : 'none';
+      if (extWrap) extWrap.classList.toggle('hidden', ui !== 'extended_services');
+      if (wesWrap) wesWrap.classList.toggle('hidden', ui === 'extended_services' || ui === 'sgnipt');
+      if (couplesWrap) couplesWrap.classList.toggle('hidden', ui === 'extended_services');
+      if (ui === 'extended_services') {
+        const sr = document.querySelector('input[name="cr_report_mode"][value="single"]');
+        if (sr) sr.checked = true;
+      }
+      if (isCarrierFlow) refreshCarrierConditionalUi();
     }
 
     const CARRIER_TYPES_NEED_P2 = ['ExomeDuo', 'CouplesCarrier', 'ExomeMaxDuo', 'ExomeTrio', 'ExomeMaxTrio'];
     const CARRIER_TYPES_NEED_P3 = ['ExomeTrio', 'ExomeMaxTrio'];
 
+    /** UI-only: Extended clinical orders still POST as service_code carrier_screening. */
+    function mapUiServiceToApiCode(ui) {
+      if (ui === 'extended_services') return 'carrier_screening';
+      return ui || 'carrier_screening';
+    }
+
+    function isCarrierUiFlow(ui) {
+      return ui === 'carrier_screening' || ui === 'extended_services';
+    }
+
+    function syncCarrierProgramFromMaster() {
+      const sc = getFServiceValue();
+      const tc = qs('cr_test_category');
+      const ot = qs('cr_other_type');
+      if (sc === 'sgnipt') return;
+      if (sc === 'carrier_screening') {
+        if (tc) tc.value = 'standard_carrier';
+        if (ot) ot.value = '';
+        return;
+      }
+      if (sc === 'extended_services') {
+        const el = qs('cr_extended_program');
+        const v = el ? (el.value || '').trim() : '';
+        if (tc) tc.value = 'other';
+        if (ot) ot.value = v;
+      }
+    }
+
     function refreshCarrierConditionalUi() {
-      const wrapOther = qs('cr_other_type_wrap');
+      syncCarrierProgramFromMaster();
       const catEl = qs('cr_test_category');
-      if (!wrapOther || !catEl) return;
+      if (!catEl) return;
       const cat = catEl.value;
-      wrapOther.classList.toggle('hidden', cat !== 'other');
       const ot = qs('cr_other_type') ? qs('cr_other_type').value : '';
       const active = cat === 'other' && ot;
       const need2 = active && CARRIER_TYPES_NEED_P2.includes(ot);
@@ -3068,9 +3307,13 @@
       const b3 = qs('carrierPatient3Block');
       if (b2) b2.classList.toggle('hidden', !need2);
       if (b3) b3.classList.toggle('hidden', !need3);
+      const fu = getFServiceValue();
       const couples = document.querySelector('input[name="cr_report_mode"]:checked');
       const pw = qs('cr_partner_order_wrap');
-      if (pw) pw.classList.toggle('hidden', !couples || couples.value !== 'couples');
+      if (pw) {
+        if (fu === 'extended_services') pw.classList.add('hidden');
+        else pw.classList.toggle('hidden', !couples || couples.value !== 'couples');
+      }
     }
 
     function setFormInput(id, v) {
@@ -3104,9 +3347,26 @@
       const std =
         c.test_category === 'standard_carrier' ||
         (!c.test_category && (!c.package_code || c.package_code === 'CarrierScreening'));
-      if (qs('cr_test_category')) qs('cr_test_category').value = std ? 'standard_carrier' : 'other';
       const ot = std ? '' : (c.other_test_type || c.package_code || '');
-      if (qs('cr_other_type')) qs('cr_other_type').value = ot;
+      setFServiceValue(std ? 'carrier_screening' : 'extended_services');
+      if (qs('cr_carrier_program')) qs('cr_carrier_program').value = 'standard_carrier';
+      if (qs('cr_extended_program')) {
+        const ex = qs('cr_extended_program');
+        if (std) {
+          ex.value = '';
+        } else {
+          const want = ot || '';
+          ex.value = want;
+          if (want && !Array.from(ex.options).some(o => o.value === want)) {
+            const opt = document.createElement('option');
+            opt.value = want;
+            opt.textContent = want + ' (legacy)';
+            ex.appendChild(opt);
+            ex.value = want;
+          }
+        }
+      }
+      syncCarrierProgramFromMaster();
 
       const rm = c.report_mode === 'couples' ? 'couples' : 'single';
       document.querySelectorAll('input[name="cr_report_mode"]').forEach(r => {
@@ -3141,6 +3401,11 @@
 
       setFormInput('fBackboneBed', p.backbone_bed);
       setFormInput('fDiseaseBed', p.disease_bed);
+      if (qs('cr_wes_panel')) {
+        qs('cr_wes_panel').value = p.wes_panel_id || c.wes_panel_id || '';
+        updateWesPanelHintOnly();
+      }
+      setFormInput('cr_interpretation_genes_extra', p.interpretation_genes_extra || c.interpretation_genes_extra || '');
       setFormInput('fMaxAf', p.max_af != null ? p.max_af : '');
       setFormInput('fHpoTerms', p.hpo_terms);
       setFormInput('fGeneFilter', p.gene_filter);
@@ -3199,15 +3464,14 @@
       hideOrderDetail();
 
       editingOrderId = o.order_id;
-      const radio = document.querySelector(`input[name="fService"][value="${o.service_code}"]`);
-      if (radio) radio.checked = true;
-      toggleServiceSubmitBlocks();
-
       if (o.service_code === 'carrier_screening') {
         populateCarrierFormFromOrder(o);
+        toggleServiceSubmitBlocks();
         const t1 = qs('carrierSubmitBlock') && qs('carrierSubmitBlock').querySelector('.submit-page-title');
         if (t1) t1.textContent = 'Edit Carrier Order';
       } else if (o.service_code === 'sgnipt') {
+        setFServiceValue('sgnipt');
+        toggleServiceSubmitBlocks();
         populateSgniptFormFromOrder(o);
         const t2 = qs('sgniptSubmitBlock') && qs('sgniptSubmitBlock').querySelector('.submit-page-title');
         if (t2) t2.textContent = 'Edit Single-gene NIPT Order';
@@ -3226,12 +3490,21 @@
     }
 
     function collectCarrierOrderMeta() {
+      syncCarrierProgramFromMaster();
       const val = id => { const el = qs(id); return el && el.value != null ? String(el.value).trim() : ''; };
       const cat = val('cr_test_category');
       const otherType = cat === 'other' ? val('cr_other_type') : '';
       const packageCode = cat === 'other' ? (otherType || '') : 'CarrierScreening';
+      const fu = getFServiceValue();
       const modeEl = document.querySelector('input[name="cr_report_mode"]:checked');
-      const reportMode = modeEl ? modeEl.value : 'single';
+      let reportMode = modeEl ? modeEl.value : 'single';
+      let partnerOrderId = reportMode === 'couples' ? (val('cr_partner_order_id') || undefined) : undefined;
+      let wesPanelId = val('cr_wes_panel') || undefined;
+      if (fu === 'extended_services') {
+        reportMode = 'single';
+        partnerOrderId = undefined;
+        wesPanelId = undefined;
+      }
       const meta = {
         test_category: cat,
         other_test_type: otherType || undefined,
@@ -3252,7 +3525,7 @@
         sample_specimen_type: val('cr_specimen') || undefined,
         sample_barcode: val('cr_barcode') || undefined,
         report_mode: reportMode,
-        partner_order_id: reportMode === 'couples' ? (val('cr_partner_order_id') || undefined) : undefined,
+        partner_order_id: partnerOrderId,
         patient2_name: val('cr_p2_name') || undefined,
         patient2_birth: val('cr_p2_birth') || undefined,
         patient2_gender: val('cr_p2_gender') || undefined,
@@ -3261,6 +3534,7 @@
         patient3_birth: val('cr_p3_birth') || undefined,
         patient3_gender: val('cr_p3_gender') || undefined,
         patient3_affected: val('cr_p3_affected') || undefined,
+        wes_panel_id: wesPanelId,
       };
       return meta;
     }
@@ -3282,10 +3556,16 @@
     }
 
     function validateCarrierSubmit() {
+      syncCarrierProgramFromMaster();
       const val = id => { const el = qs(id); return el && el.value != null ? String(el.value).trim() : ''; };
       if (!val('cr_order_id')) return 'Order ID is required';
       const cat = val('cr_test_category');
-      if (cat === 'other' && !val('cr_other_type')) return 'Select an Other test type';
+      if (cat === 'other' && !val('cr_other_type')) {
+        const u = getFServiceValue();
+        return u === 'extended_services'
+          ? 'Select an extended program (Primary)'
+          : 'Select a carrier program';
+      }
       const ot = cat === 'other' ? val('cr_other_type') : '';
       if (!val('cr_patient_name')) return 'Patient Name is required';
       if (!val('cr_patient_birth')) return 'Patient Birth is required';
@@ -3310,18 +3590,251 @@
         if (!val('cr_p3_gender')) return 'Patient3 Gender is required';
         if (!val('cr_p3_affected')) return 'Affected3 is required';
       }
-      const modeEl = document.querySelector('input[name="cr_report_mode"]:checked');
-      if (modeEl && modeEl.value === 'couples') {
-        if (!val('cr_partner_order_id')) return 'Partner Order ID is required for couples report';
+      const fu2 = getFServiceValue();
+      if (fu2 !== 'extended_services') {
+        const modeEl = document.querySelector('input[name="cr_report_mode"]:checked');
+        if (modeEl && modeEl.value === 'couples') {
+          if (!val('cr_partner_order_id')) return 'Partner Order ID is required for couples report';
+        }
       }
       return null;
     }
 
+    /** @type {Record<string, object>} */
+    let _wesPanelsById = {};
+    const WES_PANEL_CATEGORY_ORDER = ['carrier_screening', 'proactive_health', 'pgx', 'other'];
+    const WES_PANEL_CATEGORY_LABELS = {
+      carrier_screening: 'Carrier screening',
+      proactive_health: 'Proactive health',
+      pgx: 'Pharmacogenomics (PGx)',
+      other: 'Other',
+    };
+
+    function updateWesPanelHintOnly() {
+      const sel = qs('cr_wes_panel');
+      const hint = qs('cr_wes_panel_hint');
+      if (!hint) return;
+      const id = sel && sel.value;
+      if (!id) {
+        hint.textContent = '';
+        return;
+      }
+      const p = _wesPanelsById[id];
+      if (!p) {
+        hint.textContent = '';
+        return;
+      }
+      const parts = [];
+      if (p.description) parts.push(p.description);
+      if (p.gene_count != null) parts.push(`~${p.gene_count} genes (from BED).`);
+      hint.textContent = parts.join(' ');
+    }
+
+    function onWesPanelSelectChange() {
+      const sel = qs('cr_wes_panel');
+      const id = sel && sel.value;
+      if (!id) {
+        updateWesPanelHintOnly();
+        return;
+      }
+      const p = _wesPanelsById[id];
+      if (!p) return;
+      if (p.disease_bed_resolved) setFormInput('fDiseaseBed', p.disease_bed_resolved);
+      if (p.backbone_bed_resolved) setFormInput('fBackboneBed', p.backbone_bed_resolved);
+      updateWesPanelHintOnly();
+    }
+
+    function renderWesPanelsManagerTable(panels) {
+      const tb = qs('tblPanelsBody');
+      if (!tb) return;
+      if (!panels || !panels.length) {
+        tb.innerHTML = '<tr><td colspan="6" class="muted" style="padding:12px">No panels loaded.</td></tr>';
+        return;
+      }
+      const rows = panels
+        .slice()
+        .sort((a, b) => {
+          const sa = a.source === 'custom' ? 0 : 1;
+          const sb = b.source === 'custom' ? 0 : 1;
+          if (sa !== sb) return sa - sb;
+          return (a.label || a.id || '').localeCompare(b.label || b.id || '');
+        })
+        .map(p => {
+          const gc = p.gene_count != null ? `~${p.gene_count}` : '—';
+          const src = p.source === 'custom' ? 'Custom' : 'Built-in';
+          const del =
+            p.source === 'custom'
+              ? `<button type="button" class="btn danger-btn" style="padding:2px 8px;font-size:11px" onclick="deleteWesPanelPackage(${JSON.stringify(
+                  p.id
+                )})">Delete</button>`
+              : '<span class="muted">—</span>';
+          return `<tr>
+            <td style="padding:8px 10px">${escHtml(String(p.label || ''))}</td>
+            <td style="padding:8px 10px;font-family:monospace;font-size:11px">${escHtml(String(p.id || ''))}</td>
+            <td style="padding:8px 10px">${escHtml(String(p.category || ''))}</td>
+            <td style="padding:8px 10px;text-align:right">${escHtml(String(gc))}</td>
+            <td style="padding:8px 10px">${escHtml(String(src))}</td>
+            <td style="padding:8px 10px;text-align:center">${del}</td>
+          </tr>`;
+        })
+        .join('');
+      tb.innerHTML = rows;
+    }
+
+    async function loadWesPanelCatalog() {
+      let data;
+      try {
+        data = await apiGet('/api/portal/wes-panels');
+      } catch (e) {
+        console.warn('wes-panels catalog', e);
+        renderWesPanelsManagerTable(null);
+        return;
+      }
+      const panels = (data && data.panels) || [];
+      _wesPanelsById = {};
+      for (const p of panels) {
+        if (p && p.id) _wesPanelsById[p.id] = p;
+      }
+      renderWesPanelsManagerTable(panels);
+
+      const sel = qs('cr_wes_panel');
+      if (!sel) return;
+      sel.replaceChildren();
+      const ph = document.createElement('option');
+      ph.value = '';
+      ph.textContent = '— Select panel —';
+      sel.appendChild(ph);
+      const byCat = new Map();
+      for (const p of panels) {
+        if (!p || !p.id) continue;
+        const cat = p.category || 'other';
+        if (!byCat.has(cat)) byCat.set(cat, []);
+        byCat.get(cat).push(p);
+      }
+      const seen = new Set();
+      for (const cat of WES_PANEL_CATEGORY_ORDER) {
+        if (!byCat.has(cat)) continue;
+        const og = document.createElement('optgroup');
+        og.label = WES_PANEL_CATEGORY_LABELS[cat] || cat;
+        for (const p of byCat.get(cat)) {
+          const o = document.createElement('option');
+          o.value = p.id;
+          const gc = p.gene_count != null ? ` (~${p.gene_count} genes)` : '';
+          o.textContent = `${p.label || p.id}${gc}`;
+          og.appendChild(o);
+        }
+        sel.appendChild(og);
+        seen.add(cat);
+      }
+      for (const [cat, list] of byCat) {
+        if (seen.has(cat)) continue;
+        const og = document.createElement('optgroup');
+        og.label = WES_PANEL_CATEGORY_LABELS[cat] || cat;
+        for (const p of list) {
+          const o = document.createElement('option');
+          o.value = p.id;
+          const gc = p.gene_count != null ? ` (~${p.gene_count} genes)` : '';
+          o.textContent = `${p.label || p.id}${gc}`;
+          og.appendChild(o);
+        }
+        sel.appendChild(og);
+      }
+      sel.onchange = onWesPanelSelectChange;
+    }
+
+    function refreshPfInterpretationBedVisibility() {
+      const genesOnly = qs('pfInterpretationGenesOnly') && qs('pfInterpretationGenesOnly').checked;
+      const wrap = qs('pfSourceBedWrap');
+      if (wrap) wrap.classList.toggle('hidden', !!genesOnly);
+    }
+
+    function setPfMode(mode) {
+      const rg = qs('pfModeGenes');
+      const rb = qs('pfModeBed');
+      if (mode === 'bed' && rb) rb.checked = true;
+      else if (rg) rg.checked = true;
+      refreshPfModeBlocks();
+    }
+
+    function refreshPfModeBlocks() {
+      const m = document.querySelector('input[name="pfMode"]:checked');
+      const genes = m && m.value === 'genes';
+      const gMain = qs('pfGenesMainBlock');
+      const bMain = qs('pfBedMainBlock');
+      if (gMain) gMain.classList.toggle('hidden', !genes);
+      if (bMain) bMain.classList.toggle('hidden', genes);
+      if (genes) refreshPfInterpretationBedVisibility();
+    }
+
+    async function saveWesPanelPackage() {
+      const msg = qs('pfSaveMsg');
+      if (msg) msg.textContent = '';
+      const id = (qs('pfPanelId') && qs('pfPanelId').value.trim()) || '';
+      const label = (qs('pfLabel') && qs('pfLabel').value.trim()) || '';
+      if (!label) {
+        const err = 'Enter a display name (above the gene list).';
+        if (msg) msg.textContent = err;
+        toast(err, false);
+        if (qs('pfLabel')) qs('pfLabel').focus();
+        return;
+      }
+      if (id.length < 2) {
+        const err =
+          'Package id must be at least 2 characters (e.g. carrier_500_v1). Letters, digits, _ or - only.';
+        if (msg) msg.textContent = err;
+        toast(err, false);
+        if (qs('pfPanelId')) qs('pfPanelId').focus();
+        return;
+      }
+      const category = (qs('pfCategory') && qs('pfCategory').value) || 'other';
+      const description = (qs('pfDescription') && qs('pfDescription').value.trim()) || undefined;
+      const backbone_bed = (qs('pfBackboneBed') && qs('pfBackboneBed').value.trim()) || undefined;
+      const mode = (document.querySelector('input[name="pfMode"]:checked') || {}).value;
+      const body = { id, label, category, description, backbone_bed };
+      if (mode === 'genes') {
+        body.genes_text = qs('pfGenes') ? qs('pfGenes').value : '';
+        body.skip_generated_bed = !!(qs('pfInterpretationGenesOnly') && qs('pfInterpretationGenesOnly').checked);
+        const gsrc = (qs('pfGeneSourceBed') && qs('pfGeneSourceBed').value.trim()) || '';
+        if (gsrc) body.gene_source_bed = gsrc;
+      } else {
+        body.disease_bed = (qs('pfDiseaseBed') && qs('pfDiseaseBed').value.trim()) || '';
+      }
+      try {
+        const res = await apiPost('/api/portal/wes-panels/custom', body);
+        if (msg) {
+          let t = res.interpretation_genes_only
+            ? 'Saved (gene list for interpretation only; no BED file generated).'
+            : 'Saved.';
+          if (!res.interpretation_genes_only && res.genes_missing_from_bed && res.genes_missing_from_bed.length) {
+            t +=
+              ' Symbols not found in source BED: ' +
+              res.genes_missing_from_bed.slice(0, 12).join(', ') +
+              (res.genes_missing_from_bed.length > 12 ? '…' : '');
+          }
+          msg.textContent = t;
+        }
+        toast('Panel package saved', true);
+        await loadWesPanelCatalog();
+      } catch (e) {
+        toast(e.message || 'Save failed', false);
+      }
+    }
+
+    async function deleteWesPanelPackage(panelId) {
+      if (!panelId) return;
+      if (!confirm(`Delete custom panel "${panelId}"?`)) return;
+      try {
+        await apiDelete(`/api/portal/wes-panels/custom/${encodeURIComponent(panelId)}`);
+        toast('Panel deleted', true);
+        await loadWesPanelCatalog();
+      } catch (e) {
+        toast(e.message || 'Delete failed', false);
+      }
+    }
+
     function wireCarrierFormEvents() {
-      const cat = qs('cr_test_category');
-      const ot = qs('cr_other_type');
-      if (cat) cat.addEventListener('change', refreshCarrierConditionalUi);
-      if (ot) ot.addEventListener('change', refreshCarrierConditionalUi);
+      const ext = qs('cr_extended_program');
+      if (ext) ext.addEventListener('change', refreshCarrierConditionalUi);
       document.querySelectorAll('input[name="cr_report_mode"]').forEach(r => {
         r.addEventListener('change', refreshCarrierConditionalUi);
       });
@@ -3762,9 +4275,8 @@
     // ═══════════════════════════════════════════════════════════
     // Save order (draft) — Submit runs from Orders ⋯ menu
     // ═══════════════════════════════════════════════════════════
-    document.querySelectorAll('input[name="fService"]').forEach(r => {
-      r.addEventListener('change', toggleServiceSubmitBlocks);
-    });
+    const fServiceSelectEl = qs('fServiceSelect');
+    if (fServiceSelectEl) fServiceSelectEl.addEventListener('change', toggleServiceSubmitBlocks);
     toggleServiceSubmitBlocks();
 
     function collectSgniptNiptParams() {
@@ -3830,7 +4342,8 @@
       const btn = qs('btnSaveOrder');
       if (!btn || btn.classList.contains('loading')) return;
 
-      const serviceCode = document.querySelector('input[name="fService"]:checked').value;
+      const rawService = getFServiceValue();
+      const serviceCode = mapUiServiceToApiCode(rawService);
       let orderId, workDir, body;
 
       if (serviceCode === 'carrier_screening') {
@@ -3840,6 +4353,7 @@
         if (cErr) return toast(cErr, false);
         orderId = qs('cr_order_id').value.trim();
         const carrier = collectCarrierOrderMeta();
+        const wesPanelId = carrier.wes_panel_id || undefined;
         workDir = qs('cr_work_dir').value.trim();
         const bamCsvCarrier = (qs('bamCsvPath') && qs('bamCsvPath').value.trim()) || undefined;
         body = {
@@ -3848,7 +4362,11 @@
           work_dir: workDir || undefined,
           fastq_r1_path: qs('fR1Path').value.trim() || undefined,
           fastq_r2_path: qs('fR2Path').value.trim() || undefined,
-          params: { carrier, ...(bamCsvCarrier ? { input_bam_csv: bamCsvCarrier } : {}) },
+          params: {
+            carrier,
+            ...(wesPanelId ? { wes_panel_id: wesPanelId } : {}),
+            ...(bamCsvCarrier ? { input_bam_csv: bamCsvCarrier } : {}),
+          },
         };
         const bb = qs('fBackboneBed').value.trim();
         const db = qs('fDiseaseBed').value.trim();
@@ -3860,6 +4378,8 @@
         if (maf) body.params.max_af = parseFloat(maf);
         if (hpo) body.params.hpo_terms = hpo;
         if (gf) body.params.gene_filter = gf;
+        body.params.interpretation_genes_extra =
+          (qs('cr_interpretation_genes_extra') && qs('cr_interpretation_genes_extra').value.trim()) || '';
       } else {
         sanitizeOrderIdInput(qs('sgOrderId'));
         sanitizeOrderIdInput(qs('sg_prev_order'));
@@ -6979,14 +7499,27 @@
           try {
             const r = await fetch(orderArtifactFileUrl(oid, rel), { headers: apiFetchHeaders() });
             if (r.ok) {
-              const blob = await r.blob();
-              blobUrl = URL.createObjectURL(blob);
+              const raw = await r.text();
+              const html = stripFragileXFmr1BlockFromVisualReportHtml(raw);
+              blobUrl = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
               if (!window._dgIgvModalExtraBlobUrls) window._dgIgvModalExtraBlobUrls = [];
               window._dgIgvModalExtraBlobUrls.push(blobUrl);
             }
           } catch (e) {
             console.warn('smn IGV modal fetch', e);
           }
+        }
+      } else if (blobUrl) {
+        try {
+          const r = await fetch(blobUrl);
+          const raw = await r.text();
+          const html = stripFragileXFmr1BlockFromVisualReportHtml(raw);
+          const next = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+          if (!window._dgIgvModalExtraBlobUrls) window._dgIgvModalExtraBlobUrls = [];
+          window._dgIgvModalExtraBlobUrls.push(next);
+          blobUrl = next;
+        } catch (e) {
+          console.warn('smn IGV modal strip', e);
         }
       }
       if (!blobUrl) {
@@ -8320,6 +8853,23 @@
     (async function init() {
       wireGlobalConfirmModal();
       wireCarrierFormEvents();
+      const btnPfBed = qs('btnPfUseBedInstead');
+      if (btnPfBed) btnPfBed.onclick = () => setPfMode('bed');
+      const btnPfGenes = qs('btnPfUseGeneListInstead');
+      if (btnPfGenes) btnPfGenes.onclick = () => setPfMode('genes');
+      const pfIg = qs('pfInterpretationGenesOnly');
+      if (pfIg) {
+        pfIg.addEventListener('change', () => {
+          refreshPfInterpretationBedVisibility();
+          if (!pfIg.checked && qs('pfAdvancedPanel')) qs('pfAdvancedPanel').open = true;
+        });
+      }
+      refreshPfModeBlocks();
+      try {
+        await loadWesPanelCatalog();
+      } catch (e) {
+        console.warn('loadWesPanelCatalog', e);
+      }
       wireOrderIdNoSpace('sgOrderId');
       wireOrderIdNoSpace('sg_prev_order');
       wireFastqBrowseUi();

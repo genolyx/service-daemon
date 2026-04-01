@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "panels": [
+    {
+      "id": "carrier_acmg2021_full",
+      "label": "Carrier screening — ACMG SF v3.2 (full example)",
+      "category": "carrier_screening",
+      "description": "Example large secondary-findings style panel using packaged ACMG BED (adjust paths for production).",
+      "disease_bed": "data/bed/Carrier_ACMG2021.bed",
+      "gene_count": null
+    },
+    {
+      "id": "carrier_demo_subset",
+      "label": "Carrier screening — demo subset (~small gene list)",
+      "category": "carrier_screening",
+      "description": "Small packaged BED for testing; replace with your 500- or 2000-gene product BED.",
+      "disease_bed": "data/bed/Carrier_test.bed",
+      "gene_count": null
+    },
+    {
+      "id": "proactive_health_example",
+      "label": "Proactive health — example",
+      "category": "proactive_health",
+      "description": "Placeholder: point disease_bed at your proactive exome gene list.",
+      "disease_bed": "data/bed/Carrier_test.bed",
+      "gene_count": null
+    },
+    {
+      "id": "pgx_example",
+      "label": "Pharmacogenomics (PGx) — example",
+      "category": "pgx",
+      "description": "Placeholder: replace with PGx target regions (e.g. CPIC genes).",
+      "disease_bed": "data/bed/Carrier_test.bed",
+      "gene_count": null
+    }
+  ]
+}

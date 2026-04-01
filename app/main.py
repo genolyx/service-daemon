@@ -32,6 +32,7 @@ from .models import (
     VariantKnowledgeSaveRequest,
     UpdateFastqPathsRequest,
     DarkGenesReviewRequest,
+    WesPanelCustomSave,
 )
 from .queue_manager import get_queue_manager
 from .order_store import ingest_report_json_from_disk
@@ -366,6 +367,7 @@ async def api_access_key_guard(request: Request, call_next):
         path == "/health"
         or path.startswith("/portal")
         or path.startswith("/api/portal")
+        or path.startswith("/api/wes-panels")
         or path.startswith("/static")
     ):
         return await call_next(request)
@@ -1083,6 +1085,70 @@ async def read_bam_csv_sample_ids(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Cannot parse CSV: {e}") from e
     return {"abs_path": path_clean, "sample_ids": sample_ids}
+
+
+@app.get("/api/portal/wes-panels")
+async def portal_wes_panels():
+    """
+    Orderable WES/exome interpretation panels (disease BED + metadata).
+    Bundled: ``data/wes_panels.json``. Custom (portal): ``data/wes_panels_custom.json`` — merged; custom overrides same id.
+    """
+    from app.services.wes_panels import load_wes_panels_raw, panels_for_api_response
+
+    raw = load_wes_panels_raw()
+    ver = raw.get("version", 1) if isinstance(raw, dict) else 1
+    return {"version": ver, "panels": panels_for_api_response()}
+
+
+@app.post("/api/portal/wes-panels/custom")
+async def portal_wes_panels_custom_save(body: WesPanelCustomSave):
+    """Create or update a user-defined panel package (saved under ``data/wes_panels_custom.json``)."""
+    from app.services.wes_panels import save_custom_panel
+
+    try:
+        extra = save_custom_panel(
+            body.id,
+            body.label,
+            body.category,
+            body.description,
+            body.backbone_bed,
+            body.disease_bed,
+            body.genes,
+            body.genes_text,
+            body.gene_source_bed,
+            body.skip_generated_bed,
+        )
+        return {"status": "ok", **extra}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except OSError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not write panel catalog file (check disk permissions and WES_PANELS_CUSTOM_JSON path): {e}",
+        ) from e
+
+
+@app.delete("/api/portal/wes-panels/custom/{panel_id:path}")
+async def portal_wes_panels_custom_delete(panel_id: str):
+    """Remove a custom panel (built-in ids cannot be deleted)."""
+    from app.services.wes_panels import delete_custom_panel
+
+    pid = (panel_id or "").strip().strip("/")
+    if not pid:
+        raise HTTPException(status_code=400, detail="panel_id required")
+    try:
+        ok = delete_custom_panel(pid)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if not ok:
+        raise HTTPException(status_code=404, detail="Custom panel not found")
+    return {"status": "ok", "deleted": pid}
+
+
+@app.get("/api/wes-panels")
+async def api_wes_panels_alias():
+    """Same payload as ``/api/portal/wes-panels`` (for clients that omit the portal prefix)."""
+    return await portal_wes_panels()
 
 
 @app.get("/api/portal/resources")

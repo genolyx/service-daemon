@@ -79,14 +79,33 @@ class PipelineRunner:
 
         while not self._shutdown_event.is_set():
             try:
-                # 큐에서 작업 가져오기 (타임아웃 포함)
-                try:
-                    job = await asyncio.wait_for(
-                        self._queue_manager.dequeue(),
-                        timeout=settings.queue_poll_interval
-                    )
-                except asyncio.TimeoutError:
-                    continue
+                # asyncio.wait_for + dequeue() 조합은 Python 3.11 에서 타임아웃 취소와
+                # asyncio.Queue 간 경쟁 조건이 발생할 수 있음.
+                # 대신 shutdown_event 와 queue.get() 을 race 시켜 shutdown 을 감지.
+                get_task = asyncio.ensure_future(self._queue_manager.dequeue())
+                shutdown_task = asyncio.ensure_future(self._shutdown_event.wait())
+                done, pending = await asyncio.wait(
+                    {get_task, shutdown_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                for t in pending:
+                    t.cancel()
+                    try:
+                        await t
+                    except (asyncio.CancelledError, Exception):
+                        pass
+
+                if shutdown_task in done:
+                    if not get_task.done():
+                        break
+                    # shutdown 이지만 이미 꺼낸 잡이 있으면 처리 후 종료
+                    job = get_task.result()
+                else:
+                    if get_task.exception():
+                        logger.error(f"Worker-{worker_id} dequeue error: {get_task.exception()}")
+                        await asyncio.sleep(1)
+                        continue
+                    job = get_task.result()
 
                 # 실행 슬롯 획득
                 await self._queue_manager.acquire_slot()

@@ -92,6 +92,7 @@ class QueueManager:
                 recovered = plugin is not None and plugin.sync_is_complete(job)
                 if recovered:
                     job.status = OrderStatus.REPORT_READY
+                    job.progress = 100
                     job.message = "Recovered after daemon restart (pipeline completed on disk)"
                     job.completed_at = now_kst_iso()
                     self._completed_jobs[job.order_id] = job
@@ -138,6 +139,7 @@ class QueueManager:
                 plugin_f = get_plugin(job.service_code)
                 if plugin_f is not None and plugin_f.sync_is_complete(job):
                     job.status = OrderStatus.REPORT_READY
+                    job.progress = 100
                     job.message = "Recovered: pipeline completed on disk"
                     job.error_log = ""
                     try:

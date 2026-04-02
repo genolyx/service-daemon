@@ -665,7 +665,7 @@
     .form-section-card .row{margin:0}
     tr.order-row-click{cursor:pointer}
     tr.order-row-click:hover td{background:rgba(106,163,255,.06)}
-    #orderDetailPanel{margin-top:12px}
+    #orderDetailPanel{margin-top:12px;width:100%;min-width:0;box-sizing:border-box}
     .detail-back{appearance:none;background:none;border:none;color:var(--brand);cursor:pointer;font-size:13px;font-weight:600;padding:0 0 12px;display:inline-flex;align-items:center;gap:6px}
     .detail-back:hover{text-decoration:underline}
     #btnOrderDetailBack.order-detail-back{
@@ -694,8 +694,57 @@
     #globalConfirmOk.btn-danger-ok:hover{filter:brightness(0.92)}
     .detail-title{font-size:18px;font-weight:700;margin:0 0 4px}
     .detail-sub{color:var(--muted);font-size:13px;margin:0 0 18px}
+    /* Generic two-column layout (not used for order detail body — see #orderDetailBody). */
     .detail-layout{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
     @media(max-width:960px){.detail-layout{grid-template-columns:1fr}}
+    /* Order detail: single vertical stack only — do NOT use .detail-layout here (its 2-col grid made the top logistics card half-width). */
+    #orderDetailBody{
+      display:flex;flex-direction:column;gap:16px;width:100%;max-width:100%;
+      min-width:0;box-sizing:border-box;align-items:stretch
+    }
+    #orderDetailBody > .order-detail-actions,
+    #orderDetailBody > .detail-section,
+    #orderDetailBody > .order-detail-sections-clinical{
+      width:100%;max-width:100%;align-self:stretch;box-sizing:border-box
+    }
+    .order-detail-sections-clinical{
+      display:flex;flex-direction:column;gap:16px;width:100%;min-width:0
+    }
+    .order-detail-sections-clinical > .detail-section{margin:0;width:100%}
+    /* Two-column clinical grids must shrink when the window is narrow (long paths / monospace). */
+    #orderDetailBody .order-create-grid{
+      grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+      width:100%;min-width:0
+    }
+    #orderDetailBody .order-create-left,#orderDetailBody .order-create-right{min-width:0}
+    /* Flattened boards: 2-column KV grid inside each detail-section (not a single vertical column). */
+    #orderDetailBody .detail-kv:not(.detail-kv-full){
+      grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+      gap:10px 16px;
+    }
+    #orderDetailBody .detail-kv .kv-item{min-width:0}
+    #orderDetailBody .detail-kv .kv-item--full{grid-column:1 / -1}
+    #orderDetailBody .detail-kv.detail-kv-full{grid-template-columns:minmax(0,1fr)}
+    /* Flat read-only display: label + value text (not faux input boxes). */
+    #orderDetailBody .detail-kv .kv-value{
+      font-size:14px;font-weight:600;color:var(--text);line-height:1.45;
+      word-break:break-word;overflow-wrap:anywhere;max-width:100%;min-width:0;
+    }
+    #orderDetailBody .detail-kv .kv-value--multiline{
+      white-space:pre-wrap;font-weight:500;
+    }
+    #orderDetailBody .detail-kv .kv-value--path{
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;font-weight:500;line-height:1.45;
+    }
+    #orderDetailBody .detail-kv .kv-value--html{
+      padding:0;background:transparent;border:none;min-height:0;
+    }
+    .order-detail-actions{
+      display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:10px 14px;
+      background:var(--card-2);border:1px solid var(--line);border-radius:12px
+    }
+    .order-detail-actions .order-detail-actions-text{flex:1;min-width:min(100%,280px);margin:0;font-size:12px;line-height:1.45;color:var(--muted)}
+    .order-detail-actions .btn{flex-shrink:0}
     .detail-section{background:var(--card-2);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
     .detail-section h4{margin:0 0 12px;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
     .detail-kv{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
@@ -706,13 +755,25 @@
     .detail-kv .kv-item{padding:6px 0}
     .detail-kv .kv-label{font-size:11px;color:var(--muted);margin-bottom:4px}
     .detail-kv .kv-value{font-size:14px;font-weight:600;color:var(--text);word-break:break-word}
-    /* Order detail — R1/R2 side by side (avoid staggered 2-col KV grid) */
-    .detail-fastq-grid{
-      display:grid;grid-template-columns:1fr 1fr;gap:12px 20px;margin-top:10px;padding-top:14px;
+    /* Order detail — R1/R2 side by side; minmax(0) so long paths wrap instead of forcing page width */
+    /* FASTQ: one file per row (full width); basename + ellipsis. Grid is NOT inside .detail-kv — set type to match other detail values. */
+    #orderDetailBody .detail-fastq-grid{
+      display:grid;grid-template-columns:minmax(0,1fr);gap:10px 0;margin-top:10px;padding-top:14px;
       border-top:1px solid var(--line);align-items:start
     }
-    @media(max-width:720px){.detail-fastq-grid{grid-template-columns:1fr}}
-    .detail-fastq-grid .kv-value.kv-path{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;font-weight:500;line-height:1.45}
+    #orderDetailBody .detail-fastq-grid .kv-value{
+      font-size:14px;font-weight:600;color:var(--text);line-height:1.45;
+      word-break:break-word;overflow-wrap:anywhere;max-width:100%;min-width:0;
+    }
+    #orderDetailBody .detail-fastq-grid .kv-value.kv-value--path{
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;font-weight:500;line-height:1.45;
+    }
+    #orderDetailBody .detail-fastq-grid .kv-value.kv-value--path-short{
+      display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;cursor:default
+    }
+    @media(max-width:600px){
+      #orderDetailBody .detail-kv:not(.detail-kv-full){grid-template-columns:1fr}
+    }
 
     /* Order detail — pipeline.log terminal */
     .order-pipeline-log-host{margin-top:18px}
@@ -902,6 +963,7 @@
               <select id="trackServiceFilter" style="flex:1;min-width:130px;padding:8px 12px;border-radius:12px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">
                 <option value="">All Services</option>
                 <option value="carrier_screening">Carrier Screening</option>
+                <option value="whole_exome">Whole Exome</option>
                 <option value="sgnipt">Single-gene NIPT</option>
               </select>
               <select id="trackFilter" style="flex:1;min-width:130px;padding:8px 12px;border-radius:12px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">
@@ -950,7 +1012,7 @@
           <button type="button" class="detail-back order-detail-back" id="btnOrderDetailBack">← Go back to order list</button>
           <h3 class="detail-title" id="orderDetailTitle">Order Detail</h3>
           <p class="detail-sub" id="orderDetailSub">Detail info of order</p>
-          <div class="detail-layout" id="orderDetailBody"></div>
+          <div id="orderDetailBody"></div>
           <div id="orderPipelineLogHost" class="order-pipeline-log-host hidden" aria-live="polite"></div>
         </div>
       </div>
@@ -962,9 +1024,12 @@
             <h4 style="margin:0 0 12px;font-size:14px">Service</h4>
             <select id="fServiceSelect" name="fService" aria-label="Service" style="width:100%;max-width:100%;box-sizing:border-box;font:inherit;font-size:14px;padding:10px 12px;border-radius:10px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">
               <option value="carrier_screening">Carrier screening</option>
+              <option value="whole_exome">Whole exome</option>
               <option value="sgnipt">Single-gene NIPT</option>
               <option value="extended_services">Extended services</option>
             </select>
+            <p id="fServiceHint" class="muted" style="font-size:11px;margin:8px 0 0;line-height:1.45">Carrier screening annotates the full exome/capture; choose a <strong>Primary</strong> panel for interpretation/report scope. Extended services use a separate program list.</p>
+            <p id="fServiceHintWes" class="muted hidden" style="font-size:11px;margin:8px 0 0;line-height:1.45">Whole exome uses the same sequencing pipeline. <strong>Primary</strong> is optional — leave unselected for full-exome variant review, or pick a panel to narrow the clinical list after analysis.</p>
             <div id="cr_extended_program_wrap" class="hidden" style="margin-top:14px">
               <label for="cr_extended_program">Primary</label>
               <select id="cr_extended_program" style="width:100%;max-width:100%;box-sizing:border-box;margin-top:6px">
@@ -984,11 +1049,11 @@
               </select>
             </div>
             <div id="cr_wes_panel_wrap" style="margin-top:14px">
-              <label for="cr_wes_panel" id="cr_wes_panel_scope_label">Primary</label>
+              <label for="cr_wes_panel" id="cr_wes_panel_scope_label" class="required">Primary (interpretation)</label>
               <select id="cr_wes_panel" style="width:100%;max-width:100%;box-sizing:border-box;margin-top:6px">
                 <option value="">— Select panel —</option>
               </select>
-              <p id="cr_wes_panel_hint" class="muted" style="font-size:11px;margin:6px 0 0;line-height:1.45"></p>
+              <p id="cr_wes_panel_hint" class="muted" style="font-size:11px;margin:6px 0 0;line-height:1.45">Required for carrier screening. Annotation is exome-wide; this panel narrows the clinical variant list after analysis.</p>
             </div>
             <input type="hidden" id="cr_interpretation_genes_extra" value="" />
           </div>
@@ -1014,6 +1079,8 @@
               <input type="hidden" id="cr_carrier_program" value="standard_carrier" />
               <input type="hidden" id="cr_test_category" value="standard_carrier" />
               <input type="hidden" id="cr_other_type" value="" />
+              <input type="hidden" id="cr_prior_order_id" value="" />
+              <input type="hidden" id="cr_reuse_prior_pipeline" value="0" />
 
               <div class="form-section-card">
                 <h4>Patient</h4>
@@ -2859,7 +2926,7 @@
       if (title) title.textContent = 'Select R1 + R2 FASTQ';
       const hint = qs('fastqBrowseHint');
       if (hint) {
-        const rootLabel = fastqBrowseServiceCode === 'sgnipt' ? 'Single-gene NIPT' : 'Carrier Screening';
+        const rootLabel = dashSvcLabel(fastqBrowseServiceCode);
         hint.textContent = `Service: ${rootLabel} — open folders, then choose two FASTQ files (Ctrl+click up to two, or Shift+click range if only two files in range).`;
       }
       const m = qs('fastqBrowseModal');
@@ -3126,7 +3193,7 @@
         if (!ids.length) { toast('BAM CSV 경로 설정됨 (sample_id 없음)'); return; }
         const sampleId = ids[0];
         const sc = getFServiceValue();
-        if (sc === 'carrier_screening' || sc === 'extended_services') {
+        if (sc === 'carrier_screening' || sc === 'whole_exome' || sc === 'extended_services') {
           const el = qs('cr_order_id');
           if (el) { el.value = sampleId; el.readOnly = false; }
         } else {
@@ -3187,8 +3254,12 @@
         updateBamCsvClearBtn();
         if (qs('cr_carrier_program')) qs('cr_carrier_program').value = 'standard_carrier';
         if (qs('cr_extended_program')) qs('cr_extended_program').value = '';
+        setFormInput('cr_prior_order_id', '');
+        if (qs('cr_reuse_prior_pipeline')) qs('cr_reuse_prior_pipeline').value = '0';
         syncCarrierProgramFromMaster();
         refreshCarrierConditionalUi();
+        resetCarrierSubmitHeaderCopy();
+        resetSgniptSubmitHeaderCopy();
       }
       toggleServiceSubmitBlocks();
     }
@@ -3256,6 +3327,11 @@
       if (extWrap) extWrap.classList.toggle('hidden', ui !== 'extended_services');
       if (wesWrap) wesWrap.classList.toggle('hidden', ui === 'extended_services' || ui === 'sgnipt');
       if (couplesWrap) couplesWrap.classList.toggle('hidden', ui === 'extended_services');
+      const fsh = qs('fServiceHint');
+      const fshWes = qs('fServiceHintWes');
+      if (fsh) fsh.style.display = ui === 'carrier_screening' ? '' : 'none';
+      if (fshWes) fshWes.classList.toggle('hidden', ui !== 'whole_exome');
+      refreshWesPanelPrimaryLabel();
       if (ui === 'extended_services') {
         const sr = document.querySelector('input[name="cr_report_mode"][value="single"]');
         if (sr) sr.checked = true;
@@ -3269,11 +3345,24 @@
     /** UI-only: Extended clinical orders still POST as service_code carrier_screening. */
     function mapUiServiceToApiCode(ui) {
       if (ui === 'extended_services') return 'carrier_screening';
+      if (ui === 'whole_exome') return 'whole_exome';
       return ui || 'carrier_screening';
     }
 
     function isCarrierUiFlow(ui) {
-      return ui === 'carrier_screening' || ui === 'extended_services';
+      return ui === 'carrier_screening' || ui === 'whole_exome' || ui === 'extended_services';
+    }
+
+    function refreshWesPanelPrimaryLabel() {
+      const lbl = qs('cr_wes_panel_scope_label');
+      const ui = getFServiceValue();
+      if (lbl) {
+        lbl.classList.toggle('required', ui === 'carrier_screening');
+        lbl.textContent = ui === 'whole_exome'
+          ? 'Primary (interpretation) — optional'
+          : 'Primary (interpretation)';
+      }
+      updateWesPanelHintOnly();
     }
 
     function syncCarrierProgramFromMaster() {
@@ -3281,6 +3370,11 @@
       const tc = qs('cr_test_category');
       const ot = qs('cr_other_type');
       if (sc === 'sgnipt') return;
+      if (sc === 'whole_exome') {
+        if (tc) tc.value = 'standard_carrier';
+        if (ot) ot.value = '';
+        return;
+      }
       if (sc === 'carrier_screening') {
         if (tc) tc.value = 'standard_carrier';
         if (ot) ot.value = '';
@@ -3322,16 +3416,98 @@
       el.value = v != null && v !== '' ? String(v) : '';
     }
 
+    function resetCarrierSubmitHeaderCopy() {
+      const blk = qs('carrierSubmitBlock');
+      if (!blk) return;
+      const t = blk.querySelector('.submit-page-title');
+      const s = blk.querySelector('.submit-page-sub');
+      if (t) t.textContent = 'Create Carrier Order';
+      if (s) {
+        s.innerHTML = 'Clinical metadata → <code>params.carrier</code>. Use <strong>Save order</strong> to store a draft; start analysis from the order list <strong>⋯ → Submit</strong>.';
+      }
+    }
+
+    function resetSgniptSubmitHeaderCopy() {
+      const blk = qs('sgniptSubmitBlock');
+      if (!blk) return;
+      const t = blk.querySelector('.submit-page-title');
+      const s = blk.querySelector('.submit-page-sub');
+      if (t) t.textContent = 'Create Single-gene NIPT Order';
+      if (s) {
+        s.innerHTML = 'Clinical fields → <code>params.nipt</code>. <strong>Save order</strong> stores a draft; queue from the list <strong>⋯ → Submit</strong>.';
+      }
+    }
+
     function clearEditMode() {
       editingOrderId = null;
       const cro = qs('cr_order_id');
       const sgo = qs('sgOrderId');
       if (cro) cro.readOnly = false;
       if (sgo) sgo.readOnly = false;
-      const t1 = qs('carrierSubmitBlock') && qs('carrierSubmitBlock').querySelector('.submit-page-title');
-      const t2 = qs('sgniptSubmitBlock') && qs('sgniptSubmitBlock').querySelector('.submit-page-title');
-      if (t1) t1.textContent = 'Create Carrier Order';
-      if (t2) t2.textContent = 'Create Single-gene NIPT Order';
+      resetCarrierSubmitHeaderCopy();
+      resetSgniptSubmitHeaderCopy();
+      const btn = qs('btnSaveOrder');
+      if (btn) btn.textContent = 'Save order';
+    }
+
+    /**
+     * New draft order: copy clinical fields and FASTQ/BAM paths from a completed order; user enters a new Order ID (and may edit paths).
+     * Stores params.carrier.prior_order_id (or nipt.previous_order_id for sgNIPT) for traceability.
+     * Fetches GET /order/{id} so params.carrier (patient, etc.) is always complete.
+     */
+    async function startFollowUpOrderFrom(o) {
+      closeAllMoreMenus();
+      const lp = qs('ordersListPanel');
+      const cp = qs('ordersCreatePanel');
+      if (lp) lp.classList.add('hidden');
+      if (cp) cp.classList.remove('hidden');
+      hideOrderDetail();
+      editingOrderId = null;
+
+      let src = o;
+      try {
+        const full = await apiGet(apiPath(`/order/${encodeURIComponent(o.order_id)}`));
+        if (full && full.order_id && full.params != null) src = full;
+      } catch (e) {
+        console.warn('fetch order for follow-up', e);
+      }
+
+      if (o.service_code === 'carrier_screening' || o.service_code === 'whole_exome') {
+        populateCarrierFormFromOrder(src);
+        setFormInput('cr_order_id', '');
+        setFormInput('cr_work_dir', '');
+        /* Keep FASTQ / BAM from source order (populateCarrierFormFromOrder); user can edit before save. */
+        updateBamCsvClearBtn();
+        if (qs('cr_prior_order_id')) qs('cr_prior_order_id').value = o.order_id;
+        if (qs('cr_reuse_prior_pipeline')) qs('cr_reuse_prior_pipeline').value = '1';
+        toggleServiceSubmitBlocks();
+        const t1 = qs('carrierSubmitBlock') && qs('carrierSubmitBlock').querySelector('.submit-page-title');
+        const s1 = qs('carrierSubmitBlock') && qs('carrierSubmitBlock').querySelector('.submit-page-sub');
+        if (t1) t1.textContent = 'Create carrier order (follow-up)';
+        if (s1) {
+          s1.innerHTML = `Copied clinical fields and <strong>FASTQ / BAM paths</strong> from <strong>${escapeHtml(String(o.order_id))}</strong>. <strong>Panel-only reuse</strong> is on: the daemon will skip alignment and re-annotate from the prior run’s VCF (pick a different WES panel if needed). Enter a <strong>new Order ID</strong>, adjust paths if needed, then <strong>Save order</strong> and <strong>Submit</strong>.`;
+        }
+        if (qs('submitMsg')) qs('submitMsg').textContent = `New draft — prior order: ${o.order_id}`;
+      } else if (o.service_code === 'sgnipt') {
+        setFServiceValue('sgnipt');
+        populateSgniptFormFromOrder(src);
+        setFormInput('sgOrderId', '');
+        setFormInput('sgWorkDir', '');
+        updateBamCsvClearBtn();
+        if (qs('sg_prev_order')) qs('sg_prev_order').value = o.order_id;
+        toggleServiceSubmitBlocks();
+        const t2 = qs('sgniptSubmitBlock') && qs('sgniptSubmitBlock').querySelector('.submit-page-title');
+        const s2 = qs('sgniptSubmitBlock') && qs('sgniptSubmitBlock').querySelector('.submit-page-sub');
+        if (t2) t2.textContent = 'Create Single-gene NIPT order (follow-up)';
+        if (s2) {
+          s2.innerHTML = `Copied clinical fields and <strong>FASTQ / BAM paths</strong> from <strong>${escapeHtml(String(o.order_id))}</strong>. Enter a <strong>new Order ID</strong>, adjust paths if needed, then <strong>Save order</strong> and <strong>Submit</strong>.`;
+        }
+        if (qs('submitMsg')) qs('submitMsg').textContent = `New draft — previous order: ${o.order_id}`;
+      } else {
+        toast('Follow-up orders are only supported for carrier screening, whole exome, and Single-gene NIPT.', false);
+        showOrdersListOnly();
+        return;
+      }
       const btn = qs('btnSaveOrder');
       if (btn) btn.textContent = 'Save order';
     }
@@ -3339,16 +3515,30 @@
     function populateCarrierFormFromOrder(o) {
       const c = (o.params && o.params.carrier) || {};
       const p = o.params || {};
+      setFormInput('cr_prior_order_id', c.prior_order_id || '');
+      if (qs('cr_reuse_prior_pipeline')) {
+        qs('cr_reuse_prior_pipeline').value = c.reuse_prior_pipeline_outputs ? '1' : '0';
+      }
       setFormInput('cr_order_id', o.order_id);
       setFormInput('cr_work_dir', o.work_dir);
       setFormInput('fR1Path', o.fastq_r1_path || '');
       setFormInput('fR2Path', o.fastq_r2_path || '');
 
+      const pkg = (c.package_code || '').trim();
+      if (o.service_code === 'whole_exome' || pkg === 'WholeExome') {
+        setFServiceValue('whole_exome');
+      } else {
+        const std =
+          c.test_category === 'standard_carrier' ||
+          (!c.test_category && (!c.package_code || c.package_code === 'CarrierScreening'));
+        const ot = std ? '' : (c.other_test_type || c.package_code || '');
+        setFServiceValue(std ? 'carrier_screening' : 'extended_services');
+      }
       const std =
-        c.test_category === 'standard_carrier' ||
-        (!c.test_category && (!c.package_code || c.package_code === 'CarrierScreening'));
+        (c.test_category === 'standard_carrier' ||
+          (!c.test_category && (!c.package_code || c.package_code === 'CarrierScreening'))) &&
+        o.service_code !== 'whole_exome' && pkg !== 'WholeExome';
       const ot = std ? '' : (c.other_test_type || c.package_code || '');
-      setFServiceValue(std ? 'carrier_screening' : 'extended_services');
       if (qs('cr_carrier_program')) qs('cr_carrier_program').value = 'standard_carrier';
       if (qs('cr_extended_program')) {
         const ex = qs('cr_extended_program');
@@ -3412,6 +3602,7 @@
       setFormInput('bamCsvPath', p.input_bam_csv || '');
       updateBamCsvClearBtn();
       refreshCarrierConditionalUi();
+      refreshWesPanelPrimaryLabel();
     }
 
     function populateSgniptFormFromOrder(o) {
@@ -3456,28 +3647,38 @@
       updateBamCsvClearBtn();
     }
 
-    function openEditOrder(o) {
+    async function openEditOrder(o) {
+      let src = o;
+      try {
+        const full = await apiGet(apiPath(`/order/${encodeURIComponent(o.order_id)}`));
+        if (full && full.order_id && full.params != null) src = full;
+      } catch (e) {
+        console.warn('openEditOrder: fetch order', e);
+      }
+
       const lp = qs('ordersListPanel');
       const cp = qs('ordersCreatePanel');
       if (lp) lp.classList.add('hidden');
       if (cp) cp.classList.remove('hidden');
       hideOrderDetail();
+      resetCarrierSubmitHeaderCopy();
+      resetSgniptSubmitHeaderCopy();
 
-      editingOrderId = o.order_id;
-      if (o.service_code === 'carrier_screening') {
-        populateCarrierFormFromOrder(o);
+      editingOrderId = src.order_id;
+      if (src.service_code === 'carrier_screening' || src.service_code === 'whole_exome') {
+        populateCarrierFormFromOrder(src);
         toggleServiceSubmitBlocks();
         const t1 = qs('carrierSubmitBlock') && qs('carrierSubmitBlock').querySelector('.submit-page-title');
-        if (t1) t1.textContent = 'Edit Carrier Order';
-      } else if (o.service_code === 'sgnipt') {
+        if (t1) t1.textContent = src.service_code === 'whole_exome' ? 'Edit Whole Exome Order' : 'Edit Carrier Order';
+      } else if (src.service_code === 'sgnipt') {
         setFServiceValue('sgnipt');
         toggleServiceSubmitBlocks();
-        populateSgniptFormFromOrder(o);
+        populateSgniptFormFromOrder(src);
         const t2 = qs('sgniptSubmitBlock') && qs('sgniptSubmitBlock').querySelector('.submit-page-title');
         if (t2) t2.textContent = 'Edit Single-gene NIPT Order';
       } else {
         editingOrderId = null;
-        toast('Editing is only supported for Carrier Screening and Single-gene NIPT orders', false);
+        toast('Editing is only supported for Carrier Screening, Whole Exome, and Single-gene NIPT orders', false);
         showOrdersListOnly();
         return;
       }
@@ -3494,8 +3695,9 @@
       const val = id => { const el = qs(id); return el && el.value != null ? String(el.value).trim() : ''; };
       const cat = val('cr_test_category');
       const otherType = cat === 'other' ? val('cr_other_type') : '';
-      const packageCode = cat === 'other' ? (otherType || '') : 'CarrierScreening';
       const fu = getFServiceValue();
+      let packageCode = cat === 'other' ? (otherType || '') : 'CarrierScreening';
+      if (fu === 'whole_exome') packageCode = 'WholeExome';
       const modeEl = document.querySelector('input[name="cr_report_mode"]:checked');
       let reportMode = modeEl ? modeEl.value : 'single';
       let partnerOrderId = reportMode === 'couples' ? (val('cr_partner_order_id') || undefined) : undefined;
@@ -3535,6 +3737,8 @@
         patient3_gender: val('cr_p3_gender') || undefined,
         patient3_affected: val('cr_p3_affected') || undefined,
         wes_panel_id: wesPanelId,
+        prior_order_id: val('cr_prior_order_id') || undefined,
+        reuse_prior_pipeline_outputs: val('cr_reuse_prior_pipeline') === '1',
       };
       return meta;
     }
@@ -3597,6 +3801,11 @@
           if (!val('cr_partner_order_id')) return 'Partner Order ID is required for couples report';
         }
       }
+      if (fu2 === 'carrier_screening') {
+        if (!val('cr_wes_panel')) {
+          return 'Primary (interpretation panel) is required — select a WES panel for report scope (full exome is annotated first).';
+        }
+      }
       return null;
     }
 
@@ -3614,9 +3823,14 @@
       const sel = qs('cr_wes_panel');
       const hint = qs('cr_wes_panel_hint');
       if (!hint) return;
+      const fu = getFServiceValue();
       const id = sel && sel.value;
       if (!id) {
-        hint.textContent = '';
+        hint.textContent = fu === 'whole_exome'
+          ? 'Optional for whole exome: leave empty for full-exome review, or select a panel to narrow variants after analysis.'
+          : (fu === 'carrier_screening'
+            ? 'Required for carrier screening. Annotation is exome-wide; this panel narrows the clinical variant list after analysis.'
+            : '');
         return;
       }
       const p = _wesPanelsById[id];
@@ -3625,6 +3839,7 @@
         return;
       }
       const parts = [];
+      if (fu === 'whole_exome') parts.push('Optional — narrows review to this panel after analysis.');
       if (p.description) parts.push(p.description);
       if (p.gene_count != null) parts.push(`~${p.gene_count} genes (from BED).`);
       hint.textContent = parts.join(' ');
@@ -3639,8 +3854,8 @@
       }
       const p = _wesPanelsById[id];
       if (!p) return;
-      if (p.disease_bed_resolved) setFormInput('fDiseaseBed', p.disease_bed_resolved);
-      if (p.backbone_bed_resolved) setFormInput('fBackboneBed', p.backbone_bed_resolved);
+      // Do not auto-fill disease/backbone BED from the panel: those narrow parse-time VCF filtering.
+      // Interpretation scope is applied after annotation via panel_interpretation_genes (see wes_panels).
       updateWesPanelHintOnly();
     }
 
@@ -3702,7 +3917,7 @@
       sel.replaceChildren();
       const ph = document.createElement('option');
       ph.value = '';
-      ph.textContent = '— Select panel —';
+      ph.textContent = '— Select interpretation panel (required) —';
       sel.appendChild(ph);
       const byCat = new Map();
       for (const p of panels) {
@@ -3851,7 +4066,10 @@
     // Dashboard
     // ═══════════════════════════════════════════════════════════
     function dashSvcLabel(sc) {
-      return sc === 'sgnipt' ? 'Single-gene NIPT' : (sc === 'carrier_screening' ? 'Carrier Screening' : sc || '-');
+      if (sc === 'sgnipt') return 'Single-gene NIPT';
+      if (sc === 'carrier_screening') return 'Carrier Screening';
+      if (sc === 'whole_exome') return 'Whole Exome';
+      return sc || '-';
     }
 
     /** Last successful /queue/summary + /services for tab panels */
@@ -4346,7 +4564,7 @@
       const serviceCode = mapUiServiceToApiCode(rawService);
       let orderId, workDir, body;
 
-      if (serviceCode === 'carrier_screening') {
+      if (serviceCode === 'carrier_screening' || serviceCode === 'whole_exome') {
         sanitizeOrderIdInput(qs('cr_order_id'));
         sanitizeOrderIdInput(qs('cr_partner_order_id'));
         const cErr = validateCarrierSubmit();
@@ -4578,6 +4796,7 @@
         if (tc === 'other' && ot) return `other ${ot}`;
         return 'standard';
       }
+      if (sc === 'whole_exome') return 'whole exome';
       if (sc === 'sgnipt') return 'sgnipt';
       if (sc === 'nipt') return 'nipt';
       return sc;
@@ -4601,6 +4820,9 @@
           return '<span class="pill type-carrier">Standard</span>';
         }
         return '<span class="pill type-carrier">Standard</span>';
+      }
+      if (sc === 'whole_exome') {
+        return '<span class="pill type-carrier">Whole exome</span>';
       }
       if (sc === 'sgnipt') {
         return '<span class="pill type-sgnipt">Single-gene NIPT</span>';
@@ -4859,6 +5081,14 @@
       return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/\r?\n/g, ' ');
     }
 
+    /** Last path segment for compact display (hover/title shows full path). */
+    function pathBasename(p) {
+      const s = String(p || '').trim().replace(/\\/g, '/');
+      if (!s) return '';
+      const parts = s.split('/').filter(Boolean);
+      return parts.length ? parts[parts.length - 1] : s;
+    }
+
     /** First digit run in the field → https://omim.org/entry/{id} (handles "261600", "OMIM:261600", etc.) */
     function omimCellHtml(raw) {
       const s = (raw || '').trim();
@@ -4974,10 +5204,36 @@
       resample: 'Resample',
     };
 
+    function orderDetailKvItem(label, value, opts) {
+      opts = opts || {};
+      const full = opts.full;
+      const path = opts.path;
+      const multiline = opts.multiline;
+      const raw = value === undefined || value === null || value === '' ? '—' : String(value);
+      const inner = raw === '—' ? '—' : escapeHtml(raw);
+      const classes = ['kv-value'];
+      if (path) classes.push('kv-value--path');
+      if (multiline) classes.push('kv-value--multiline');
+      const itemCls = full ? 'kv-item kv-item--full' : 'kv-item';
+      return `<div class="${itemCls}"><div class="kv-label">${escapeHtml(label)}</div><div class="${classes.join(' ')}">${inner === '—' ? '—' : inner}</div></div>`;
+    }
+
+    function orderDetailKvItemHtml(label, innerHtml, opts) {
+      opts = opts || {};
+      const full = opts.full;
+      const itemCls = full ? 'kv-item kv-item--full' : 'kv-item';
+      return `<div class="${itemCls}"><div class="kv-label">${escapeHtml(label)}</div><div class="kv-value kv-value--html">${innerHtml}</div></div>`;
+    }
+
+    function odDetailSection(title, kvInnerHtml) {
+      return `<div class="detail-section"><h4>${escapeHtml(title)}</h4><div class="detail-kv">${kvInnerHtml}</div></div>`;
+    }
+
     function kvSection(title, pairs) {
-      const inner = pairs.map(([lab, val]) =>
-        `<div class="kv-item"><div class="kv-label">${escapeHtml(lab)}</div><div class="kv-value">${val === '' || val == null ? '—' : escapeHtml(String(val))}</div></div>`
-      ).join('');
+      const inner = pairs.map(([lab, val]) => {
+        const disp = val === '' || val == null ? '—' : String(val);
+        return orderDetailKvItem(lab, disp, { full: true, path: true });
+      }).join('');
       return `<div class="detail-section"><h4>${escapeHtml(title)}</h4><div class="detail-kv detail-kv-full">${inner}</div></div>`;
     }
 
@@ -4991,7 +5247,9 @@
       return keys.map(k => {
         const lab = NIPT_FIELD_LABELS[k] || k;
         const v = niptDisplayValue(k, nipt[k]);
-        return `<div class="kv-item"><div class="kv-label">${escapeHtml(lab)}</div><div class="kv-value">${v === '—' ? '—' : escapeHtml(String(v))}</div></div>`;
+        const disp = v === '—' ? '—' : String(v);
+        const full = k === 'previous_order_id' || k === 'indication_for_testing';
+        return orderDetailKvItem(lab, disp, { full });
       }).join('');
     }
 
@@ -5016,72 +5274,93 @@
       if (chrome) chrome.classList.add('hidden');
       const p = qs('orderDetailPanel');
       if (p) p.classList.remove('hidden');
-      const svcTag = o.service_code === 'sgnipt' ? 'Single-gene NIPT' : (o.service_code === 'carrier_screening' ? 'Carrier Screening' : o.service_code || '');
+      const svcTag = dashSvcLabel(o.service_code);
       qs('orderDetailTitle').textContent = `Order Detail ${o.order_id}` + (svcTag ? ` (${svcTag})` : '');
       qs('orderDetailSub').textContent = 'Detail info of order';
 
-      const pipelinePairs = [
-        ['Order ID', o.order_id],
-        ['Service', svcTag],
-      ];
-      pipelinePairs.push(
-        ['Work directory', o.work_dir || '—'],
-        ['Status', (() => {
-          const k = orderStatusUpper(o);
-          if (k === 'REPORT_READY') return 'Report Ready';
-          return o.status != null ? String(o.status) : '—';
-        })()],
-        ['Progress', `${o.progress ?? 0}%`],
-        ['Message', (o.error_log || o.message) || '—'],
-        ['Created', fmtDateTimeDetail(o.created_at)],
-        ['Started', fmtDateTimeDetail(o.started_at)],
-        ['Last updated', fmtDateTimeDetail(o.updated_at)],
-        ['Completed', fmtDateTimeDetail(o.completed_at)],
-      );
+      const stDetail = orderStatusUpper(o);
+      const canFollowUpDetail = ['COMPLETED', 'REPORT_READY'].includes(stDetail) && ['carrier_screening', 'whole_exome', 'sgnipt'].includes(o.service_code);
 
       function orderDetailFastqPathsHtml(order) {
-        const r1 = (order.fastq_r1_path || '').trim();
-        const r2 = (order.fastq_r2_path || '').trim();
-        const v1 = r1 ? escapeHtml(r1) : '—';
-        const v2 = r2 ? escapeHtml(r2) : '—';
+        function fastqCell(label, fullPath) {
+          const fp = (fullPath || '').trim();
+          if (!fp) {
+            return `<div class="kv-item kv-item--full"><div class="kv-label">${escapeHtml(label)}</div><div class="kv-value kv-value--path">—</div></div>`;
+          }
+          const shortName = pathBasename(fp) || fp;
+          const title = ` title="${escapeAttr(fp)}"`;
+          return (
+            `<div class="kv-item kv-item--full"><div class="kv-label">${escapeHtml(label)}</div>` +
+            `<div class="kv-value kv-value--path kv-value--path-short"${title}>${escapeHtml(shortName)}</div></div>`
+          );
+        }
         return (
           `<div class="detail-fastq-grid" role="group" aria-label="FASTQ paths">` +
-          `<div class="kv-item"><div class="kv-label">R1 path</div><div class="kv-value kv-path">${v1}</div></div>` +
-          `<div class="kv-item"><div class="kv-label">R2 path</div><div class="kv-value kv-path">${v2}</div></div>` +
+          fastqCell('R1 FASTQ', order.fastq_r1_path) +
+          fastqCell('R2 FASTQ', order.fastq_r2_path) +
           `</div>`
         );
       }
 
       let html = '';
-      html += `<div class="detail-section"><h4>Order logistics &amp; pipeline</h4><div class="detail-kv">` +
-        pipelinePairs.map(([l, v]) => {
-          if (l === 'Status') {
-            return `<div class="kv-item"><div class="kv-label">${escapeHtml(l)}</div><div class="kv-value">${orderDetailStatusPillHtml(o)}</div></div>`;
-          }
-          return `<div class="kv-item"><div class="kv-label">${escapeHtml(l)}</div><div class="kv-value">${v === '—' ? '—' : escapeHtml(String(v))}</div></div>`;
-        }).join('') + `</div>` + orderDetailFastqPathsHtml(o) + `</div>`;
+      if (canFollowUpDetail) {
+        html += `<div class="order-detail-actions"><button type="button" class="btn" id="btnOrderDetailFollowUp">New order from this…</button>` +
+          `<p class="order-detail-actions-text">Copies clinical fields and <strong>FASTQ / BAM paths</strong> into a <strong>new</strong> draft. Enter a new Order ID, edit if needed, then Save and Submit.</p></div>`;
+      }
+      const canEditDetail = stDetail === 'SAVED' && ['carrier_screening', 'whole_exome', 'sgnipt'].includes(o.service_code);
+      if (canEditDetail) {
+        html += `<div class="order-detail-actions"><button type="button" class="btn primary" id="btnOrderDetailEdit">Edit order</button>` +
+          `<p class="order-detail-actions-text">Change clinical fields and paths, then <strong>Update order</strong>. Use <strong>⋯ → Submit</strong> to queue the run.</p></div>`;
+      }
+      const odk = orderDetailKvItem;
+      const odkH = orderDetailKvItemHtml;
+      html += `<div class="detail-section">` +
+        `<h4>Order logistics &amp; pipeline</h4>` +
+        `<div class="detail-kv">` +
+        odk('Order ID', o.order_id) +
+        odk('Service', svcTag) +
+        odk('Work directory', o.work_dir || '—') +
+        odkH('Status', orderDetailStatusPillHtml(o)) +
+        odk('Progress', `${o.progress ?? 0}%`) +
+        odk('Message', (o.error_log || o.message) || '—') +
+        odk('Created', fmtDateTimeDetail(o.created_at)) +
+        odk('Started', fmtDateTimeDetail(o.started_at)) +
+        odk('Last updated', fmtDateTimeDetail(o.updated_at)) +
+        odk('Completed', fmtDateTimeDetail(o.completed_at)) +
+        `</div>` +
+        orderDetailFastqPathsHtml(o) +
+        `</div>`;
 
-      const nipt = o.params && o.params.nipt;
-      if (nipt && typeof nipt === 'object') {
+      const paramsRoot = o.params && typeof o.params === 'object' ? o.params : {};
+      if (o.service_code === 'sgnipt') {
+        const nipt = (paramsRoot.nipt && typeof paramsRoot.nipt === 'object') ? paramsRoot.nipt : {};
         const keysPatient = ['previous_order_id', 'patient_name', 'patient_birth', 'patient_gender', 'gestational_age_weeks', 'gestational_age_days', 'height_cm', 'weight_kg', 'pregnancy_type', 'estimated_delivery_date'];
         const keysHospital = ['hospital_name', 'doctor', 'medical_record_id', 'sample_id', 'indication_for_testing'];
         const keysSample = ['sample_collection_date', 'receipt_date', 'package_code', 'report_language', 'report_type', 'sample_specimen_type', 'measurement_method', 'sample_barcode', 'category', 'nipt_kit_id', 'sequencing_batch_id', 'control_sample', 'trf_consent', 'show_fetal_gender', 'resample'];
-        html += `<div class="detail-section"><h4>Patient and Pregnancy Information</h4><div class="detail-kv">${niptKvRows(nipt, keysPatient)}</div></div>`;
-        html += `<div class="detail-section"><h4>Hospital and Identifier Information</h4><div class="detail-kv">${niptKvRows(nipt, keysHospital)}</div></div>`;
-        html += `<div class="detail-section"><h4>Sample and Test Details</h4><div class="detail-kv">${niptKvRows(nipt, keysSample)}</div></div>`;
-        const pipeN = Object.fromEntries(Object.entries(o.params).filter(([k]) => k !== 'nipt'));
+        html += `<div class="order-detail-sections-clinical">` +
+          `<div class="order-create-grid">` +
+          `<div class="order-create-left" style="display:flex;flex-direction:column;gap:16px">` +
+          odDetailSection('Patient and Pregnancy Information', niptKvRows(nipt, keysPatient)) +
+          odDetailSection('Hospital and Identifier Information', niptKvRows(nipt, keysHospital)) +
+          `</div>` +
+          odDetailSection('Sample and Test Details', niptKvRows(nipt, keysSample)) +
+          `</div>` +
+          `</div>`;
+        const pipeN = Object.fromEntries(Object.entries(paramsRoot).filter(([k]) => k !== 'nipt'));
         if (Object.keys(pipeN).length) {
           const pairs = Object.entries(pipeN).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : v]);
           html += kvSection('Pipeline / other parameters', pairs);
         }
-      } else if (o.params && o.params.carrier && typeof o.params.carrier === 'object') {
-        const c = o.params.carrier;
+      } else if (o.service_code === 'carrier_screening' || o.service_code === 'whole_exome') {
+        const c = (paramsRoot.carrier && typeof paramsRoot.carrier === 'object') ? paramsRoot.carrier : {};
         const CARRIER_LABELS = {
           test_category: 'Test category',
           other_test_type: 'Other test type',
           package_code: 'Package code (test type)',
           report_mode: 'Report mode',
           partner_order_id: 'Partner Order ID (couples)',
+          prior_order_id: 'Prior order (follow-up)',
+          reuse_prior_pipeline_outputs: 'Reuse prior pipeline (panel-only)',
           patient_name: 'Patient Name',
           patient_birth: 'Patient Birth',
           patient_gender: 'Patient Gender',
@@ -5110,44 +5389,64 @@
         function carrierVal(k) {
           let v = c[k];
           if (v === undefined || v === null || v === '') return '—';
+          if (typeof v === 'boolean') return v ? 'Yes' : 'No';
           if (dateKeys.has(k)) return fmtDateDetail(v);
           if (k === 'test_category' && v === 'standard_carrier') return 'Carrier screening (standard)';
           return v;
         }
-        function carrierRows(keys) {
-          return keys.map(k => {
-            const lab = CARRIER_LABELS[k] || k;
-            const v = carrierVal(k);
-            return `<div class="kv-item"><div class="kv-label">${escapeHtml(lab)}</div><div class="kv-value">${v === '—' ? '—' : escapeHtml(String(v))}</div></div>`;
-          }).join('');
-        }
-        const keysTest = ['test_category', 'other_test_type', 'package_code', 'report_mode', 'partner_order_id'];
+        const keysTest = ['test_category', 'other_test_type', 'package_code', 'report_mode', 'partner_order_id', 'prior_order_id', 'reuse_prior_pipeline_outputs'];
         const keysP1 = ['patient_name', 'patient_birth', 'patient_gender'];
         const keysP2 = ['patient2_name', 'patient2_birth', 'patient2_gender', 'patient2_affected'];
         const keysP3 = ['patient3_name', 'patient3_birth', 'patient3_gender', 'patient3_affected'];
         const keysHosp = ['hospital_name', 'doctor', 'medical_record_id', 'sample_id', 'affected', 'clinical_information'];
         const keysSamp = ['sample_collection_date', 'receipt_date', 'report_language', 'report_type', 'sample_specimen_type', 'sample_barcode'];
-        html += `<div class="detail-section"><h4>Test type &amp; report pairing</h4><div class="detail-kv">${carrierRows(keysTest)}</div></div>`;
-        html += `<div class="detail-section"><h4>Patient</h4><div class="detail-kv">${carrierRows(keysP1)}</div></div>`;
+        function carrierRows(keys) {
+          return keys.map(k => {
+            const lab = CARRIER_LABELS[k] || k;
+            const v = carrierVal(k);
+            const disp = v === '—' ? '—' : String(v);
+            if (k === 'clinical_information') return orderDetailKvItem(lab, disp, { full: true, multiline: true });
+            if (k === 'patient_name' || k === 'patient2_name' || k === 'patient3_name') return orderDetailKvItem(lab, disp, { full: true });
+            return orderDetailKvItem(lab, disp, {});
+          }).join('');
+        }
+        const cardTest = odDetailSection('Test type & report pairing', carrierRows(keysTest));
+        const cardP1 = odDetailSection('Patient', carrierRows(keysP1));
+        let cardP2 = '';
         if (keysP2.some(k => c[k])) {
-          html += `<div class="detail-section"><h4>Patient 2</h4><div class="detail-kv">${carrierRows(keysP2)}</div></div>`;
+          cardP2 = odDetailSection('Patient 2', carrierRows(keysP2));
         }
+        let cardP3 = '';
         if (keysP3.some(k => c[k])) {
-          html += `<div class="detail-section"><h4>Patient 3</h4><div class="detail-kv">${carrierRows(keysP3)}</div></div>`;
+          cardP3 = odDetailSection('Patient 3', carrierRows(keysP3));
         }
-        html += `<div class="detail-section"><h4>Hospital and identifiers</h4><div class="detail-kv">${carrierRows(keysHosp)}</div></div>`;
-        html += `<div class="detail-section"><h4>Sample and report details</h4><div class="detail-kv">${carrierRows(keysSamp)}</div></div>`;
-        const pipeC = Object.fromEntries(Object.entries(o.params).filter(([k]) => k !== 'carrier'));
+        const cardHosp = odDetailSection('Hospital and identifiers', carrierRows(keysHosp));
+        const cardSamp = odDetailSection('Sample and report details', carrierRows(keysSamp));
+        html += `<div class="order-detail-sections-clinical">` +
+          `<div class="order-create-grid">` +
+          `<div class="order-create-left" style="display:flex;flex-direction:column;gap:16px">` +
+          cardTest + cardP1 + cardP2 + cardP3 +
+          `</div>` +
+          `<div class="order-create-right" style="display:flex;flex-direction:column;gap:16px">` +
+          cardHosp + cardSamp +
+          `</div>` +
+          `</div>` +
+          `</div>`;
+        const pipeC = Object.fromEntries(Object.entries(paramsRoot).filter(([k]) => k !== 'carrier'));
         if (Object.keys(pipeC).length) {
           const pairs = Object.entries(pipeC).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : v]);
           html += kvSection('Pipeline / other parameters', pairs);
         }
-      } else if (o.params && Object.keys(o.params).length > 0) {
-        const pairs = Object.entries(o.params).filter(([k]) => k !== 'nipt' && k !== 'carrier').map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : v]);
+      } else if (Object.keys(paramsRoot).length > 0) {
+        const pairs = Object.entries(paramsRoot).filter(([k]) => k !== 'nipt' && k !== 'carrier').map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : v]);
         if (pairs.length) html += kvSection('Service parameters', pairs);
       }
 
       qs('orderDetailBody').innerHTML = html;
+      const btnFu = qs('btnOrderDetailFollowUp');
+      if (btnFu) btnFu.onclick = () => { void startFollowUpOrderFrom(o); };
+      const btnEd = qs('btnOrderDetailEdit');
+      if (btnEd) btnEd.onclick = () => { void openEditOrder(o); };
       setupOrderPipelineLogPanel(o);
     }
 
@@ -5293,17 +5592,18 @@
       filtered.forEach(o => {
         const tr = document.createElement('tr');
         tr.className = 'order-row-click';
-        const svcLabel = o.service_code === 'sgnipt' ? 'Single-gene NIPT' : (o.service_code === 'carrier_screening' ? 'Carrier Screening' : o.service_code || '-');
+        const svcLabel = dashSvcLabel(o.service_code);
         const pat = patientDisplayName(o) || '—';
         const st = orderStatusUpper(o);
         const items = [];
         items.push('<button type="button" data-act="edit">Edit</button>');
         const terminalMenu = ['SAVED', 'FAILED', 'CANCELLED', 'COMPLETED', 'REPORT_READY'].includes(st);
-        if ((st === 'COMPLETED' || st === 'REPORT_READY') && ['carrier_screening', 'sgnipt'].includes(o.service_code)) {
+        if ((st === 'COMPLETED' || st === 'REPORT_READY') && ['carrier_screening', 'whole_exome', 'sgnipt'].includes(o.service_code)) {
           items.push('<button type="button" data-act="review">Review</button>');
+          items.push('<button type="button" data-act="new-from" title="New draft with copied clinical fields and FASTQ/BAM paths; enter a new Order ID">New order from this…</button>');
         }
         if (
-          ['carrier_screening', 'sgnipt'].includes(o.service_code)
+          ['carrier_screening', 'whole_exome', 'sgnipt'].includes(o.service_code)
           && ['COMPLETED', 'REPORT_READY', 'FAILED', 'CANCELLED'].includes(st)
         ) {
           const forceTitle = o.service_code === 'sgnipt'
@@ -5313,7 +5613,7 @@
           items.push('<button type="button" data-act="force-run-fresh" title="Delete Nextflow work/ cache and run completely from scratch (--fresh)">Force Run (Fresh)</button>');
         }
         if (
-          ['carrier_screening', 'sgnipt'].includes(o.service_code)
+          ['carrier_screening', 'whole_exome', 'sgnipt'].includes(o.service_code)
           && ['COMPLETED', 'REPORT_READY', 'FAILED'].includes(st)
         ) {
           const reprocessTitle = o.service_code === 'sgnipt'
@@ -5322,7 +5622,7 @@
           items.push(`<button type="button" data-act="reprocess-only" title="${reprocessTitle}">Reprocess only</button>`);
         }
         if (terminalMenu) {
-          const skipSubmit = ['carrier_screening', 'sgnipt'].includes(o.service_code)
+          const skipSubmit = ['carrier_screening', 'whole_exome', 'sgnipt'].includes(o.service_code)
             && ['COMPLETED', 'REPORT_READY', 'FAILED', 'CANCELLED'].includes(st);
           if (!skipSubmit) {
             items.push('<button type="button" data-act="submit">Submit</button>');
@@ -5393,7 +5693,8 @@
               clearMoreDdLayout(dd);
               mbtn.setAttribute('aria-expanded', 'false');
               const act = b.getAttribute('data-act');
-              if (act === 'edit') openEditOrder(o);
+              if (act === 'edit') void openEditOrder(o);
+              else if (act === 'new-from') void startFollowUpOrderFrom(o);
               else if (act === 'submit') startSavedOrder(o.order_id);
               else if (act === 'force-run') forceRunOrderRow(o);
               else if (act === 'force-run-fresh') freshRunOrderRow(o);
@@ -5493,6 +5794,28 @@
       const v = sel && sel.value ? String(sel.value).trim() : '';
       if (v) return v;
       return reviewLoadedOrderId ? String(reviewLoadedOrderId).trim() : '';
+    }
+
+    /** True when the dropdown points at a different order than `reviewData` / `reviewLoadedOrderId`. */
+    function isReviewOrderMismatch() {
+      const sel = qs('reviewOrderSelect');
+      const v = sel && sel.value ? String(sel.value).trim() : '';
+      if (!reviewLoadedOrderId || !v) return false;
+      return v !== reviewLoadedOrderId;
+    }
+
+    function onReviewOrderSelectChange() {
+      if (!reviewData) return;
+      if (reviewData._service_code === 'sgnipt') renderSgNIPTBanner();
+      else renderCarrierBanner();
+      renderVariantsTable();
+      renderDiseaseSummary();
+      renderReviewQC();
+      renderReviewStats();
+      renderReviewDarkGenes();
+      renderGeneDatabase();
+      updateReviewResultMeta();
+      updateReportGenerateUi();
     }
 
     /** Unique gene symbols from **checked** variants only (scopes Gene database + gene-knowledge API). */
@@ -5702,11 +6025,15 @@
 
     async function refreshReviewOrderList() {
       try {
-        const data = await apiGet('/orders?service_code=carrier_screening');
+        const data = await apiGet('/orders');
         const sel = qs('reviewOrderSelect');
         const current = sel.value;
         sel.innerHTML = '<option value="">-- Select Order --</option>';
-        (data.orders || []).forEach(o => {
+        const wesOrders = (data.orders || []).filter(o => {
+          const sc = o.service_code || '';
+          return sc === 'carrier_screening' || sc === 'whole_exome';
+        });
+        wesOrders.forEach(o => {
           const opt = document.createElement('option');
           opt.value = o.order_id;
           const sk = orderStatusUpper(o);
@@ -5714,10 +6041,16 @@
           opt.textContent = `${o.order_id} — ${stLabel}`;
           sel.appendChild(opt);
         });
-        if (current) sel.value = current;
-        if (reviewLoadedOrderId && sel) {
+        const ids = new Set(wesOrders.map(o => o.order_id));
+        const cur = current ? String(current).trim() : '';
+        if (cur && ids.has(cur)) {
+          sel.value = cur;
+        } else if (reviewLoadedOrderId) {
           ensureReviewOrderOption(reviewLoadedOrderId);
           sel.value = reviewLoadedOrderId;
+        } else if (cur) {
+          ensureReviewOrderOption(cur);
+          sel.value = cur;
         }
       } catch (e) { /* ignore */ }
     }
@@ -5736,7 +6069,7 @@
 
       try {
         const quietToast = !!opt.quietToast;
-        reviewData = await apiGet(`/order/${orderId}/result`);
+        reviewData = await apiGet(`/order/${orderId}/result?debug=1`);
 
         // ── sgNIPT 감지 및 정규화 ──────────────────────────────────────────
         const isSgNIPT = reviewData.service_code === 'sgnipt'
@@ -5782,8 +6115,7 @@
         }
         if (!reviewData.order_params || Object.keys(reviewData.order_params).length === 0) {
           try {
-            const svc = isSgNIPT ? 'sgnipt' : 'carrier_screening';
-            const list = await apiGet(`/orders?service_code=${svc}`);
+            const list = await apiGet('/orders');
             const row = (list.orders || []).find(o => o.order_id === orderId);
             if (row && row.params && typeof row.params === 'object') {
               reviewData.order_params = row.params;
@@ -5861,7 +6193,8 @@
       const pc = String(flat.package_code || '').trim();
       const rl = String(flat.report_language || '').trim().toUpperCase();
       let kind = null;
-      if (tc === 'standard_carrier') kind = 'standard';
+      if (pc === 'WholeExome') kind = 'standard';
+      else if (tc === 'standard_carrier') kind = 'standard';
       else if (tc === 'other' && ot === 'CouplesCarrier') kind = 'couples';
       else if (pc === 'CouplesCarrier') kind = 'couples';
       else if (pc === 'CarrierScreening' && tc !== 'other') kind = 'standard';
@@ -5888,6 +6221,15 @@
       const msg = qs('reportPdfDisabledMsg');
       const langDisp = qs('reportOrderLangDisplay');
       if (!btn || !langDisp) return;
+      if (reviewData && isReviewOrderMismatch()) {
+        if (msg) {
+          msg.style.display = 'block';
+          msg.textContent = 'Load the selected order before generating a report.';
+        }
+        btn.classList.add('report-gen-blocked');
+        langDisp.textContent = '—';
+        return;
+      }
       const op = reviewData && reviewData.order_params;
       const flat = carrierOrderMetaFlat(op);
       const el = carrierReportEligible(op);
@@ -6154,6 +6496,11 @@
         if (countEl) countEl.textContent = '';
         return;
       }
+      if (isReviewOrderMismatch()) {
+        tbody.innerHTML = '<tr><td colspan="10" class="muted">Order selection changed — click <strong>Load</strong> to refresh.</td></tr>';
+        if (countEl) countEl.textContent = '—';
+        return;
+      }
       if (!selectedVariants.size) {
         tbody.innerHTML = '<tr><td colspan="10" class="muted">Select one or more variants on the <strong>Variants</strong> tab — each checked row appears here (gene text is shared; variant notes are per HGVS).</td></tr>';
         if (countEl) countEl.textContent = '0 variant(s)';
@@ -6207,6 +6554,9 @@
       if (!reviewData) {
         el.textContent = '';
         el.classList.add('hidden');
+        el.style.whiteSpace = '';
+        el.style.fontFamily = '';
+        el.style.fontSize = '';
         return;
       }
       const ga = reviewData.generated_at != null ? String(reviewData.generated_at).trim() : '';
@@ -6214,7 +6564,22 @@
       const parts = [];
       if (ga) parts.push(`Snapshot (result.json): ${ga}`);
       parts.push(`${n} variant row(s)`);
-      el.textContent = parts.join(' · ');
+      if (isReviewOrderMismatch()) {
+        const selId = (qs('reviewOrderSelect') && qs('reviewOrderSelect').value || '').trim();
+        parts.push(`Loaded: ${reviewLoadedOrderId} — selected: ${selId} (click Load to refresh)`);
+      }
+      const dbg = reviewData._review_debug;
+      if (dbg && typeof dbg === 'object') {
+        el.textContent = parts.join(' · ') + '\n\n_review_debug:\n' + JSON.stringify(dbg, null, 2);
+        el.style.whiteSpace = 'pre-wrap';
+        el.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+        el.style.fontSize = '11px';
+      } else {
+        el.textContent = parts.join(' · ');
+        el.style.whiteSpace = '';
+        el.style.fontFamily = '';
+        el.style.fontSize = '';
+      }
       el.classList.remove('hidden');
     }
 
@@ -6222,6 +6587,18 @@
     function renderCarrierBanner() {
       const banner = qs('carrierBanner');
       if (!reviewData) { banner.classList.add('hidden'); return; }
+
+      if (isReviewOrderMismatch()) {
+        banner.className = 'carrier-banner uncertain';
+        banner.innerHTML = `
+        <div class="banner-icon">↻</div>
+        <div>
+          <div class="banner-text">Order selection changed</div>
+          <div class="banner-detail">Click <strong>Load</strong> to load results for the selected order. (Summary below is still for <strong>${escapeHtml(String(reviewLoadedOrderId))}</strong>.)</div>
+        </div>`;
+        banner.classList.remove('hidden');
+        return;
+      }
 
       const variants = reviewData.variants || [];
       const pathogenic = variants.filter(v => {
@@ -6271,6 +6648,19 @@
     function renderSgNIPTBanner() {
       const banner = qs('carrierBanner');
       if (!reviewData) { banner.classList.add('hidden'); return; }
+
+      if (isReviewOrderMismatch()) {
+        banner.className = 'carrier-banner uncertain';
+        banner.innerHTML = `
+        <div class="banner-icon">↻</div>
+        <div>
+          <div class="banner-text">Order selection changed</div>
+          <div class="banner-detail">Click <strong>Load</strong> to load results for the selected order. (Summary below is still for <strong>${escapeHtml(String(reviewLoadedOrderId))}</strong>.)</div>
+        </div>`;
+        banner.classList.remove('hidden');
+        return;
+      }
+
       const sum = reviewData.summary || {};
       const va = reviewData.variant_analysis_summary || {};
       const ff = reviewData.fetal_fraction_used
@@ -6323,6 +6713,11 @@
     function renderDiseaseSummary() {
       const container = qs('diseaseSummaryContent');
       if (!reviewData) { container.innerHTML = '<div class="muted">No data loaded</div>'; return; }
+
+      if (isReviewOrderMismatch()) {
+        container.innerHTML = '<div class="muted" style="padding:20px;text-align:center">Order selection changed — click <strong>Load</strong> to refresh this tab.</div>';
+        return;
+      }
 
       const diseaseGroups = reviewData.disease_groups || {};
       const variants = reviewData.variants || [];
@@ -6406,6 +6801,14 @@
     // ── QC Summary ──
     function renderReviewQC() {
       if (!reviewData) return;
+
+      if (isReviewOrderMismatch()) {
+        qs('qcStats').innerHTML = '<p class="muted" style="grid-column:1/-1;margin:0">Order selection changed — click <strong>Load</strong> to refresh QC.</p>';
+        const wrap = qs('qcDetailTable');
+        if (wrap) wrap.innerHTML = '';
+        return;
+      }
+
       const qc = reviewData.qc_summary || {};
       const cov = qc.coverage || {};
       const aln = qc.alignment || {};
@@ -7804,6 +8207,11 @@
         box.innerHTML = '<p class="muted">Load an order first.</p>';
         return;
       }
+      if (isReviewOrderMismatch()) {
+        hint.textContent = '';
+        box.innerHTML = '<p class="muted">Order selection changed — click <strong>Load</strong> to refresh.</p>';
+        return;
+      }
       const dg = reviewData.dark_genes;
       const dgMissing =
         !dg ||
@@ -7868,6 +8276,13 @@
     // ── Statistics ──
     function renderReviewStats() {
       if (!reviewData) return;
+
+      if (isReviewOrderMismatch()) {
+        qs('statsClassBody').innerHTML = '<div class="muted">Order selection changed — click <strong>Load</strong> to refresh.</div>';
+        qs('statsGeneBody').innerHTML = '';
+        qs('statsDiseaseBody').innerHTML = '';
+        return;
+      }
 
       // ── sgNIPT: summary + QC 정보 표시 ─────────────────────────────────
       if (reviewData._service_code === 'sgnipt') {
@@ -8047,6 +8462,16 @@
 
     function renderVariantsTable() {
       if (!reviewData) return;
+
+      if (isReviewOrderMismatch()) {
+        const tb = qs('tblVariantsBody');
+        const selId = (qs('reviewOrderSelect') && qs('reviewOrderSelect').value || '').trim();
+        const colspan = reviewData._service_code === 'sgnipt' ? 10 : 13;
+        const msg = `Different order selected — click <strong>Load</strong> to show data for <strong>${escapeHtml(selId)}</strong> (table still shows <strong>${escapeHtml(String(reviewLoadedOrderId))}</strong>).`;
+        if (tb) tb.innerHTML = `<tr><td colspan="${colspan}" class="muted" style="padding:20px;text-align:center">${msg}</td></tr>`;
+        qs('variantCount').textContent = '— pending load —';
+        return;
+      }
 
       // ── sgNIPT: 별도 컬럼으로 렌더링 ────────────────────────────────────
       if (reviewData._service_code === 'sgnipt') {
@@ -8876,6 +9301,8 @@
       wireBamCsvBrowseUi();
       wireDashBucketTable();
       await detectOrderApiPrefix();
+      const reviewOrderSel = qs('reviewOrderSelect');
+      if (reviewOrderSel) reviewOrderSel.addEventListener('change', onReviewOrderSelectChange);
       let lastTab = localStorage.getItem('activeTab') || 'dash';
       if (lastTab === 'submit' || lastTab === 'track') lastTab = 'orders';
       if (lastTab === 'review') {

@@ -1,0 +1,41 @@
+"""Carrier screening: interpretation panel required for standard orders (not extended programs)."""
+
+from app.services.carrier_screening.plugin import CarrierScreeningPlugin
+
+
+def test_standard_carrier_requires_wes_panel_id():
+    pl = CarrierScreeningPlugin()
+    ok, msg = pl.validate_params({"carrier": {"test_category": "standard_carrier"}})
+    assert ok is False
+    assert "wes_panel_id" in msg.lower()
+
+
+def test_extended_program_skips_panel_requirement():
+    pl = CarrierScreeningPlugin()
+    ok, _ = pl.validate_params(
+        {"carrier": {"test_category": "other", "other_test_type": "Exome"}}
+    )
+    assert ok is True
+
+
+def test_known_panel_passes():
+    pl = CarrierScreeningPlugin()
+    ok, msg = pl.validate_params(
+        {
+            "carrier": {"test_category": "standard_carrier"},
+            "wes_panel_id": "carrier_demo_subset",
+        }
+    )
+    assert ok is True, msg
+
+
+def test_unknown_panel_fails():
+    pl = CarrierScreeningPlugin()
+    ok, msg = pl.validate_params(
+        {
+            "carrier": {"test_category": "standard_carrier"},
+            "wes_panel_id": "___no_such_panel___",
+        }
+    )
+    assert ok is False
+    assert "unknown" in msg.lower()

@@ -567,7 +567,9 @@ class VariantFilterConfig:
         acmg_filter: ACMG 분류 필터 집합 (비어있으면 필터 비활성)
         require_protein_altering: 단백질 변경 변이만 포함 여부
         backbone_bed_regions: backbone BED 영역 (비어있으면 필터 비활성)
-        disease_bed_regions: disease BED 영역 (정보 추가용)
+        disease_bed_regions: disease / panel target BED (column 4 = gene where present)
+        restrict_to_disease_bed: True이면 disease BED 좌표 밖 변이는 파싱 단계에서 제외 (선택).
+            기본 False — 패널 범위는 보통 ``interpretation_genes`` 주석 후 필터(wes_panels)로 맞춤.
     """
     hpo_genes: Set[str] = field(default_factory=set)
     gene_filter_set: Set[str] = field(default_factory=set)
@@ -578,6 +580,7 @@ class VariantFilterConfig:
     require_protein_altering: bool = True
     backbone_bed_regions: Dict = field(default_factory=dict)
     disease_bed_regions: Dict = field(default_factory=dict)
+    restrict_to_disease_bed: bool = False
 
 
 def apply_clinvar_filter(
@@ -716,6 +719,7 @@ def parse_vcf_variants(
         "nonref_count": 0,
         "protein_altering_count": 0,
         "bed_filtered_count": 0,
+        "disease_panel_filtered_count": 0,
         "gene_filtered_count": 0,
         "af_filtered_count": 0,
         "clinvar_filtered_count": 0,
@@ -796,6 +800,15 @@ def parse_vcf_variants(
             if filter_config.backbone_bed_regions:
                 if not variant_in_bed(rec.chrom, rec.pos, filter_config.backbone_bed_regions):
                     stats["bed_filtered_count"] += 1
+                    continue
+
+            # 4b. Disease / panel BED (optional): restrict to panel target intervals
+            if (
+                filter_config.restrict_to_disease_bed
+                and filter_config.disease_bed_regions
+            ):
+                if not variant_in_bed(rec.chrom, rec.pos, filter_config.disease_bed_regions):
+                    stats["disease_panel_filtered_count"] += 1
                     continue
 
             # 5. HPO 유전자 필터

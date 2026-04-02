@@ -25,8 +25,10 @@ services:
         required: false
 
     # .env.docker 가 APP_ENV=prod 여도 dev 스택에서는 배지·/health 의 environment 가 dev 가 되도록 덮어씀
+    # ENABLED_SERVICES: overrides env_file so stale .env.docker (without whole_exome) still registers WES plugin.
     environment:
       APP_ENV: ${APP_ENV:-dev}
+      ENABLED_SERVICES: carrier_screening,whole_exome,sgnipt
 
     # 로그는 docker compose logs (표준출력). 호스트 session/ 마운트는 uid 불일치 시 Permission denied 유발.
     command: /bin/sh -c "uvicorn app.main:app --host 0.0.0.0 --port $${APP_PORT:-8000} --no-access-log --reload --reload-dir /app/app --reload-dir /app/portal"

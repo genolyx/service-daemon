@@ -25,7 +25,7 @@ from ..base import ServicePlugin
 from ..wes_panels import interpretation_gene_set_for_job, should_apply_interpretation_post_filter
 from ...config import settings
 from ...models import Job, OutputFile
-from .layout_norm import carrier_sequencing_folder
+from .layout_norm import carrier_run_analysis_work_arg, carrier_sequencing_folder
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,11 @@ def carrier_report_generation_paths(job: Job) -> Tuple[str, str]:
 
     When settings.carrier_screening_report_output_root is set, uses
     <root>/output|analysis/<work_dir>/<sample_name> under that tree (e.g. /home/sam/Carrier_result).
-    Otherwise matches _get_dirs (pipeline locations).
+    Otherwise uses this order's work_dir + sample_name under carrier_screening_work_root.
+
+    Do **not** use job.output_dir here: ``align_carrier_job_dirs_from_main_vcf`` may point
+    ``job.output_dir`` at a *prior* pipeline tree when reusing the same VCF; portal
+    ``result.json`` must still live under the **current** order's folder.
     """
     root = (settings.carrier_screening_report_output_root or "").strip()
     wk = str(job.work_dir).strip() or "00"
@@ -47,9 +51,9 @@ def carrier_report_generation_paths(job: Job) -> Tuple[str, str]:
             os.path.join(root, "analysis", wk, smp),
         )
     work_root = settings.carrier_screening_work_root
-    output_dir = job.output_dir or os.path.join(work_root, "output", wk, smp)
-    analysis_dir = job.analysis_dir or os.path.join(work_root, "analysis", wk, smp)
-    return output_dir, analysis_dir
+    canonical_out = os.path.join(work_root, "output", wk, smp)
+    canonical_an = os.path.join(work_root, "analysis", wk, smp)
+    return canonical_out, canonical_an
 
 
 def carrier_report_output_dir(job: Job) -> str:
@@ -95,6 +99,13 @@ def _filter_variants_by_interpretation_genes(
     return out_ann, out_acmg
 
 
+def _realpaths_equal(a: str, b: str) -> bool:
+    try:
+        return os.path.normpath(os.path.realpath(a)) == os.path.normpath(os.path.realpath(b))
+    except OSError:
+        return os.path.normpath(os.path.abspath(a)) == os.path.normpath(os.path.abspath(b))
+
+
 def carrier_result_json_path(job: Job) -> Optional[str]:
     """
     Disk path to ``result.json`` for portal + PDF (must match ``generate_report_json``).
@@ -104,10 +115,22 @@ def carrier_result_json_path(job: Job) -> Optional[str]:
     point at the work tree under ``carrier_screening_work_root``. Prefer the same
     directory as ``carrier_report_output_dir`` so dark-genes PATCH and Generate Report
     see one file; fall back to ``job.output_dir`` if only that path exists.
+
+    When ``prior_pipeline_reuse`` left ``job.output_dir`` on the prior order's tree,
+    do **not** fall back to that path — it would serve the prior sample's ``result.json``
+    as this order's.
     """
     primary = os.path.join(carrier_report_output_dir(job), "result.json")
     if os.path.isfile(primary):
         return primary
+    prior_out = (job.params or {}).get("_prior_reuse_output_dir")
+    if (
+        job.output_dir
+        and prior_out
+        and (job.params or {}).get("_prior_reuse")
+        and _realpaths_equal(str(job.output_dir).strip(), str(prior_out).strip())
+    ):
+        return None
     if job.output_dir:
         alt = os.path.join(job.output_dir, "result.json")
         if os.path.isfile(alt):
@@ -131,10 +154,18 @@ def write_carrier_result_json_sync(job: Job, data: Dict[str, Any]) -> List[str]:
     if job.output_dir:
         alt = os.path.join(job.output_dir, "result.json")
         if os.path.normpath(alt) != os.path.normpath(primary):
-            os.makedirs(os.path.dirname(alt), exist_ok=True)
-            with open(alt, "w", encoding="utf-8") as f:
-                f.write(text)
-            written.append(alt)
+            prior_out = (job.params or {}).get("_prior_reuse_output_dir")
+            if (
+                (job.params or {}).get("_prior_reuse")
+                and prior_out
+                and _realpaths_equal(str(job.output_dir).strip(), str(prior_out).strip())
+            ):
+                pass  # do not mirror into prior order's output tree
+            else:
+                os.makedirs(os.path.dirname(alt), exist_ok=True)
+                with open(alt, "w", encoding="utf-8") as f:
+                    f.write(text)
+                written.append(alt)
     return written
 
 
@@ -239,6 +270,39 @@ def _job_stop_requested(order_id: str) -> bool:
     return get_runner().stop_requested(order_id)
 
 
+def _carrier_requires_interpretation_panel(params: Optional[Dict[str, Any]]) -> bool:
+    """
+    True when the order must include ``wes_panel_id`` (interpretation/report scope).
+
+    Extended services (portal: ``test_category == other`` + exome/WGS/etc.) hide the
+    WES panel selector — those orders skip this requirement.
+    """
+    p = params or {}
+    if not isinstance(p, dict):
+        return True
+    c = p.get("carrier") or {}
+    if not isinstance(c, dict):
+        return True
+    tc = (c.get("test_category") or "").strip()
+    if tc == "other":
+        return False
+    return True
+
+
+def _resolve_carrier_wes_panel_id(params: Optional[Dict[str, Any]]) -> str:
+    """``wes_panel_id`` at top level or under ``params.carrier`` (portal sends both)."""
+    p = params or {}
+    if not isinstance(p, dict):
+        return ""
+    w = (p.get("wes_panel_id") or "").strip()
+    if w:
+        return w
+    c = p.get("carrier") or {}
+    if isinstance(c, dict):
+        return (c.get("wes_panel_id") or "").strip()
+    return ""
+
+
 class CarrierScreeningPlugin(ServicePlugin):
     """Carrier Screening 서비스 플러그인"""
 
@@ -270,7 +334,40 @@ class CarrierScreeningPlugin(ServicePlugin):
 
     def validate_params(self, params: Dict[str, Any]) -> Tuple[bool, str]:
         """서비스별 파라미터 유효성 검사"""
-        # 필수 파라미터 없음 (기본값 사용 가능)
+        carrier = (params or {}).get("carrier") or {}
+        if carrier.get("reuse_prior_pipeline_outputs"):
+            pid = (carrier.get("prior_order_id") or "").strip()
+            if not pid:
+                return (
+                    False,
+                    "prior_order_id is required when reuse_prior_pipeline_outputs is true",
+                )
+        # Standard carrier screening: full-exome (capture) annotation + order-time interpretation panel.
+        # Extended clinical programs (test_category "other" / Exome, WGS, …) do not use the WES panel UI.
+        if _carrier_requires_interpretation_panel(params):
+            wid = _resolve_carrier_wes_panel_id(params)
+            if not wid:
+                return (
+                    False,
+                    "wes_panel_id is required: choose a Primary (interpretation) panel. "
+                    "The pipeline annotates the full exome/capture; the panel narrows the clinical report.",
+                )
+            from ..wes_panels import get_panel_by_id, resolve_panel_interpretation_genes
+
+            panel = get_panel_by_id(wid)
+            if not panel:
+                return (
+                    False,
+                    f"Unknown wes_panel_id={wid!r} — add it to the WES panel catalog or fix the id.",
+                )
+            genes = resolve_panel_interpretation_genes(panel)
+            if not genes:
+                return (
+                    False,
+                    f"Panel {wid!r} resolves to zero interpretation genes "
+                    "(needs interpretation_genes, interpretation_genes_file, or "
+                    "interpretation_genes_from_disease_bed + disease_bed).",
+                )
         return True, ""
 
     # ─── 디렉토리 구조 ─────────────────────────────────────
@@ -466,6 +563,11 @@ class CarrierScreeningPlugin(ServicePlugin):
 
     async def prepare_inputs(self, job: Job) -> bool:
         """FASTQ 파일 확인 및 디렉토리 구조 생성"""
+        from .prior_reuse import (
+            carrier_reuse_prior_pipeline_requested,
+            prepare_carrier_prior_pipeline_reuse,
+        )
+
         dirs = self._get_dirs(job)
 
         try:
@@ -486,6 +588,16 @@ class CarrierScreeningPlugin(ServicePlugin):
         job.analysis_dir = dirs["analysis"]
         job.output_dir = dirs["output"]
         job.log_dir = dirs["log"]
+
+        # Same sequencing run, new order / panel: reuse prior pipeline outputs (no Nextflow)
+        if carrier_reuse_prior_pipeline_requested(job):
+            if not prepare_carrier_prior_pipeline_reuse(job):
+                return False
+            logger.info(
+                "[carrier_screening] prior pipeline reuse — skipping FASTQ download/check for %s",
+                job.order_id,
+            )
+            return True
 
         # FASTQ 파일 확인
         r1_path, r2_path = self._find_fastq_files(dirs["fastq"], job.sample_name)
@@ -659,7 +771,7 @@ class CarrierScreeningPlugin(ServicePlugin):
             "bash",
             script,
             "-w",
-            str(job.work_dir),
+            carrier_run_analysis_work_arg(job),
             "-s",
             sample_folder,
             "-d",
@@ -810,6 +922,13 @@ class CarrierScreeningPlugin(ServicePlugin):
 
         apply_wes_panel_to_job_params(job)
 
+        if job.params.get("_prior_reuse"):
+            logger.info(
+                "[carrier_screening] prior pipeline reuse — skipping Nextflow/run_analysis for %s",
+                job.order_id,
+            )
+            return "true"
+
         script_path = self._effective_run_analysis_script()
         if script_path:
             cmd = self._shell_command_run_analysis(job, script_path)
@@ -940,6 +1059,9 @@ class CarrierScreeningPlugin(ServicePlugin):
                 if ap not in roots:
                     roots.append(ap)
 
+        for key in ("_prior_reuse_analysis_dir", "_prior_reuse_output_dir"):
+            add((job.params or {}).get(key) or "")
+
         for key in ("analysis", "output"):
             add(dirs.get(key) or "")
 
@@ -971,6 +1093,13 @@ class CarrierScreeningPlugin(ServicePlugin):
         """파이프 산출 파일명이 sample_name 전체와 다를 때(예: NA12878만 포함) 대비."""
         seq = carrier_sequencing_folder(job)
         raw: List[Optional[str]] = [job.sample_name, seq, job.order_id]
+        if job.params.get("_prior_reuse"):
+            raw.extend(
+                [
+                    job.params.get("_prior_reuse_sample_name"),
+                    job.params.get("_prior_reuse_order_id"),
+                ]
+            )
         tokens: List[str] = []
         for r in raw:
             if not r:
@@ -1047,7 +1176,25 @@ class CarrierScreeningPlugin(ServicePlugin):
             )
             return False
 
-        main_vcf = self._pick_main_carrier_vcf(vcf_files, job)
+        hint = (job.params or {}).get("_prior_reuse_main_vcf_hint")
+        main_vcf: str
+        if hint and os.path.isfile(hint):
+            by_real: Dict[str, str] = {}
+            for p in vcf_files:
+                try:
+                    by_real[os.path.realpath(os.path.abspath(p))] = p
+                except OSError:
+                    by_real[p] = p
+            try:
+                hreal = os.path.realpath(os.path.abspath(hint))
+            except OSError:
+                hreal = hint
+            if hreal in by_real:
+                main_vcf = by_real[hreal]
+            else:
+                main_vcf = self._pick_main_carrier_vcf(vcf_files, job)
+        else:
+            main_vcf = self._pick_main_carrier_vcf(vcf_files, job)
         logger.info(
             "[carrier_screening] Main VCF (ranked among %s candidates): %s",
             len(vcf_files),
@@ -1097,11 +1244,20 @@ class CarrierScreeningPlugin(ServicePlugin):
 
             dirs = self._get_dirs(job)
             analysis_dir = dirs["analysis"]
-            output_dir = dirs["output"]
-            os.makedirs(output_dir, exist_ok=True)
+            # Pipeline artifacts (VCF, pipeline_complete) may live under a prior run's tree
+            # after main_vcf alignment; portal outputs go to carrier_report_output_dir (this order).
+            artifact_output_dir = dirs["output"]
+            os.makedirs(artifact_output_dir, exist_ok=True)
+            portal_output_dir = carrier_report_output_dir(job)
+            os.makedirs(portal_output_dir, exist_ok=True)
 
             logger.info(f"[process_results] Starting annotation for {job.sample_name}")
             logger.info(f"  Main VCF: {main_vcf}")
+            logger.info(
+                "[process_results] artifact output (VCF tree)=%s | portal result.json dir=%s",
+                artifact_output_dir,
+                portal_output_dir,
+            )
             if _job_stop_requested(job.order_id):
                 logger.info("[process_results] User stop requested before cleaning VCF")
                 return False
@@ -1109,7 +1265,12 @@ class CarrierScreeningPlugin(ServicePlugin):
             # ── 1b. VEP annotation 여부 감지 ──
             # Nextflow 파이프라인에서 VEP annotation이 완료된 경우
             # (pipeline_complete.json의 vep_annotation == 'enabled' 또는 VCF 헤더 직접 확인)
-            pipeline_complete_path = os.path.join(output_dir, "pipeline_complete.json")
+            pipeline_complete_path = os.path.join(artifact_output_dir, "pipeline_complete.json")
+            prior_od = (job.params or {}).get("_prior_reuse_output_dir")
+            if not os.path.exists(pipeline_complete_path) and prior_od:
+                alt_pc = os.path.join(str(prior_od).strip(), "pipeline_complete.json")
+                if os.path.isfile(alt_pc):
+                    pipeline_complete_path = alt_pc
             vep_enabled_from_pipeline = False
             if os.path.exists(pipeline_complete_path):
                 try:
@@ -1264,6 +1425,11 @@ class CarrierScreeningPlugin(ServicePlugin):
                 clinvar_filter = {f.strip() for f in clinvar_filter_text.split(",") if f.strip()}
                 logger.info(f"  ClinVar filter: {clinvar_filter}")
 
+            restrict_disease = job.params.get("restrict_to_disease_bed")
+            if restrict_disease is None:
+                # Default False: panel scope = interpretation_genes post-filter (wes_panels), not per-panel BED.
+                # Set True only if you intentionally want coordinate pre-filter from disease_bed_regions.
+                restrict_disease = False
             filter_config = VariantFilterConfig(
                 hpo_genes=hpo_genes,
                 gene_filter_set=gene_filter_set,
@@ -1273,6 +1439,7 @@ class CarrierScreeningPlugin(ServicePlugin):
                 require_protein_altering=bool(job.params.get("require_protein_altering", True)),
                 backbone_bed_regions=backbone_regions,
                 disease_bed_regions=disease_regions,
+                restrict_to_disease_bed=bool(restrict_disease),
             )
 
             if _job_stop_requested(job.order_id):
@@ -1311,7 +1478,8 @@ class CarrierScreeningPlugin(ServicePlugin):
             logger.info(
                 f"  VCF parsing complete: "
                 f"{parse_stats.get('total_records', 0)} records → "
-                f"{parse_stats.get('final_count', 0)} variants after filtering"
+                f"{parse_stats.get('final_count', 0)} variants after filtering "
+                f"(disease/panel BED excluded: {parse_stats.get('disease_panel_filtered_count', 0)})"
             )
 
             if parse_stats.get("warnings"):
@@ -1442,14 +1610,29 @@ class CarrierScreeningPlugin(ServicePlugin):
             # ── 9. QC 메트릭스 추출 (동기 I/O → to_thread) ──
             logger.info(f"  Extracting QC metrics...")
             qc_extras = self._qc_extra_search_dirs(job, analysis_dir)
+            prior_ad = (job.params or {}).get("_prior_reuse_analysis_dir")
+            if prior_ad:
+                pad = str(prior_ad).strip()
+                if pad and os.path.isdir(pad) and pad not in qc_extras:
+                    qc_extras = [pad] + list(qc_extras)
+            qc_sn = job.sample_name
+            if job.params.get("_prior_reuse") and (job.params or {}).get(
+                "_prior_reuse_sample_name"
+            ):
+                qc_sn = (
+                    str((job.params or {}).get("_prior_reuse_sample_name") or "").strip()
+                    or qc_sn
+                )
             qc_more = self._qc_more_roots_from_outputs(job)
             qc_summary = await asyncio.to_thread(
                 extract_qc_summary,
                 analysis_dir,
-                job.sample_name,
+                qc_sn,
                 qc_extras,
                 qc_more,
             )
+            if job.params.get("_prior_reuse"):
+                qc_summary["sample_name"] = job.sample_name
 
             if _job_stop_requested(job.order_id):
                 logger.info("[process_results] User stop requested after QC extract")
@@ -1484,9 +1667,18 @@ class CarrierScreeningPlugin(ServicePlugin):
             _ig_set = interpretation_gene_set_for_job(job)
             _post_applied = should_apply_interpretation_post_filter(job) and bool(_ig_set)
 
+            _prior_oid = (
+                ((job.params or {}).get("carrier") or {}).get("prior_order_id")
+                if job.params.get("_prior_reuse")
+                else None
+            )
             filter_summary = {
                 "backbone_bed": os.path.basename(backbone_bed_path) if backbone_bed_path else None,
                 "disease_bed": os.path.basename(disease_bed_path) if disease_bed_path else None,
+                "restrict_to_disease_bed": bool(restrict_disease),
+                "disease_panel_filtered_count": parse_stats.get(
+                    "disease_panel_filtered_count", 0
+                ),
                 "hpo_terms_count": len(hpo_genes) if hpo_genes else 0,
                 "gene_filter_count": len(gene_filter_set) if gene_filter_set else 0,
                 "max_af": max_af,
@@ -1497,6 +1689,8 @@ class CarrierScreeningPlugin(ServicePlugin):
                 "panel_filter_after_analysis": bool((job.params or {}).get("panel_filter_after_analysis")),
                 "interpretation_post_filter_genes": len(_ig_set) if _post_applied else 0,
                 "interpretation_post_filter_applied": _post_applied,
+                "prior_order_id": str(_prior_oid).strip() if _prior_oid else None,
+                "prior_pipeline_reuse": bool(job.params.get("_prior_reuse")),
             }
 
             if _job_stop_requested(job.order_id):
@@ -1507,7 +1701,13 @@ class CarrierScreeningPlugin(ServicePlugin):
             logger.info(f"  Generating result.json...")
             seen_mr = set()
             metric_image_roots: List[str] = []
-            for p in [output_dir] + list(qc_more or []):
+            prior_out = (job.params or {}).get("_prior_reuse_output_dir")
+            _mi_first: List[str] = []
+            if prior_out:
+                po = str(prior_out).strip()
+                if po and os.path.isdir(po):
+                    _mi_first.append(po)
+            for p in _mi_first + [artifact_output_dir, portal_output_dir] + list(qc_more or []):
                 if not p or not os.path.isdir(p):
                     continue
                 try:
@@ -1529,7 +1729,7 @@ class CarrierScreeningPlugin(ServicePlugin):
                 disease_bed_info=disease_bed_info,
                 filter_summary=filter_summary,
                 parse_stats=parse_stats,
-                output_dir=output_dir,
+                output_dir=portal_output_dir,
                 metric_image_search_roots=metric_image_roots,
                 analysis_dir=analysis_dir,
                 dark_genes_extra_roots=dark_roots,
@@ -1547,20 +1747,20 @@ class CarrierScreeningPlugin(ServicePlugin):
             def _write_tsv():
                 with open(result_json_path, "r") as f:
                     result_data = json.load(f)
-                generate_variants_tsv(result_data.get("variants", []), output_dir)
+                generate_variants_tsv(result_data.get("variants", []), portal_output_dir)
 
             await asyncio.to_thread(_write_tsv)
 
             # ── 14. QC summary JSON 저장 ──
             def _write_qc():
-                qc_path = os.path.join(output_dir, "qc_summary.json")
+                qc_path = os.path.join(portal_output_dir, "qc_summary.json")
                 with open(qc_path, "w", encoding="utf-8") as f:
                     json.dump(qc_summary, f, ensure_ascii=False, indent=2, default=str)
 
             await asyncio.to_thread(_write_qc)
 
             logger.info(
-                f"[process_results] Complete: {output_dir} "
+                f"[process_results] Complete: portal result → {portal_output_dir} "
                 f"({len(annotated_variants)} variants, "
                 f"{len(acmg_results)} ACMG classifications)"
             )
@@ -1578,11 +1778,11 @@ class CarrierScreeningPlugin(ServicePlugin):
     async def get_output_files(self, job: Job) -> List[OutputFile]:
         """Portal에 업로드할 파일 목록을 반환합니다."""
         dirs = self._get_dirs(job)
-        output_dir = dirs["output"]
+        review_out = carrier_report_output_dir(job)
         files = []
 
         # result.json (필수)
-        result_json = os.path.join(output_dir, "result.json")
+        result_json = os.path.join(review_out, "result.json")
         if os.path.exists(result_json):
             files.append(OutputFile(
                 file_path=result_json,
@@ -1592,7 +1792,7 @@ class CarrierScreeningPlugin(ServicePlugin):
             ))
 
         # qc_summary.json
-        qc_json = os.path.join(output_dir, "qc_summary.json")
+        qc_json = os.path.join(review_out, "qc_summary.json")
         if os.path.exists(qc_json):
             files.append(OutputFile(
                 file_path=qc_json,
@@ -1602,7 +1802,7 @@ class CarrierScreeningPlugin(ServicePlugin):
             ))
 
         # variants.tsv
-        variants_tsv = os.path.join(output_dir, "variants.tsv")
+        variants_tsv = os.path.join(review_out, "variants.tsv")
         if os.path.exists(variants_tsv):
             files.append(OutputFile(
                 file_path=variants_tsv,
@@ -1613,7 +1813,7 @@ class CarrierScreeningPlugin(ServicePlugin):
 
         # IGV 스냅샷 이미지
         snapshot_dirs = [
-            os.path.join(output_dir, "snapshots"),
+            os.path.join(review_out, "snapshots"),
             os.path.join(dirs["analysis"], "snapshots"),
         ]
         for snap_dir in snapshot_dirs:

@@ -141,6 +141,16 @@ class OrderStore:
             )
             self._conn.commit()
 
+    def clear_result_json(self, order_id: str) -> None:
+        """Remove cached result_json (e.g. stale snapshot after fixing per-order disk paths)."""
+        now = now_kst_iso()
+        with self._lock:
+            self._conn.execute(
+                "UPDATE orders SET result_json = NULL, updated_at = ? WHERE order_id = ?",
+                (now, order_id),
+            )
+            self._conn.commit()
+
     def set_review_json(self, order_id: str, data: Dict[str, Any]) -> None:
         s = json.dumps(data, ensure_ascii=False)
         now = now_kst_iso()
@@ -213,6 +223,20 @@ class OrderStore:
             except json.JSONDecodeError:
                 return None
 
+    def fetch_job(self, order_id: str) -> Optional[Job]:
+        """Load a single Job snapshot by primary key (for prior-order resolution, etc.)."""
+        with self._lock:
+            cur = self._conn.cursor()
+            cur.execute("SELECT job_json FROM orders WHERE order_id = ?", (order_id,))
+            row = cur.fetchone()
+        if not row or not row[0]:
+            return None
+        try:
+            return Job.model_validate(json.loads(row[0]))
+        except Exception as e:
+            logger.warning("fetch_job %s: %s", order_id, e)
+            return None
+
     def fetch_all_jobs(self) -> List[Job]:
         """Load all Job rows from job_json (documents ignored here)."""
         with self._lock:
@@ -231,11 +255,15 @@ class OrderStore:
 
 
 def ingest_result_json_from_disk(store: OrderStore, job: Job) -> None:
-    """If output_dir/result.json exists, store in DB."""
-    if not job.output_dir:
-        return
-    path = os.path.join(job.output_dir, "result.json")
-    if not os.path.isfile(path):
+    """If result.json exists for this order (carrier: canonical review path), store in DB."""
+    path = None
+    if getattr(job, "service_code", None) == "carrier_screening":
+        from app.services.carrier_screening.plugin import carrier_result_json_path
+
+        path = carrier_result_json_path(job)
+    elif job.output_dir:
+        path = os.path.join(job.output_dir, "result.json")
+    if not path or not os.path.isfile(path):
         return
     try:
         with open(path, "r", encoding="utf-8") as f:

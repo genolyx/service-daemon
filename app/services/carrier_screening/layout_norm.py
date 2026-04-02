@@ -7,12 +7,61 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Tuple
+from typing import Optional, Tuple
 
 from ...config import settings
 from ...models import Job
 
 logger = logging.getLogger(__name__)
+
+
+def carrier_fastq_dir_from_local_paths(job: Job) -> Optional[str]:
+    """
+    When R1/R2 are local files in the same directory, use that directory as fastq_dir.
+
+    This avoids ``work_root/fastq/<job.work_dir>/<sequencing_folder>`` when reusing FASTQ from
+    an older run (different work segment under ``.../fastq/<work>/...``).
+    """
+    r1 = (job.fastq_r1_path or "").strip()
+    r2 = (job.fastq_r2_path or "").strip()
+    if not r1 or not r2:
+        return None
+    if not os.path.isfile(r1) or not os.path.isfile(r2):
+        return None
+    d1 = os.path.realpath(os.path.dirname(os.path.abspath(r1)))
+    d2 = os.path.realpath(os.path.dirname(os.path.abspath(r2)))
+    if d1 != d2:
+        return None
+    if not os.path.isdir(d1):
+        return None
+    return d1
+
+
+def carrier_run_analysis_work_arg(job: Job) -> str:
+    """
+    ``-w`` for ``run_analysis.sh``: the wrapper expects ``fastq/<w>/<sequencing_folder>/``.
+
+    When FASTQ lives under ``<work_root>/fastq/<work>/<seq>/``, use that ``<work>`` even if
+    ``job.work_dir`` is a new date segment for a follow-up order.
+    """
+    wk = str(job.work_dir).strip() or "00"
+    work_root = os.path.realpath(settings.carrier_screening_work_root)
+    fastq_root = os.path.realpath(os.path.join(work_root, "fastq"))
+    r1 = (job.fastq_r1_path or "").strip()
+    if not r1 or not os.path.isfile(r1):
+        return wk
+    r1_dir = os.path.realpath(os.path.dirname(os.path.abspath(r1)))
+    try:
+        rel = os.path.relpath(r1_dir, fastq_root)
+    except ValueError:
+        return wk
+    rel_norm = rel.replace("\\", "/")
+    if rel_norm == "." or rel_norm.startswith("../"):
+        return wk
+    parts = [p for p in rel_norm.split("/") if p]
+    if len(parts) >= 1:
+        return parts[0]
+    return wk
 
 
 def carrier_sequencing_folder(job: Job) -> str:
@@ -119,7 +168,8 @@ def apply_carrier_layout_directories(job: Job) -> bool:
     wk = str(job.work_dir).strip() or "00"
     seq_folder = carrier_sequencing_folder(job)
     path_key = str(job.sample_name).strip() or job.order_id
-    new_f = os.path.join(work_root, "fastq", wk, seq_folder)
+    explicit_fq = carrier_fastq_dir_from_local_paths(job)
+    new_f = explicit_fq if explicit_fq else os.path.join(work_root, "fastq", wk, seq_folder)
     new_a = os.path.join(work_root, "analysis", wk, path_key)
     new_o = os.path.join(work_root, "output", wk, path_key)
     new_l = os.path.join(work_root, "log", wk, path_key)

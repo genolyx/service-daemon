@@ -4,13 +4,16 @@ Configurable WES / exome interpretation panels (order-time selection).
 - **Bundled** catalog: ``data/wes_panels.json`` (or ``WES_PANELS_JSON``).
 - **Custom** (portal-built): ``data/wes_panels_custom.json`` (or ``WES_PANELS_CUSTOM_JSON``); merged; custom wins on id clash.
 
-Panels may define ``interpretation_genes`` (HGNC symbols) and ``narrow_with_panel_bed``; the carrier
-plugin can then narrow ``result.json`` to that gene set after VCF parse / ACMG. Order params may add
+Panels should define ``interpretation_genes`` (HGNC symbols) for report scope; the carrier plugin
+narrows ``result.json`` to that set **after** annotation / ACMG (``panel_filter_after_analysis``).
+Optional ``disease_bed`` / ``backbone_bed`` are for capture regions and ``disease_bed_gene`` tagging;
+coordinate pre-filter from disease BED is **off** by default (``restrict_to_disease_bed``). Order params may add
 ``interpretation_genes_extra`` for reflex testing without re-running the pipeline.
 """
 
 from __future__ import annotations
 
+import gzip
 import json
 import logging
 import os
@@ -147,6 +150,125 @@ def get_panel_by_id(panel_id: Optional[str]) -> Optional[Dict[str, Any]]:
     return None
 
 
+_GENE_SYMBOL_LIKE = re.compile(r"^[A-Z][A-Z0-9-]{0,62}$")
+# Typical HGNC symbols are short; BEDs may label syndromes / regions in column 4 (e.g. WOLF-HIRSCHHORN).
+_MAX_HGNC_LIKE_LEN = 15
+
+
+def _hgnc_like_gene_symbol(name: str) -> bool:
+    """
+    True if the BED 4th-column name looks like an HGNC gene symbol (not cytoband like 1p36 or 2p25.3).
+    Excludes long syndrome-style labels and multi-hyphen region names.
+    """
+    s = (name or "").strip().upper()
+    if not s:
+        return False
+    if "." in s:
+        return False
+    if len(s) > _MAX_HGNC_LIKE_LEN:
+        return False
+    if s.count("-") > 1:
+        return False
+    return bool(_GENE_SYMBOL_LIKE.match(s))
+
+
+def load_gene_symbols_from_text_file(abs_path: str) -> List[str]:
+    """One gene per line; # comments; comma/semicolon separated lines allowed."""
+    if not abs_path or not os.path.isfile(abs_path):
+        return []
+    out: List[str] = []
+    try:
+        with open(abs_path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = (line or "").split("#", 1)[0].strip()
+                if not line:
+                    continue
+                for tok in re.split(r"[\s,;]+", line):
+                    t = _clean_gene_token(tok)
+                    if t:
+                        out.append(t.upper())
+    except OSError as e:
+        logger.warning("[wes_panels] Cannot read interpretation_genes_file %s: %s", abs_path, e)
+        return []
+    return list(dict.fromkeys(out))
+
+
+def load_gene_symbols_from_bed_column4(abs_path: str) -> List[str]:
+    """
+    Unique HGNC-like symbols from BED column 4 (excludes cytobands and region labels).
+    Use when ``interpretation_genes_from_disease_bed`` is true: one technical BED, report scope = genes.
+    """
+    if not abs_path or not os.path.isfile(abs_path):
+        return []
+    seen: set = set()
+    out: List[str] = []
+    try:
+        opener = gzip.open if abs_path.endswith(".gz") else open
+        with opener(abs_path, "rt", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or line.startswith("track"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) < 4:
+                    continue
+                raw = (parts[3] or "").strip()
+                if not _hgnc_like_gene_symbol(raw):
+                    continue
+                u = raw.upper()
+                if u not in seen:
+                    seen.add(u)
+                    out.append(u)
+    except OSError as e:
+        logger.warning("[wes_panels] Cannot read disease BED for gene list %s: %s", abs_path, e)
+        return []
+    return out
+
+
+def resolve_panel_interpretation_genes(panel: Dict[str, Any]) -> List[str]:
+    """
+    Merged, deduped HGNC symbols for the panel (for post-annotation filtering).
+
+    Sources (in order):
+    - ``interpretation_genes`` array in JSON
+    - ``interpretation_genes_file`` (repo-relative path, one gene per line)
+    - ``interpretation_genes_from_disease_bed``: extract HGNC-like symbols from ``disease_bed`` column 4
+    """
+    seen: set = set()
+    ordered: List[str] = []
+
+    def add_many(xs: List[str]) -> None:
+        for x in xs:
+            u = str(x).strip().upper()
+            if not u:
+                continue
+            if u not in seen:
+                seen.add(u)
+                ordered.append(u)
+
+    raw_list = panel.get("interpretation_genes")
+    if isinstance(raw_list, list):
+        add_many([str(x).strip() for x in raw_list if str(x).strip()])
+
+    gf = str(panel.get("interpretation_genes_file") or "").strip()
+    if gf:
+        abs_gf = _resolve_repo_path(gf)
+        add_many(load_gene_symbols_from_text_file(abs_gf))
+
+    if bool(panel.get("interpretation_genes_from_disease_bed")):
+        rel = str(panel.get("disease_bed") or "").strip()
+        if rel:
+            abs_bed = _resolve_repo_path(rel)
+            add_many(load_gene_symbols_from_bed_column4(abs_bed))
+        else:
+            logger.warning(
+                "[wes_panels] Panel %s has interpretation_genes_from_disease_bed but no disease_bed",
+                panel.get("id"),
+            )
+
+    return ordered
+
+
 def approximate_gene_count_from_bed(abs_path: str) -> Optional[int]:
     """Rough count: unique non-empty 4th column tokens, else non-comment line count."""
     if not abs_path or not os.path.isfile(abs_path):
@@ -226,8 +348,11 @@ def panels_for_api_response() -> List[Dict[str, Any]]:
         backbone = _resolve_repo_path(str(p.get("backbone_bed") or ""))
         gc = p.get("gene_count")
         ig = p.get("interpretation_genes")
+        resolved = resolve_panel_interpretation_genes(p)
         if gc is None and isinstance(ig, list) and ig:
             gc = len([x for x in ig if str(x).strip()])
+        if gc is None and resolved:
+            gc = len(resolved)
         if gc is None and disease and os.path.isfile(disease):
             gc = approximate_gene_count_from_bed(disease)
         src = p.get("_source") or "bundled"
@@ -273,10 +398,7 @@ def apply_wes_panel_to_job_params(job: Any) -> None:
         logger.warning("[wes_panels] Unknown wes_panel_id=%r — ignoring", pid)
         return
 
-    interp_raw = panel.get("interpretation_genes")
-    interp_list: List[str] = []
-    if isinstance(interp_raw, list):
-        interp_list = [str(x).strip().upper() for x in interp_raw if str(x).strip()]
+    interp_list = resolve_panel_interpretation_genes(panel)
     narrow_from_panel_bed = True
     if interp_list:
         job.params["panel_interpretation_genes"] = interp_list

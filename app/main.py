@@ -51,6 +51,85 @@ _RESULT_JSON_CACHE_HEADERS = {
     "Pragma": "no-cache",
 }
 
+# Same Nextflow + carrier_screening review/report stack (optional WES panel for whole_exome).
+_CARRIER_LIKE = frozenset({"carrier_screening", "whole_exome"})
+
+
+def _order_result_review_debug(
+    job: Job,
+    result_json_path: Optional[str],
+    source: str,
+    result_payload: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Operator-facing paths for diagnosing shared result.json between orders.
+    Returned only when GET /order/{id}/result?debug=1.
+    """
+    out: Dict[str, Any] = {
+        "order_id": job.order_id,
+        "service_code": job.service_code,
+        "work_dir": getattr(job, "work_dir", None),
+        "sample_folder": getattr(job, "sample_name", None),
+        "job_output_dir": getattr(job, "output_dir", None),
+        "job_analysis_dir": getattr(job, "analysis_dir", None),
+        "resolved_result_json_path": result_json_path,
+        "resolved_path_exists": bool(result_json_path and os.path.isfile(result_json_path)),
+        "source": source,
+    }
+    if job.service_code in _CARRIER_LIKE:
+        from app.services.carrier_screening.plugin import carrier_report_output_dir
+        from app.services.wes_panels import (
+            get_panel_by_id,
+            interpretation_gene_set_for_job,
+            resolve_panel_interpretation_genes,
+            should_apply_interpretation_post_filter,
+        )
+
+        try:
+            cro = carrier_report_output_dir(job)
+            out["carrier_report_output_dir"] = cro
+            canon = os.path.join(cro, "result.json")
+            out["canonical_result_json_path"] = canon
+            out["canonical_path_exists"] = os.path.isfile(canon)
+        except Exception as e:
+            out["carrier_report_output_dir_error"] = str(e)
+
+        p = job.params or {}
+        wpid = p.get("wes_panel_id")
+        if not wpid and isinstance(p.get("carrier"), dict):
+            wpid = p["carrier"].get("wes_panel_id")
+        wpid_s = (str(wpid).strip() if wpid else None)
+        out["wes_panel_id"] = wpid_s
+        if wpid_s:
+            panel = get_panel_by_id(wpid_s)
+            out["panel_found_in_catalog"] = panel is not None
+            if panel:
+                out["panel_catalog_interpretation_gene_count"] = len(
+                    resolve_panel_interpretation_genes(panel)
+                )
+        pig = p.get("panel_interpretation_genes")
+        out["job_panel_interpretation_genes_count"] = (
+            len(pig) if isinstance(pig, list) else None
+        )
+        out["order_interpretation_gene_count"] = len(interpretation_gene_set_for_job(job))
+        out["interpretation_post_filter_enabled"] = should_apply_interpretation_post_filter(job)
+
+        pr = (job.params or {}).get("_prior_reuse")
+        if pr:
+            out["prior_pipeline_reuse"] = True
+            out["prior_reuse_order_id"] = (job.params or {}).get("_prior_reuse_order_id")
+
+    if isinstance(result_payload, dict):
+        fs = result_payload.get("filter_summary") or {}
+        if isinstance(fs, dict) and fs:
+            out["result_filter_summary"] = {
+                "wes_panel_id": fs.get("wes_panel_id"),
+                "wes_panel_label": fs.get("wes_panel_label"),
+                "interpretation_post_filter_genes": fs.get("interpretation_post_filter_genes"),
+                "interpretation_post_filter_applied": fs.get("interpretation_post_filter_applied"),
+            }
+    return out
+
 
 def _fastq_root_real() -> str:
     return os.path.realpath(settings.fastq_base_dir)
@@ -61,7 +140,7 @@ def _fastq_root_for_service(service_code: Optional[str]) -> str:
     sc = (service_code or "").strip().lower().replace("-", "_")
     if sc == "sgnipt":
         return os.path.realpath(settings.sgnipt_fastq_root)
-    if sc == "carrier_screening":
+    if sc in ("carrier_screening", "whole_exome"):
         return os.path.realpath(settings.carrier_screening_fastq_dir)
     return _fastq_root_real()
 
@@ -101,7 +180,7 @@ def _is_csv_filename(name: str) -> bool:
 def _bam_csv_root_for_service(service_code: Optional[str]) -> str:
     """BAM samplesheet CSV 브라우져용 루트 디렉터리 (서비스별)."""
     sc = (service_code or "").strip().lower().replace("-", "_")
-    if sc == "carrier_screening":
+    if sc in ("carrier_screening", "whole_exome"):
         return os.path.realpath(os.path.join(settings.carrier_screening_work_root, "data"))
     # sgnipt (default): SGNIPT_DATA_DIR 우선, 없으면 sgnipt_job_root/data
     data_dir = (settings.sgnipt_data_dir or "").strip()
@@ -425,6 +504,7 @@ async def health(
         "fastq_browse_roots": {
             "sgnipt": _fastq_root_for_service("sgnipt"),
             "carrier_screening": _fastq_root_for_service("carrier_screening"),
+            "whole_exome": _fastq_root_for_service("whole_exome"),
             "default": fq_default,
         },
     }
@@ -464,7 +544,7 @@ def _build_job_from_submit_request(service_code: str, request: OrderSubmitReques
             output_dir=os.path.join(root, "output", work_dir, oid),
             log_dir=os.path.join(root, "log", work_dir, oid),
         )
-    if service_code == "carrier_screening":
+    if service_code in ("carrier_screening", "whole_exome"):
         work_root = settings.carrier_screening_work_root
         return Job(
             order_id=request.order_id,
@@ -653,6 +733,13 @@ async def start_saved_order(
     """
     fresh = request.fresh if request is not None else False
     queue_manager = get_queue_manager()
+    job_preview = queue_manager.get_job(order_id)
+    if job_preview and job_preview.service_code in _CARRIER_LIKE:
+        pl = get_plugin(job_preview.service_code)
+        if pl:
+            ok, err = pl.validate_params(job_preview.params or {})
+            if not ok:
+                raise HTTPException(status_code=400, detail=f"Invalid params: {err}")
     try:
         job, queue_position = await queue_manager.start_saved_job(order_id, fresh=fresh)
     except KeyError:
@@ -683,7 +770,7 @@ async def start_saved_order(
     )
 
 
-_REPROCESS_SUPPORTED = frozenset({"carrier_screening", "sgnipt"})
+_REPROCESS_SUPPORTED = frozenset({"carrier_screening", "whole_exome", "sgnipt"})
 
 
 @app.post("/order/{order_id}/reprocess-results")
@@ -725,7 +812,7 @@ async def reprocess_order_results(order_id: str):
         raise HTTPException(status_code=400, detail=f"No plugin for {job.service_code}")
 
     # 서비스별 경로 정규화
-    if job.service_code == "carrier_screening":
+    if job.service_code in _CARRIER_LIKE:
         from .services.carrier_screening.layout_norm import apply_carrier_layout_directories
         if apply_carrier_layout_directories(job):
             await queue_manager.persist_job(job)
@@ -738,6 +825,7 @@ async def reprocess_order_results(order_id: str):
     if not completion_ok:
         detail_map = {
             "carrier_screening": "No VCF found for this order — cannot reprocess (check analysis/output paths).",
+            "whole_exome": "No VCF found for this order — cannot reprocess (check analysis/output paths).",
             "sgnipt": "No pipeline result JSON found for this order — cannot reprocess (check output path).",
         }
         raise HTTPException(
@@ -1290,7 +1378,7 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
             detail=f"Service {job.service_code} does not support report generation"
         )
 
-    if job.service_code == "carrier_screening":
+    if job.service_code in _CARRIER_LIKE:
         from .services.carrier_screening.report import (
             carrier_report_template_kind,
             report_languages_from_order,
@@ -1352,7 +1440,7 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
     store = queue_manager.store
     if store:
         review_langs = request.languages or []
-        if job.service_code == "carrier_screening":
+        if job.service_code in _CARRIER_LIKE:
             from .services.carrier_screening.report import report_languages_from_order
 
             review_langs = report_languages_from_order(job.params or {}) or []
@@ -1367,7 +1455,7 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
         await asyncio.to_thread(store.set_review_json, order_id, review_blob)
 
     # 생성된 리포트 파일을 Platform에 업로드
-    if job.service_code == "carrier_screening":
+    if job.service_code in _CARRIER_LIKE:
         from .services.carrier_screening.plugin import carrier_report_output_dir
 
         output_dir = carrier_report_output_dir(job)
@@ -1474,6 +1562,43 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
 
 # ─── Order List & Result Endpoints ────────────────────────
 
+def _job_to_order_summary_dict(j) -> Dict[str, Any]:
+    """Same shape as each row in GET /orders (Portal list + follow-up copy)."""
+    return {
+        "order_id": j.order_id,
+        "service_code": j.service_code,
+        "sample_name": j.sample_name,
+        "work_dir": j.work_dir,
+        "status": j.status.value,
+        "progress": j.progress,
+        "message": j.message,
+        "error_log": j.error_log,
+        "created_at": j.created_at,
+        "started_at": j.started_at,
+        "completed_at": j.completed_at,
+        "updated_at": getattr(j, "updated_at", None),
+        "params": j.params or {},
+        "fastq_r1_url": j.fastq_r1_url,
+        "fastq_r2_url": j.fastq_r2_url,
+        "fastq_r1_path": j.fastq_r1_path,
+        "fastq_r2_path": j.fastq_r2_path,
+    }
+
+
+@app.get("/order/{order_id}")
+async def get_order(order_id: str):
+    """
+    단일 주문 스냅샷 (목록 행과 동일 필드).
+
+    Portal «New order from this» 등에서 전체 params 를 안전하게 복사할 때 사용합니다.
+    """
+    queue_manager = get_queue_manager()
+    job = queue_manager.get_job(order_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
+    return _job_to_order_summary_dict(job)
+
+
 @app.get("/orders")
 async def list_orders(
     service_code: str = Query(default=None, description="특정 서비스만 조회"),
@@ -1516,34 +1641,16 @@ async def list_orders(
     all_jobs.sort(key=lambda j: j.created_at or "", reverse=True)
 
     return {
-        "orders": [
-            {
-                "order_id": j.order_id,
-                "service_code": j.service_code,
-                "sample_name": j.sample_name,
-                "work_dir": j.work_dir,
-                "status": j.status.value,
-                "progress": j.progress,
-                "message": j.message,
-                "error_log": j.error_log,
-                "created_at": j.created_at,
-                "started_at": j.started_at,
-                "completed_at": j.completed_at,
-                "updated_at": getattr(j, "updated_at", None),
-                "params": j.params or {},
-                "fastq_r1_url": j.fastq_r1_url,
-                "fastq_r2_url": j.fastq_r2_url,
-                "fastq_r1_path": j.fastq_r1_path,
-                "fastq_r2_path": j.fastq_r2_path,
-            }
-            for j in all_jobs
-        ],
+        "orders": [_job_to_order_summary_dict(j) for j in all_jobs],
         "total": len(all_jobs),
     }
 
 
 @app.get("/order/{order_id}/result")
-async def get_order_result(order_id: str):
+async def get_order_result(
+    order_id: str,
+    debug: bool = Query(False, description="Include _review_debug with disk paths (portal Review)."),
+):
     """
     주문의 result.json을 조회합니다.
 
@@ -1563,13 +1670,13 @@ async def get_order_result(order_id: str):
         from app.services.sgnipt import apply_sgnipt_layout_directories
         if apply_sgnipt_layout_directories(job):
             await queue_manager.persist_job(job)
-    elif job.service_code == "carrier_screening" and not job.output_dir:
+    elif job.service_code in _CARRIER_LIKE and not job.output_dir:
         from app.services.carrier_screening.layout_norm import apply_carrier_layout_directories
         if apply_carrier_layout_directories(job):
             await queue_manager.persist_job(job)
 
     result_json_path = None
-    if job.service_code == "carrier_screening":
+    if job.service_code in _CARRIER_LIKE:
         from app.services.carrier_screening.plugin import carrier_result_json_path
 
         result_json_path = carrier_result_json_path(job)
@@ -1606,8 +1713,8 @@ async def get_order_result(order_id: str):
             )
 
             result_data = ensure_dark_genes_detailed_sections(dict(result_data))
-            if job.service_code == "carrier_screening":
-                pl = get_plugin("carrier_screening")
+            if job.service_code in _CARRIER_LIKE:
+                pl = get_plugin(job.service_code)
                 dg = result_data.get("dark_genes")
                 if (
                     pl is not None
@@ -1619,7 +1726,7 @@ async def get_order_result(order_id: str):
                     dg2 = dict(dg)
                     dg2["visual_evidence"] = merge_visual_evidence_across_roots(roots)
                     result_data = {**result_data, "dark_genes": dg2}
-            if job.service_code == "carrier_screening":
+            if job.service_code in _CARRIER_LIKE:
                 from app.services.carrier_screening.review import (
                     enrich_review_build_with_smaca_vcf_depths,
                 )
@@ -1644,14 +1751,41 @@ async def get_order_result(order_id: str):
             payload["service_code"] = job.service_code
             if isinstance(payload.get("variants"), list):
                 payload["variants"] = normalize_variants_for_portal(payload["variants"])
+            if debug:
+                payload["_review_debug"] = _order_result_review_debug(
+                    job, result_json_path, "disk", result_data
+                )
             return JSONResponse(content=payload, headers=_RESULT_JSON_CACHE_HEADERS)
+        extra = {"data": result_data, "order_params": job.params or {}}
+        if debug:
+            extra["_review_debug"] = _order_result_review_debug(job, result_json_path, "disk", None)
         return JSONResponse(
-            content={"data": result_data, "order_params": job.params or {}},
+            content=extra,
             headers=_RESULT_JSON_CACHE_HEADERS,
         )
 
     if store:
         cached = await asyncio.to_thread(store.get_result_json, order_id)
+        # Carrier: SQLite row can hold a snapshot copied from another order's result.json
+        # (embedded order_id in the JSON body does not match this row's order_id).
+        if (
+            cached is not None
+            and job.service_code in _CARRIER_LIKE
+            and isinstance(cached, dict)
+        ):
+            body_oid = (cached.get("order_id") or "").strip()
+            if body_oid and body_oid != (order_id or "").strip():
+                logger.warning(
+                    "Discarding stale result_json snapshot for order %s: "
+                    "embedded order_id=%r does not match (likely cached from wrong file path).",
+                    order_id,
+                    body_oid,
+                )
+                try:
+                    await asyncio.to_thread(store.clear_result_json, order_id)
+                except Exception as _clr:
+                    logger.warning("Could not clear stale result_json for %s: %s", order_id, _clr)
+                cached = None
         if cached is not None:
             if isinstance(cached, dict):
                 from app.services import get_plugin
@@ -1661,8 +1795,8 @@ async def get_order_result(order_id: str):
                 )
 
                 out = ensure_dark_genes_detailed_sections(dict(cached))
-                if job.service_code == "carrier_screening":
-                    pl = get_plugin("carrier_screening")
+                if job.service_code in _CARRIER_LIKE:
+                    pl = get_plugin(job.service_code)
                     dg = out.get("dark_genes")
                     if (
                         pl is not None
@@ -1674,7 +1808,7 @@ async def get_order_result(order_id: str):
                         dg2 = dict(dg)
                         dg2["visual_evidence"] = merge_visual_evidence_across_roots(roots)
                         out = {**out, "dark_genes": dg2}
-                if job.service_code == "carrier_screening":
+                if job.service_code in _CARRIER_LIKE:
                     from app.services.carrier_screening.review import (
                         enrich_review_build_with_smaca_vcf_depths,
                     )
@@ -1692,19 +1826,50 @@ async def get_order_result(order_id: str):
                 payload["order_params"] = job.params or {}
                 if isinstance(payload.get("variants"), list):
                     payload["variants"] = normalize_variants_for_portal(payload["variants"])
+                if debug:
+                    rp_path = None
+                    if job.service_code in _CARRIER_LIKE:
+                        from app.services.carrier_screening.plugin import carrier_result_json_path
+
+                        rp_path = carrier_result_json_path(job)
+                    elif job.output_dir:
+                        rp_path = os.path.join(job.output_dir, "result.json")
+                    payload["_review_debug"] = _order_result_review_debug(
+                        job, rp_path, "db_snapshot", out
+                    )
                 return JSONResponse(content=payload, headers=_RESULT_JSON_CACHE_HEADERS)
+            extra = {"data": cached, "order_params": job.params or {}}
+            if debug:
+                rp_path = None
+                if job.service_code in _CARRIER_LIKE:
+                    from app.services.carrier_screening.plugin import carrier_result_json_path
+
+                    rp_path = carrier_result_json_path(job)
+                elif job.output_dir:
+                    rp_path = os.path.join(job.output_dir, "result.json")
+                extra["_review_debug"] = _order_result_review_debug(
+                    job, rp_path, "db_snapshot", None
+                )
             return JSONResponse(
-                content={"data": cached, "order_params": job.params or {}},
+                content=extra,
                 headers=_RESULT_JSON_CACHE_HEADERS,
             )
 
-    raise HTTPException(
-        status_code=404,
-        detail=(
-            f"result.json not found for order: {order_id} "
-            f"(no file under output_dir and no DB snapshot)."
-        ),
+    detail = (
+        f"result.json not found for order: {order_id} "
+        f"(no file on disk for this order's review path and no valid DB snapshot)."
     )
+    if job.service_code in _CARRIER_LIKE:
+        try:
+            from app.services.carrier_screening.plugin import carrier_report_output_dir
+
+            detail += (
+                f" Expected file: {os.path.join(carrier_report_output_dir(job), 'result.json')}"
+                f" — run «Reprocess» or process_results after deploying per-order paths."
+            )
+        except Exception:
+            pass
+    raise HTTPException(status_code=404, detail=detail)
 
 
 async def _dark_genes_review_impl(order_id: str, body: DarkGenesReviewRequest) -> Dict[str, Any]:
@@ -1721,10 +1886,10 @@ async def _dark_genes_review_impl(order_id: str, body: DarkGenesReviewRequest) -
     job = queue_manager.get_job(order_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
-    if job.service_code != "carrier_screening":
+    if job.service_code not in _CARRIER_LIKE:
         raise HTTPException(
             status_code=400,
-            detail="dark-genes-review is only supported for carrier_screening",
+            detail="dark-genes-review is only supported for carrier_screening and whole_exome",
         )
     from app.services.carrier_screening.plugin import (
         carrier_result_json_path,
@@ -1804,7 +1969,7 @@ async def post_dark_genes_review(order_id: str, body: DarkGenesReviewRequest):
 def _load_result_dict_for_gene_knowledge(order_id: str, job) -> Optional[Dict[str, Any]]:
     """Read result.json-like dict (variants list) without order_params merge."""
     result_json_path = None
-    if getattr(job, "service_code", None) == "carrier_screening":
+    if getattr(job, "service_code", None) in _CARRIER_LIKE:
         from app.services.carrier_screening.plugin import carrier_result_json_path
 
         result_json_path = carrier_result_json_path(job)
@@ -2161,12 +2326,12 @@ def _order_artifact_roots(job: Job) -> List[str]:
     """
     Directories to search for order output files (same order as download resolution).
 
-    For carrier_screening, ``carrier_report_output_dir`` is listed first when set so
+    For carrier-like services, ``carrier_report_output_dir`` is listed first when set so
     ``Report_*.pdf`` / ``report.json`` match Generate Report even when
     ``CARRIER_SCREENING_REPORT_OUTPUT_ROOT`` differs from ``job.output_dir``.
     """
     roots: List[str] = []
-    if (job.service_code or "").strip() == "carrier_screening":
+    if (job.service_code or "").strip() in _CARRIER_LIKE:
         from .services.carrier_screening.plugin import carrier_report_output_dir
 
         try:
@@ -2185,7 +2350,7 @@ def _order_artifact_roots(job: Job) -> List[str]:
                 pass
     if job.output_dir:
         roots.append(job.output_dir)
-    if (job.service_code or "").strip() == "carrier_screening":
+    if (job.service_code or "").strip() in _CARRIER_LIKE:
         from .services.carrier_screening.layout_norm import carrier_sequencing_folder
 
         wk = str(job.work_dir).strip() or "00"

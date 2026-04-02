@@ -1,0 +1,6 @@
+# Example interpretation gene list (one symbol per line). Prefer this over parsing noisy BED column-4 labels.
+ATAD3
+NRXN1
+FBN1
+MECP2
+SHOX

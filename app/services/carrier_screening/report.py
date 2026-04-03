@@ -247,6 +247,9 @@ def carrier_report_template_kind(params: Dict[str, Any]) -> Optional[str]:
     # Whole Exome orders (portal: service_code whole_exome, package_code WholeExome)
     if pc == "WholeExome":
         return "standard"
+    # Health Screening (portal: service_code health_screening, package_code HealthScreening)
+    if pc == "HealthScreening":
+        return "standard"
 
     if tc == "standard_carrier":
         return "standard"

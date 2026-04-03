@@ -926,9 +926,11 @@
       <div id="ordersListPanel">
         <div id="ordersBrowseChrome">
         <div style="margin-bottom:14px">
-          <h3 class="submit-page-title" style="margin-bottom:4px">Client Order List</h3>
+          <div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px">
+            <h3 class="submit-page-title" style="margin:0">Client Order List</h3>
+            <button type="button" class="btn primary" id="btnGotoCreateOrder">+ Create an order</button>
+          </div>
           <p class="submit-page-sub">Orders on this daemon. <strong>Save</strong> stores a draft (<strong>SAVED</strong>) without starting the pipeline. Use <strong>⋯ → Submit</strong> to queue a first run. <strong>Stop</strong> removes a draft, cancels queued, or stops a running job. <strong>⋯ → Delete</strong> removes the order from the daemon and deletes <code>analysis</code>, <code>output</code>, and <code>log</code> for that run (FASTQ is kept; stop a running job first). <strong>⋯ → Force Run</strong> (Carrier &amp; sgNIPT) queues the full pipeline reusing Nextflow cache (<code>-resume</code>). <strong>Force Run (Fresh)</strong> (Carrier &amp; sgNIPT) deletes <code>work/</code> + <code>.nextflow</code> cache and reruns completely from scratch (<code>--fresh</code>). Carrier &amp; sgNIPT optional: <strong>Reprocess only</strong> refreshes <code>result.json</code> from existing pipeline output without re-running the pipeline (Carrier: re-annotates VCFs; sgNIPT: re-copies result JSON).</p>
-          <button type="button" class="btn primary" id="btnGotoCreateOrder" style="margin-top:10px">+ Create an order</button>
         </div>
         <div class="form-section-card" style="margin-bottom:16px">
           <div class="orders-filters-token-bar">
@@ -976,6 +978,7 @@
                 <option value="">All Services</option>
                 <option value="carrier_screening">Carrier Screening</option>
                 <option value="whole_exome">Whole Exome</option>
+                <option value="health_screening">Health Screening</option>
                 <option value="sgnipt">Single-gene NIPT</option>
               </select>
               <select id="trackFilter" style="flex:1;min-width:130px;padding:8px 12px;border-radius:12px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">
@@ -1004,7 +1007,7 @@
                 <tr>
                   <th class="sortable" data-key="order_id">Order ID</th>
                   <th class="sortable" data-key="service_code">Service</th>
-                  <th class="sortable" data-key="order_type">Type</th>
+                  <th class="sortable" data-key="order_type" title="Primary (interpretation) panel from the order">Primary (interpretation)</th>
                   <th class="sortable" data-key="patient">Patient</th>
                   <th class="sortable" data-key="status">Status</th>
                   <th>Progress</th>
@@ -1037,11 +1040,12 @@
             <select id="fServiceSelect" name="fService" aria-label="Service" style="width:100%;max-width:100%;box-sizing:border-box;font:inherit;font-size:14px;padding:10px 12px;border-radius:10px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">
               <option value="carrier_screening">Carrier screening</option>
               <option value="whole_exome">Whole exome</option>
+              <option value="health_screening">Health screening</option>
               <option value="sgnipt">Single-gene NIPT</option>
               <option value="extended_services">Extended services</option>
             </select>
             <p id="fServiceHint" class="muted" style="font-size:11px;margin:8px 0 0;line-height:1.45">Carrier screening annotates the full exome/capture; choose a <strong>Primary</strong> panel for interpretation/report scope. Extended services use a separate program list.</p>
-            <p id="fServiceHintWes" class="muted hidden" style="font-size:11px;margin:8px 0 0;line-height:1.45">Whole exome uses the same sequencing pipeline. <strong>Primary</strong> is optional — leave unselected for full-exome variant review, or pick a panel to narrow the clinical list after analysis.</p>
+            <p id="fServiceHintWes" class="muted hidden" style="font-size:11px;margin:8px 0 0;line-height:1.45">Same gx-exome sequencing pipeline for both. <strong>Whole exome:</strong> Primary (interpretation) is optional. <strong>Health screening:</strong> Primary (interpretation) is required before you submit the run.</p>
             <div id="cr_extended_program_wrap" class="hidden" style="margin-top:14px">
               <label for="cr_extended_program">Primary</label>
               <select id="cr_extended_program" style="width:100%;max-width:100%;box-sizing:border-box;margin-top:6px">
@@ -1073,8 +1077,6 @@
 
         <!-- Carrier: clinical order (params.carrier) + pipeline -->
         <div id="carrierSubmitBlock" class="col-12">
-          <h3 class="submit-page-title">Create Carrier Order</h3>
-          <p class="submit-page-sub">Clinical metadata → <code>params.carrier</code>. Use <strong>Save order</strong> to store a draft; start analysis from the order list <strong>⋯ → Submit</strong>.</p>
           <div class="row" style="margin-bottom:12px">
             <div class="col-6">
               <label class="required">Order ID</label>
@@ -3215,7 +3217,7 @@
         if (!ids.length) { toast('BAM CSV 경로 설정됨 (sample_id 없음)'); return; }
         const sampleId = ids[0];
         const sc = getFServiceValue();
-        if (sc === 'carrier_screening' || sc === 'whole_exome' || sc === 'extended_services') {
+        if (sc === 'carrier_screening' || sc === 'whole_exome' || sc === 'health_screening' || sc === 'extended_services') {
           const el = qs('cr_order_id');
           if (el) { el.value = sampleId; el.readOnly = false; }
         } else {
@@ -3266,6 +3268,7 @@
     }
 
     function showCreateOrderPanel() {
+      clearEditMode();
       const lp = qs('ordersListPanel');
       const cp = qs('ordersCreatePanel');
       if (lp) lp.classList.add('hidden');
@@ -3348,15 +3351,17 @@
       if (carrierParams) carrierParams.style.display = isCarrierFlow ? 'block' : 'none';
       if (extWrap) extWrap.classList.toggle('hidden', ui !== 'extended_services');
       if (wesWrap) wesWrap.classList.toggle('hidden', ui === 'extended_services' || ui === 'sgnipt');
-      if (couplesWrap) couplesWrap.classList.toggle('hidden', ui === 'extended_services');
+      if (couplesWrap) couplesWrap.classList.toggle('hidden', ui !== 'carrier_screening');
       const fsh = qs('fServiceHint');
       const fshWes = qs('fServiceHintWes');
       if (fsh) fsh.style.display = ui === 'carrier_screening' ? '' : 'none';
-      if (fshWes) fshWes.classList.toggle('hidden', ui !== 'whole_exome');
+      if (fshWes) fshWes.classList.toggle('hidden', ui !== 'whole_exome' && ui !== 'health_screening');
       refreshWesPanelPrimaryLabel();
-      if (ui === 'extended_services') {
+      if (ui !== 'carrier_screening') {
         const sr = document.querySelector('input[name="cr_report_mode"][value="single"]');
         if (sr) sr.checked = true;
+        const po = qs('cr_partner_order_id');
+        if (po) po.value = '';
       }
       if (isCarrierFlow) refreshCarrierConditionalUi();
     }
@@ -3368,18 +3373,19 @@
     function mapUiServiceToApiCode(ui) {
       if (ui === 'extended_services') return 'carrier_screening';
       if (ui === 'whole_exome') return 'whole_exome';
+      if (ui === 'health_screening') return 'health_screening';
       return ui || 'carrier_screening';
     }
 
     function isCarrierUiFlow(ui) {
-      return ui === 'carrier_screening' || ui === 'whole_exome' || ui === 'extended_services';
+      return ui === 'carrier_screening' || ui === 'whole_exome' || ui === 'health_screening' || ui === 'extended_services';
     }
 
     function refreshWesPanelPrimaryLabel() {
       const lbl = qs('cr_wes_panel_scope_label');
       const ui = getFServiceValue();
       if (lbl) {
-        lbl.classList.toggle('required', ui === 'carrier_screening');
+        lbl.classList.toggle('required', ui === 'carrier_screening' || ui === 'health_screening');
         lbl.textContent = ui === 'whole_exome'
           ? 'Primary (interpretation) — optional'
           : 'Primary (interpretation)';
@@ -3392,7 +3398,7 @@
       const tc = qs('cr_test_category');
       const ot = qs('cr_other_type');
       if (sc === 'sgnipt') return;
-      if (sc === 'whole_exome') {
+      if (sc === 'whole_exome' || sc === 'health_screening') {
         if (tc) tc.value = 'standard_carrier';
         if (ot) ot.value = '';
         return;
@@ -3427,7 +3433,7 @@
       const couples = document.querySelector('input[name="cr_report_mode"]:checked');
       const pw = qs('cr_partner_order_wrap');
       if (pw) {
-        if (fu === 'extended_services') pw.classList.add('hidden');
+        if (fu !== 'carrier_screening') pw.classList.add('hidden');
         else pw.classList.toggle('hidden', !couples || couples.value !== 'couples');
       }
     }
@@ -3439,14 +3445,7 @@
     }
 
     function resetCarrierSubmitHeaderCopy() {
-      const blk = qs('carrierSubmitBlock');
-      if (!blk) return;
-      const t = blk.querySelector('.submit-page-title');
-      const s = blk.querySelector('.submit-page-sub');
-      if (t) t.textContent = 'Create Carrier Order';
-      if (s) {
-        s.innerHTML = 'Clinical metadata → <code>params.carrier</code>. Use <strong>Save order</strong> to store a draft; start analysis from the order list <strong>⋯ → Submit</strong>.';
-      }
+      /* Carrier create form no longer shows a page title/sub under Orders (removed per product request). */
     }
 
     function resetSgniptSubmitHeaderCopy() {
@@ -3494,7 +3493,7 @@
         console.warn('fetch order for follow-up', e);
       }
 
-      if (o.service_code === 'carrier_screening' || o.service_code === 'whole_exome') {
+      if (o.service_code === 'carrier_screening' || o.service_code === 'whole_exome' || o.service_code === 'health_screening') {
         populateCarrierFormFromOrder(src);
         setFormInput('cr_order_id', '');
         setFormInput('cr_work_dir', '');
@@ -3503,12 +3502,6 @@
         if (qs('cr_prior_order_id')) qs('cr_prior_order_id').value = o.order_id;
         if (qs('cr_reuse_prior_pipeline')) qs('cr_reuse_prior_pipeline').value = '1';
         toggleServiceSubmitBlocks();
-        const t1 = qs('carrierSubmitBlock') && qs('carrierSubmitBlock').querySelector('.submit-page-title');
-        const s1 = qs('carrierSubmitBlock') && qs('carrierSubmitBlock').querySelector('.submit-page-sub');
-        if (t1) t1.textContent = 'Create carrier order (follow-up)';
-        if (s1) {
-          s1.innerHTML = `Copied clinical fields and <strong>FASTQ / BAM paths</strong> from <strong>${escapeHtml(String(o.order_id))}</strong>. <strong>Panel-only reuse</strong> is on: the daemon will skip alignment and re-annotate from the prior run’s VCF (pick a different WES panel if needed). Enter a <strong>new Order ID</strong>, adjust paths if needed, then <strong>Save order</strong> and <strong>Submit</strong>.`;
-        }
         if (qs('submitMsg')) qs('submitMsg').textContent = `New draft — prior order: ${o.order_id}`;
       } else if (o.service_code === 'sgnipt') {
         setFServiceValue('sgnipt');
@@ -3526,7 +3519,7 @@
         }
         if (qs('submitMsg')) qs('submitMsg').textContent = `New draft — previous order: ${o.order_id}`;
       } else {
-        toast('Follow-up orders are only supported for carrier screening, whole exome, and Single-gene NIPT.', false);
+        toast('Follow-up orders are only supported for carrier screening, whole exome, health screening, and Single-gene NIPT.', false);
         showOrdersListOnly();
         return;
       }
@@ -3549,6 +3542,8 @@
       const pkg = (c.package_code || '').trim();
       if (o.service_code === 'whole_exome' || pkg === 'WholeExome') {
         setFServiceValue('whole_exome');
+      } else if (o.service_code === 'health_screening' || pkg === 'HealthScreening') {
+        setFServiceValue('health_screening');
       } else {
         const std =
           c.test_category === 'standard_carrier' ||
@@ -3559,7 +3554,8 @@
       const std =
         (c.test_category === 'standard_carrier' ||
           (!c.test_category && (!c.package_code || c.package_code === 'CarrierScreening'))) &&
-        o.service_code !== 'whole_exome' && pkg !== 'WholeExome';
+        o.service_code !== 'whole_exome' && pkg !== 'WholeExome' &&
+        o.service_code !== 'health_screening' && pkg !== 'HealthScreening';
       const ot = std ? '' : (c.other_test_type || c.package_code || '');
       if (qs('cr_carrier_program')) qs('cr_carrier_program').value = 'standard_carrier';
       if (qs('cr_extended_program')) {
@@ -3688,11 +3684,9 @@
       resetSgniptSubmitHeaderCopy();
 
       editingOrderId = src.order_id;
-      if (src.service_code === 'carrier_screening' || src.service_code === 'whole_exome') {
+      if (src.service_code === 'carrier_screening' || src.service_code === 'whole_exome' || src.service_code === 'health_screening') {
         populateCarrierFormFromOrder(src);
         toggleServiceSubmitBlocks();
-        const t1 = qs('carrierSubmitBlock') && qs('carrierSubmitBlock').querySelector('.submit-page-title');
-        if (t1) t1.textContent = src.service_code === 'whole_exome' ? 'Edit Whole Exome Order' : 'Edit Carrier Order';
       } else if (src.service_code === 'sgnipt') {
         setFServiceValue('sgnipt');
         toggleServiceSubmitBlocks();
@@ -3701,7 +3695,7 @@
         if (t2) t2.textContent = 'Edit Single-gene NIPT Order';
       } else {
         editingOrderId = null;
-        toast('Editing is only supported for Carrier Screening, Whole Exome, and Single-gene NIPT orders', false);
+        toast('Editing is only supported for Carrier Screening, Whole Exome, Health Screening, and Single-gene NIPT orders', false);
         showOrdersListOnly();
         return;
       }
@@ -3721,13 +3715,16 @@
       const fu = getFServiceValue();
       let packageCode = cat === 'other' ? (otherType || '') : 'CarrierScreening';
       if (fu === 'whole_exome') packageCode = 'WholeExome';
+      if (fu === 'health_screening') packageCode = 'HealthScreening';
       const modeEl = document.querySelector('input[name="cr_report_mode"]:checked');
       let reportMode = modeEl ? modeEl.value : 'single';
       let partnerOrderId = reportMode === 'couples' ? (val('cr_partner_order_id') || undefined) : undefined;
       let wesPanelId = val('cr_wes_panel') || undefined;
-      if (fu === 'extended_services') {
+      if (fu !== 'carrier_screening') {
         reportMode = 'single';
         partnerOrderId = undefined;
+      }
+      if (fu === 'extended_services') {
         wesPanelId = undefined;
       }
       const meta = {
@@ -3819,7 +3816,7 @@
         if (!val('cr_p3_affected')) return 'Affected3 is required';
       }
       const fu2 = getFServiceValue();
-      if (fu2 !== 'extended_services') {
+      if (fu2 === 'carrier_screening') {
         const modeEl = document.querySelector('input[name="cr_report_mode"]:checked');
         if (modeEl && modeEl.value === 'couples') {
           if (!val('cr_partner_order_id')) return 'Partner Order ID is required for couples report';
@@ -3847,9 +3844,11 @@
       if (!id) {
         hint.textContent = fu === 'whole_exome'
           ? 'Optional for whole exome: leave empty for full-exome review, or select a panel to narrow variants after analysis.'
-          : (fu === 'carrier_screening'
-            ? 'Required for carrier screening. Annotation is exome-wide; this panel narrows the clinical variant list after analysis.'
-            : '');
+          : (fu === 'health_screening'
+            ? 'Required for Health screening before submit. Annotation is exome-wide; this panel narrows the clinical variant list after analysis.'
+            : (fu === 'carrier_screening'
+              ? 'Required for carrier screening. Annotation is exome-wide; this panel narrows the clinical variant list after analysis.'
+              : ''));
         return;
       }
       const p = _wesPanelsById[id];
@@ -3859,6 +3858,7 @@
       }
       const parts = [];
       if (fu === 'whole_exome') parts.push('Optional — narrows review to this panel after analysis.');
+      if (fu === 'health_screening') parts.push('Required at submit — narrows review to this panel after analysis.');
       if (p.description) parts.push(p.description);
       if (p.gene_count != null) parts.push(`~${p.gene_count} genes (from BED).`);
       hint.textContent = parts.join(' ');
@@ -4088,6 +4088,7 @@
       if (sc === 'sgnipt') return 'Single-gene NIPT';
       if (sc === 'carrier_screening') return 'Carrier Screening';
       if (sc === 'whole_exome') return 'Whole Exome';
+      if (sc === 'health_screening') return 'Health Screening';
       return sc || '-';
     }
 
@@ -4583,7 +4584,7 @@
       const serviceCode = mapUiServiceToApiCode(rawService);
       let orderId, workDir, body;
 
-      if (serviceCode === 'carrier_screening' || serviceCode === 'whole_exome') {
+      if (serviceCode === 'carrier_screening' || serviceCode === 'whole_exome' || serviceCode === 'health_screening') {
         sanitizeOrderIdInput(qs('cr_order_id'));
         sanitizeOrderIdInput(qs('cr_partner_order_id'));
         const cErr = validateCarrierSubmit();
@@ -4802,20 +4803,49 @@
       return s.toUpperCase().replace(/\s+/g, '_');
     }
 
-    /** 주문 행 Type 태그 (params.carrier 기준) — carrierOrderMetaFlat 은 아래 Review 섹션과 동일 정의(호이스트) */
+    /** wes_panel_id from params (top-level or carrier.*) — same merge as carrierOrderMetaFlat */
+    function orderWesPanelIdFromOrder(o) {
+      const p = o.params || {};
+      const flat = carrierOrderMetaFlat(p);
+      const raw =
+        (flat && flat.wes_panel_id != null && String(flat.wes_panel_id).trim() !== '')
+          ? flat.wes_panel_id
+          : p.wes_panel_id;
+      return String(raw || '').trim();
+    }
+
+    /**
+     * List column + sort key: Primary (interpretation) panel label when wes_panel_id is set;
+     * whole exome without panel → "Full exome (no panel)";
+     * carrier without panel → legacy program short name (Standard / Couples / Other).
+     */
+    function orderPrimaryInterpretationTypeText(o) {
+      const sc = o.service_code || '';
+      if (sc !== 'carrier_screening' && sc !== 'whole_exome' && sc !== 'health_screening') return null;
+      const pid = orderWesPanelIdFromOrder(o);
+      if (pid) {
+        const pan = _wesPanelsById[pid];
+        const label = pan && pan.label != null ? String(pan.label).trim() : '';
+        return label || pid;
+      }
+      if (sc === 'whole_exome') return 'Full exome (no panel)';
+      if (sc === 'health_screening') return 'Health screening (no panel)';
+      const flat = carrierOrderMetaFlat(o.params || {});
+      if (!flat) return '';
+      const tc = String(flat.test_category || '').trim();
+      const ot = String(flat.other_test_type || '').trim();
+      const pc = String(flat.package_code || '').trim();
+      if (pc === 'CouplesCarrier' || (tc === 'other' && ot === 'CouplesCarrier')) return 'Couples carrier';
+      if (tc === 'other' && ot) return `Other: ${ot}`;
+      return 'Standard carrier';
+    }
+
+    /** 주문 행 Type 컬럼: carrier / whole_exome = Primary (interpretation) panel (see orderPrimaryInterpretationTypeText) */
     function orderTypeSortKey(o) {
       const sc = o.service_code || '';
-      if (sc === 'carrier_screening') {
-        const flat = carrierOrderMetaFlat(o.params || {});
-        if (!flat) return '';
-        const tc = String(flat.test_category || '').trim();
-        const ot = String(flat.other_test_type || '').trim();
-        const pc = String(flat.package_code || '').trim();
-        if (pc === 'CouplesCarrier' || (tc === 'other' && ot === 'CouplesCarrier')) return 'couples carrier';
-        if (tc === 'other' && ot) return `other ${ot}`;
-        return 'standard';
+      if (sc === 'carrier_screening' || sc === 'whole_exome' || sc === 'health_screening') {
+        return orderPrimaryInterpretationTypeText(o) || '';
       }
-      if (sc === 'whole_exome') return 'whole exome';
       if (sc === 'sgnipt') return 'sgnipt';
       if (sc === 'nipt') return 'nipt';
       return sc;
@@ -4823,25 +4853,28 @@
 
     function orderTypePillHtml(o) {
       const sc = o.service_code || '';
-      if (sc === 'carrier_screening') {
+      const panelTitle = 'Primary (interpretation) panel';
+      if (sc === 'carrier_screening' || sc === 'whole_exome' || sc === 'health_screening') {
+        const pid = orderWesPanelIdFromOrder(o);
+        const txt = orderPrimaryInterpretationTypeText(o) || '—';
+        if (pid) {
+          return `<span class="pill type-carrier" title="${escapeAttr(panelTitle)}">${escapeHtml(txt)}</span>`;
+        }
+        if (sc === 'whole_exome' || sc === 'health_screening') {
+          return `<span class="pill type-carrier muted" title="${escapeAttr(panelTitle)}">${escapeHtml(txt)}</span>`;
+        }
         const flat = carrierOrderMetaFlat(o.params || {});
         if (!flat) return '<span class="pill muted">—</span>';
         const tc = String(flat.test_category || '').trim();
         const ot = String(flat.other_test_type || '').trim();
         const pc = String(flat.package_code || '').trim();
         if (pc === 'CouplesCarrier' || (tc === 'other' && ot === 'CouplesCarrier')) {
-          return '<span class="pill type-couples">Couples Carrier</span>';
+          return `<span class="pill type-couples" title="${escapeAttr(panelTitle + ' — not set; program type')}">Couples Carrier</span>`;
         }
         if (tc === 'other' && ot) {
-          return `<span class="pill type-other-test">${escapeHtml(ot)}</span>`;
+          return `<span class="pill type-other-test" title="${escapeAttr(panelTitle + ' — not set; program')}">${escapeHtml(ot)}</span>`;
         }
-        if (tc === 'standard_carrier' || (pc === 'CarrierScreening' && tc !== 'other') || pc === 'CarrierScreening') {
-          return '<span class="pill type-carrier">Standard</span>';
-        }
-        return '<span class="pill type-carrier">Standard</span>';
-      }
-      if (sc === 'whole_exome') {
-        return '<span class="pill type-carrier">Whole exome</span>';
+        return `<span class="pill type-carrier" title="${escapeAttr(panelTitle + ' — not set; standard carrier')}">Standard</span>`;
       }
       if (sc === 'sgnipt') {
         return '<span class="pill type-sgnipt">Single-gene NIPT</span>';
@@ -5048,7 +5081,7 @@
 
     function exportOrdersTsv() {
       const rows = getOrdersAfterClientFilter();
-      const headers = ['order_id', 'service_code', 'type', 'patient', 'status', 'progress', 'created_at', 'message'];
+      const headers = ['order_id', 'service_code', 'primary_interpretation', 'patient', 'status', 'progress', 'created_at', 'message'];
       const lines = [headers.join('\t')];
       rows.forEach(o => {
         const pat = patientDisplayName(o) || '';
@@ -5298,7 +5331,7 @@
       qs('orderDetailSub').textContent = 'Detail info of order';
 
       const stDetail = orderStatusUpper(o);
-      const canFollowUpDetail = ['COMPLETED', 'REPORT_READY'].includes(stDetail) && ['carrier_screening', 'whole_exome', 'sgnipt'].includes(o.service_code);
+      const canFollowUpDetail = ['COMPLETED', 'REPORT_READY'].includes(stDetail) && ['carrier_screening', 'whole_exome', 'health_screening', 'sgnipt'].includes(o.service_code);
 
       function orderDetailFastqPathsHtml(order) {
         function fastqCell(label, fullPath) {
@@ -5329,7 +5362,7 @@
         html += `<div class="order-detail-actions"><button type="button" class="btn" id="btnOrderDetailFollowUp">New order from this…</button>` +
           `<p class="order-detail-actions-text">Copies clinical fields and <strong>FASTQ / BAM paths</strong> into a <strong>new</strong> draft. Enter a new Order ID, edit if needed, then Save and Submit.</p></div>`;
       }
-      const canEditDetail = stDetail === 'SAVED' && ['carrier_screening', 'whole_exome', 'sgnipt'].includes(o.service_code);
+      const canEditDetail = stDetail === 'SAVED' && ['carrier_screening', 'whole_exome', 'health_screening', 'sgnipt'].includes(o.service_code);
       if (canEditDetail) {
         html += `<div class="order-detail-actions"><button type="button" class="btn primary" id="btnOrderDetailEdit">Edit order</button>` +
           `<p class="order-detail-actions-text">Change clinical fields and paths, then <strong>Update order</strong>. Use <strong>⋯ → Submit</strong> to queue the run.</p></div>`;
@@ -5373,7 +5406,7 @@
           const pairs = Object.entries(pipeN).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : v]);
           html += kvSection('Pipeline / other parameters', pairs);
         }
-      } else if (o.service_code === 'carrier_screening' || o.service_code === 'whole_exome') {
+      } else if (o.service_code === 'carrier_screening' || o.service_code === 'whole_exome' || o.service_code === 'health_screening') {
         const c = (paramsRoot.carrier && typeof paramsRoot.carrier === 'object') ? paramsRoot.carrier : {};
         const CARRIER_LABELS = {
           test_category: 'Test category',
@@ -5627,12 +5660,12 @@
         const items = [];
         items.push('<button type="button" data-act="edit">Edit</button>');
         const terminalMenu = ['SAVED', 'FAILED', 'CANCELLED', 'COMPLETED', 'REPORT_READY'].includes(st);
-        if ((st === 'COMPLETED' || st === 'REPORT_READY') && ['carrier_screening', 'whole_exome', 'sgnipt'].includes(o.service_code)) {
+        if ((st === 'COMPLETED' || st === 'REPORT_READY') && ['carrier_screening', 'whole_exome', 'health_screening', 'sgnipt'].includes(o.service_code)) {
           items.push('<button type="button" data-act="review">Review</button>');
           items.push('<button type="button" data-act="new-from" title="New draft with copied clinical fields and FASTQ/BAM paths; enter a new Order ID">New order from this…</button>');
         }
         if (
-          ['carrier_screening', 'whole_exome', 'sgnipt'].includes(o.service_code)
+          ['carrier_screening', 'whole_exome', 'health_screening', 'sgnipt'].includes(o.service_code)
           && ['COMPLETED', 'REPORT_READY', 'FAILED', 'CANCELLED'].includes(st)
         ) {
           const forceTitle = o.service_code === 'sgnipt'
@@ -5642,7 +5675,7 @@
           items.push('<button type="button" data-act="force-run-fresh" title="Delete Nextflow work/ cache and run completely from scratch (--fresh)">Force Run (Fresh)</button>');
         }
         if (
-          ['carrier_screening', 'whole_exome', 'sgnipt'].includes(o.service_code)
+          ['carrier_screening', 'whole_exome', 'health_screening', 'sgnipt'].includes(o.service_code)
           && ['COMPLETED', 'REPORT_READY', 'FAILED'].includes(st)
         ) {
           const reprocessTitle = o.service_code === 'sgnipt'
@@ -5651,7 +5684,7 @@
           items.push(`<button type="button" data-act="reprocess-only" title="${reprocessTitle}">Reprocess only</button>`);
         }
         if (terminalMenu) {
-          const skipSubmit = ['carrier_screening', 'whole_exome', 'sgnipt'].includes(o.service_code)
+          const skipSubmit = ['carrier_screening', 'whole_exome', 'health_screening', 'sgnipt'].includes(o.service_code)
             && ['COMPLETED', 'REPORT_READY', 'FAILED', 'CANCELLED'].includes(st);
           if (!skipSubmit) {
             items.push('<button type="button" data-act="submit">Submit</button>');
@@ -5776,7 +5809,7 @@
     });
     const btnExport = qs('btnExportOrdersTsv');
     if (btnExport) btnExport.onclick = exportOrdersTsv;
-    if (qs('btnGotoCreateOrder')) qs('btnGotoCreateOrder').onclick = () => { clearEditMode(); showCreateOrderPanel(); };
+    if (qs('btnGotoCreateOrder')) qs('btnGotoCreateOrder').onclick = () => showCreateOrderPanel();
     if (qs('btnBackFromCreate')) qs('btnBackFromCreate').onclick = () => showOrdersListOnly();
     if (qs('btnCancelCreate')) qs('btnCancelCreate').onclick = () => showOrdersListOnly();
 
@@ -6060,7 +6093,7 @@
         sel.innerHTML = '<option value="">-- Select Order --</option>';
         const wesOrders = (data.orders || []).filter(o => {
           const sc = o.service_code || '';
-          return sc === 'carrier_screening' || sc === 'whole_exome';
+          return sc === 'carrier_screening' || sc === 'whole_exome' || sc === 'health_screening';
         });
         wesOrders.forEach(o => {
           const opt = document.createElement('option');
@@ -6223,6 +6256,7 @@
       const rl = String(flat.report_language || '').trim().toUpperCase();
       let kind = null;
       if (pc === 'WholeExome') kind = 'standard';
+      else if (pc === 'HealthScreening') kind = 'standard';
       else if (tc === 'standard_carrier') kind = 'standard';
       else if (tc === 'other' && ot === 'CouplesCarrier') kind = 'couples';
       else if (pc === 'CouplesCarrier') kind = 'couples';

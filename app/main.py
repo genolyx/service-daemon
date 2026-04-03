@@ -52,7 +52,7 @@ _RESULT_JSON_CACHE_HEADERS = {
 }
 
 # Same Nextflow + carrier_screening review/report stack (optional WES panel for whole_exome).
-_CARRIER_LIKE = frozenset({"carrier_screening", "whole_exome"})
+_CARRIER_LIKE = frozenset({"carrier_screening", "whole_exome", "health_screening"})
 
 
 def _order_result_review_debug(
@@ -140,7 +140,7 @@ def _fastq_root_for_service(service_code: Optional[str]) -> str:
     sc = (service_code or "").strip().lower().replace("-", "_")
     if sc == "sgnipt":
         return os.path.realpath(settings.sgnipt_fastq_root)
-    if sc in ("carrier_screening", "whole_exome"):
+    if sc in ("carrier_screening", "whole_exome", "health_screening"):
         return os.path.realpath(settings.carrier_screening_fastq_dir)
     return _fastq_root_real()
 
@@ -180,7 +180,7 @@ def _is_csv_filename(name: str) -> bool:
 def _bam_csv_root_for_service(service_code: Optional[str]) -> str:
     """BAM samplesheet CSV 브라우져용 루트 디렉터리 (서비스별)."""
     sc = (service_code or "").strip().lower().replace("-", "_")
-    if sc in ("carrier_screening", "whole_exome"):
+    if sc in ("carrier_screening", "whole_exome", "health_screening"):
         return os.path.realpath(os.path.join(settings.carrier_screening_work_root, "data"))
     # sgnipt (default): SGNIPT_DATA_DIR 우선, 없으면 sgnipt_job_root/data
     data_dir = (settings.sgnipt_data_dir or "").strip()
@@ -505,6 +505,7 @@ async def health(
             "sgnipt": _fastq_root_for_service("sgnipt"),
             "carrier_screening": _fastq_root_for_service("carrier_screening"),
             "whole_exome": _fastq_root_for_service("whole_exome"),
+            "health_screening": _fastq_root_for_service("health_screening"),
             "default": fq_default,
         },
     }
@@ -544,7 +545,7 @@ def _build_job_from_submit_request(service_code: str, request: OrderSubmitReques
             output_dir=os.path.join(root, "output", work_dir, oid),
             log_dir=os.path.join(root, "log", work_dir, oid),
         )
-    if service_code in ("carrier_screening", "whole_exome"):
+    if service_code in ("carrier_screening", "whole_exome", "health_screening"):
         work_root = settings.carrier_screening_work_root
         return Job(
             order_id=request.order_id,
@@ -771,7 +772,7 @@ async def start_saved_order(
     )
 
 
-_REPROCESS_SUPPORTED = frozenset({"carrier_screening", "whole_exome", "sgnipt"})
+_REPROCESS_SUPPORTED = frozenset({"carrier_screening", "whole_exome", "health_screening", "sgnipt"})
 
 
 @app.post("/order/{order_id}/reprocess-results")
@@ -827,6 +828,7 @@ async def reprocess_order_results(order_id: str):
         detail_map = {
             "carrier_screening": "No VCF found for this order — cannot reprocess (check analysis/output paths).",
             "whole_exome": "No VCF found for this order — cannot reprocess (check analysis/output paths).",
+            "health_screening": "No VCF found for this order — cannot reprocess (check analysis/output paths).",
             "sgnipt": "No pipeline result JSON found for this order — cannot reprocess (check output path).",
         }
         raise HTTPException(
@@ -1890,7 +1892,7 @@ async def _dark_genes_review_impl(order_id: str, body: DarkGenesReviewRequest) -
     if job.service_code not in _CARRIER_LIKE:
         raise HTTPException(
             status_code=400,
-            detail="dark-genes-review is only supported for carrier_screening and whole_exome",
+            detail="dark-genes-review is only supported for carrier_screening, whole_exome, and health_screening",
         )
     from app.services.carrier_screening.plugin import (
         carrier_result_json_path,

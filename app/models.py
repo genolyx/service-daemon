@@ -246,7 +246,7 @@ class Job(BaseModel):
         gx-exome rename: SQLite job_json may still list /data/carrier_screening/... for paths
         and params (main_vcf, prior reuse hints). Map to /data/gx-exome* on load.
         """
-        if self.service_code not in ("carrier_screening", "whole_exome"):
+        if self.service_code not in ("carrier_screening", "whole_exome", "health_screening"):
             return self
         from .config import normalize_legacy_carrier_container_path
 

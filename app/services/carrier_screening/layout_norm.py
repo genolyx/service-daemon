@@ -15,7 +15,7 @@ from ...models import Job
 
 logger = logging.getLogger(__name__)
 
-_CARRIER_LIKE = frozenset({"carrier_screening", "whole_exome"})
+_CARRIER_LIKE = frozenset({"carrier_screening", "whole_exome", "health_screening"})
 
 
 def carrier_fastq_dir_from_local_paths(job: Job) -> Optional[str]:

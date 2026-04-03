@@ -51,11 +51,11 @@ def _prior_has_pipeline_paths(prior: Job) -> bool:
 
 
 def validate_prior_for_pipeline_reuse(prior: Job) -> Tuple[bool, str]:
-    # Same Nextflow stack as carrier_screening; whole_exome orders store VCF/output the same way.
-    if prior.service_code not in ("carrier_screening", "whole_exome"):
+    # Same Nextflow stack as carrier_screening; whole_exome / health_screening store VCF/output the same way.
+    if prior.service_code not in ("carrier_screening", "whole_exome", "health_screening"):
         return (
             False,
-            f"prior order must be carrier_screening or whole_exome (got {prior.service_code!r})",
+            f"prior order must be carrier_screening, whole_exome, or health_screening (got {prior.service_code!r})",
         )
     if prior.status not in (OrderStatus.COMPLETED, OrderStatus.REPORT_READY):
         return (

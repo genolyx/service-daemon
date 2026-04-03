@@ -28,7 +28,7 @@ services:
     # ENABLED_SERVICES: overrides env_file so stale .env.docker (without whole_exome) still registers WES plugin.
     environment:
       APP_ENV: ${APP_ENV:-dev}
-      ENABLED_SERVICES: carrier_screening,whole_exome,sgnipt
+      ENABLED_SERVICES: carrier_screening,whole_exome,health_screening,sgnipt
       # run_analysis.sh --data-dir: nested docker -v needs host path when SCRIPT_DATA_DIR unset
       CARRIER_SCREENING_HOST: ${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}
 

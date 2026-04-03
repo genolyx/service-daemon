@@ -332,8 +332,12 @@ class CarrierScreeningPlugin(ServicePlugin):
             "SUMMARY": 82,
         }
 
-    def validate_params(self, params: Dict[str, Any]) -> Tuple[bool, str]:
-        """서비스별 파라미터 유효성 검사"""
+    def validate_params(self, params: Dict[str, Any], strict: bool = True) -> Tuple[bool, str]:
+        """서비스별 파라미터 유효성 검사.
+
+        strict=False (Save 단계): wes_panel_id 는 나중에 채울 수 있으므로 건너뜀.
+        strict=True  (Submit/Run 단계): 모든 필수 항목 검사.
+        """
         carrier = (params or {}).get("carrier") or {}
         if carrier.get("reuse_prior_pipeline_outputs"):
             pid = (carrier.get("prior_order_id") or "").strip()
@@ -344,7 +348,8 @@ class CarrierScreeningPlugin(ServicePlugin):
                 )
         # Standard carrier screening: full-exome (capture) annotation + order-time interpretation panel.
         # Extended clinical programs (test_category "other" / Exome, WGS, …) do not use the WES panel UI.
-        if _carrier_requires_interpretation_panel(params):
+        # wes_panel_id 는 Submit/Run 단계(strict=True)에서만 필수 — Save(초안) 단계에서는 선택.
+        if strict and _carrier_requires_interpretation_panel(params):
             wid = _resolve_carrier_wes_panel_id(params)
             if not wid:
                 return (
@@ -759,31 +764,36 @@ class CarrierScreeningPlugin(ServicePlugin):
 
     def _shell_command_run_analysis(self, job: Job, script: str) -> str:
         """
-        Dark Gene run_analysis.sh 호출 (-w/-s/-d/-r).
-        예: bash run_analysis.sh -w 2601 -s SAMPLE -d <data_dir> -r <ref_dir> \\
-            --skip-cnv --aligner bwa-mem2 --variant-caller deepvariant --no-skip-vep
-        -s 는 fastq/<work>/<s>/ 폴더명과 같아야 함 (Portal 의 Sample name 파이프라인).
+        gx-exome run_analysis.sh 호출 (long-form 인자).
+        예: bash run_analysis.sh --work-dir 2601 --sample SAMPLE --data-dir /home/ken/gx-exome
+                --panel twist-exome2 --aligner bwa-mem2 --variant-caller deepvariant
+                --no-skip-vep --skip-cnv
+        --sample 은 fastq/<work>/<sample>/ 폴더명과 같아야 함.
+        --panel 은 params.carrier.capture_panel_id 로 지정 (기본: twist-exome2).
         """
         data_dir = self._run_analysis_data_dir()
-        ref_dir = self._run_analysis_ref_dir()
         sample_folder = carrier_sequencing_folder(job)
+        carrier_params = (job.params or {}).get("carrier") or {}
+        capture_panel = (carrier_params.get("capture_panel_id") or "").strip() or "twist-exome2"
+
         parts = [
             "bash",
             script,
-            "-w",
-            carrier_run_analysis_work_arg(job),
-            "-s",
-            sample_folder,
-            "-d",
-            data_dir,
-            "-r",
-            ref_dir,
+            "--work-dir", carrier_run_analysis_work_arg(job),
+            "--sample", sample_folder,
+            "--data-dir", data_dir,
+            "--panel", capture_panel,
+            "--aligner", "bwa-mem2",
+            "--variant-caller", "deepvariant",
+            "--no-skip-vep",
+            "--skip-cnv",
         ]
+
         is_fresh = bool((job.params or {}).get("_pipeline_fresh"))
         logger.info(
-            "[carrier_screening] _shell_command_run_analysis: order=%s params=%s fresh=%s",
+            "[carrier_screening] _shell_command_run_analysis: order=%s panel=%s fresh=%s",
             job.order_id,
-            job.params,
+            capture_panel,
             is_fresh,
         )
         if is_fresh:

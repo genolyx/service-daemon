@@ -174,10 +174,13 @@ class ServicePlugin(ABC):
         """
         pass
 
-    def validate_params(self, params: Dict[str, Any]) -> tuple:
+    def validate_params(self, params: Dict[str, Any], strict: bool = True) -> tuple:
         """
         서비스별 파라미터 유효성 검사 (선택적 오버라이드).
-        
+
+        strict=False: Save(초안 저장) 단계 — 필수 항목 중 나중에 채울 수 있는 것은 건너뜀.
+        strict=True : Submit/Run 단계 — 모든 필수 항목 검사.
+
         Returns:
             (is_valid: bool, error_message: str)
         """

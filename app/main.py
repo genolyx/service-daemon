@@ -698,7 +698,8 @@ async def save_order(service_code: str, request: OrderSubmitRequest):
         )
     if request.service_code != service_code:
         request.service_code = service_code
-    is_valid, error_msg = plugin.validate_params(request.params or {})
+    # Save = 초안 저장: wes_panel_id 등 Submit 전에 채울 수 있는 항목은 strict=False 로 건너뜀
+    is_valid, error_msg = plugin.validate_params(request.params or {}, strict=False)
     if not is_valid:
         raise HTTPException(status_code=400, detail=f"Invalid params: {error_msg}")
 

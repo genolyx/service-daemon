@@ -141,7 +141,7 @@ class Settings(BaseSettings):
         description="docker run --rm 뒤 이미지 앞에 넣는 추가 인자(공백 구분)",
     )
     carrier_screening_fastq_dir: str = Field(
-        default="/home/ken/carrier_screening/fastq",
+        default="/home/ken/gx-exome/fastq",
         description="Carrier screening: 포털 FASTQ browse 및 경로 검증용 루트"
     )
     analysis_base_dir: str = Field(
@@ -215,10 +215,12 @@ class Settings(BaseSettings):
         description="-r for run_analysis (default: <data_dir>/data/refs)",
     )
     carrier_screening_script_extra_args: str = Field(
-        default=(
-            "--skip-cnv --aligner bwa-mem2 --variant-caller deepvariant --no-skip-vep"
+        default="",
+        description=(
+            "Additional args for run_analysis.sh (shlex-split, appended last). "
+            "--work-dir/--sample/--data-dir/--panel/--aligner/--variant-caller/--no-skip-vep/--skip-cnv "
+            "are already built explicitly; add only truly extra flags here (e.g. --shared-ref-dir /path)."
         ),
-        description="Extra args for run_analysis.sh (shlex-split, appended after -d/-r)",
     )
     carrier_screening_artifact_base: Optional[str] = Field(
         default=None,
@@ -542,7 +544,7 @@ class Settings(BaseSettings):
         fq = (self.carrier_screening_fastq_dir or "").strip().rstrip("/")
         if fq.lower().endswith("/fastq"):
             return os.path.abspath(os.path.dirname(fq))
-        return os.path.join(self.base_dir, "carrier-screening")
+        return os.path.join(self.base_dir, "gx-exome")
 
     @property
     def carrier_screening_work_root(self) -> str:

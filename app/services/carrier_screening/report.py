@@ -789,7 +789,7 @@ def generate_report_json(
     report_metadata = {
         "order_id": order_id,
         "report_date": _report_date_human_kst(),
-        "pipeline_version": "carrier-screening-v2.0",
+        "pipeline_version": "gx-exome-v2.0",
         "report_version": "2.0",
         "is_couple": is_couple,
         "report_type": "Carrier Screening Report",

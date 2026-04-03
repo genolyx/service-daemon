@@ -1657,7 +1657,7 @@ def _carrier_result_metadata_block(
 ) -> Dict[str, Any]:
     """Fixed metadata + optional ``review_build`` (VCF paths used for variant table)."""
     meta: Dict[str, Any] = {
-        "pipeline_version": "carrier-screening-v2.0",
+        "pipeline_version": "gx-exome-v2.0",
         "annotation_databases": {
             "clinvar": True,
             "gnomad": True,

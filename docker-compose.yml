@@ -39,8 +39,8 @@ services:
       # WeasyPrint uses templates baked into the image until the next --build.
       - ./data/carrier_report:/app/data/carrier_report:ro
       - ${BASE_DIR:-/data}:/data
-      - ${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}:/data/carrier_screening
-      - ${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}:${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}
+      - ${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}:/data/carrier_screening
+      - ${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}:${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}
       - ${SGNIPT_SRC_HOST:-/home/ken/sgnipt}:${SGNIPT_SRC_HOST:-/home/ken/sgnipt}:ro
       - ${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}:${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}
       - ${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}/data:${BASE_DIR:-/data}/sgnipt_work/data:ro

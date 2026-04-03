@@ -778,6 +778,9 @@
     /* Order detail — pipeline.log terminal */
     .order-pipeline-log-host{margin-top:18px}
     .order-pipeline-log-host.hidden{display:none}
+    .pipeline-cmd-block{margin-bottom:10px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 14px}
+    .pipeline-cmd-label{font-size:10px;font-weight:600;letter-spacing:.06em;color:#6e7681;text-transform:uppercase;margin-bottom:6px}
+    .pipeline-cmd-pre{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;color:#a5d6ff;white-space:pre-wrap;word-break:break-all;line-height:1.6}
     .pipeline-terminal{border:1px solid #30363d;border-radius:10px;background:#0d1117;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
     .pipeline-terminal-head{
       display:flex;align-items:center;justify-content:space-between;gap:12px;
@@ -1049,11 +1052,11 @@
               </select>
             </div>
             <div id="cr_wes_panel_wrap" style="margin-top:14px">
-              <label for="cr_wes_panel" id="cr_wes_panel_scope_label" class="required">Primary (interpretation)</label>
+              <label for="cr_wes_panel" id="cr_wes_panel_scope_label">Primary (interpretation)</label>
               <select id="cr_wes_panel" style="width:100%;max-width:100%;box-sizing:border-box;margin-top:6px">
-                <option value="">— Select panel —</option>
+                <option value="">— Select panel (required before Submit) —</option>
               </select>
-              <p id="cr_wes_panel_hint" class="muted" style="font-size:11px;margin:6px 0 0;line-height:1.45">Required for carrier screening. Annotation is exome-wide; this panel narrows the clinical variant list after analysis.</p>
+              <p id="cr_wes_panel_hint" class="muted" style="font-size:11px;margin:6px 0 0;line-height:1.45">Optional at save. Required before submitting — this panel narrows the clinical variant list after pipeline analysis.</p>
             </div>
             <input type="hidden" id="cr_interpretation_genes_extra" value="" />
           </div>
@@ -1306,6 +1309,16 @@
             <input id="bamCsvPath" placeholder="선택 또는 절대 경로 직접 입력" style="flex:1;min-width:0" oninput="updateBamCsvClearBtn()" />
             <button type="button" class="btn" id="btnClearBamCsv" style="display:none;white-space:nowrap">Clear</button>
           </div>
+        </div>
+
+        <div class="col-12" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
+          <div class="muted" style="font-weight:600;margin-bottom:6px">Capture Panel</div>
+          <p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.45">
+            Sequencing capture panel passed to <code>run_analysis.sh --panel</code>. Determines the target BED used for alignment and variant calling.
+          </p>
+          <select id="cr_capture_panel_id" style="max-width:280px">
+            <option value="twist-exome2">Twist Exome 2.0</option>
+          </select>
         </div>
 
         <div id="carrierParams" class="col-12" style="margin-top:12px">
@@ -3591,6 +3604,7 @@
 
       setFormInput('fBackboneBed', p.backbone_bed);
       setFormInput('fDiseaseBed', p.disease_bed);
+      if (qs('cr_capture_panel_id')) qs('cr_capture_panel_id').value = c.capture_panel_id || 'twist-exome2';
       if (qs('cr_wes_panel')) {
         qs('cr_wes_panel').value = p.wes_panel_id || c.wes_panel_id || '';
         updateWesPanelHintOnly();
@@ -3737,6 +3751,7 @@
         patient3_gender: val('cr_p3_gender') || undefined,
         patient3_affected: val('cr_p3_affected') || undefined,
         wes_panel_id: wesPanelId,
+        capture_panel_id: val('cr_capture_panel_id') || 'twist-exome2',
         prior_order_id: val('cr_prior_order_id') || undefined,
         reuse_prior_pipeline_outputs: val('cr_reuse_prior_pipeline') === '1',
       };
@@ -3799,11 +3814,6 @@
         const modeEl = document.querySelector('input[name="cr_report_mode"]:checked');
         if (modeEl && modeEl.value === 'couples') {
           if (!val('cr_partner_order_id')) return 'Partner Order ID is required for couples report';
-        }
-      }
-      if (fu2 === 'carrier_screening') {
-        if (!val('cr_wes_panel')) {
-          return 'Primary (interpretation panel) is required — select a WES panel for report scope (full exome is annotated first).';
         }
       }
       return null;
@@ -5460,7 +5470,14 @@
       const st = orderStatusUpper(o);
       const activeForPoll = new Set(['QUEUED', 'RUNNING', 'RECEIVED', 'DOWNLOADING', 'PROCESSING', 'UPLOADING']);
 
-      host.innerHTML = `
+      const pipelineCmd = (o.params || {})._pipeline_command || '';
+      const cmdHtml = pipelineCmd ? `
+        <div class="pipeline-cmd-block">
+          <div class="pipeline-cmd-label">Pipeline Command</div>
+          <pre class="pipeline-cmd-pre">${escapeHtml(pipelineCmd)}</pre>
+        </div>` : '';
+
+      host.innerHTML = `${cmdHtml}
         <div class="pipeline-terminal collapsed" id="pipelineTerminalRoot" data-order-id="${escapeHtml(oid)}">
           <div class="pipeline-terminal-head" id="pipelineTerminalHead" role="button" tabindex="0" aria-expanded="false" aria-controls="pipelineLogPre" title="Show or hide pipeline.log">
             <span class="pipeline-terminal-title">pipeline.log</span>

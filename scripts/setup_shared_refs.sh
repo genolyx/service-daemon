@@ -30,13 +30,13 @@ set -euo pipefail
 
 # ── 기본값 설정 ───────────────────────────────────────────────────────────────
 REF_ROOT="/data/reference"
-CS_DIR="/home/ken/carrier_screening"
+CS_DIR="/home/ken/gx-exome"
 SGNIPT_DIR="/home/ken/sgNIPT"
 DRY_RUN=false
 
 # 기존 레퍼런스 파일 위치 (서버 현재 상태 기준)
 EXISTING_FASTA="/home/sam/dark_gene_pipeline/refs/GRCh38.fasta"
-EXISTING_BWA_INDEX="/home/ken/carrier_screening/data/refs/bwa_index"
+EXISTING_BWA_INDEX="/home/ken/gx-exome/data/refs/bwa_index"
 EXISTING_GNOMAD="/data/reference/annotation/gnomad"
 EXISTING_CLINVAR=""   # 설정 필요
 

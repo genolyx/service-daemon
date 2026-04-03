@@ -44,9 +44,9 @@ services:
       - ${BASE_DIR:-/data}:/data
       # Carrier: fastq 만 :ro 로 마운트하면 /data/carrier_screening 부모가 root 소유로 생겨
       # analysis/log/output 형제 디렉터리 생성 시 Permission denied 남. 프로젝트 루트 전체 rw 권장.
-      - ${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}:/data/carrier_screening
+      - ${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}:/data/carrier_screening
       # run_analysis.sh → docker -v 는 호스트 경로 문자열을 씀. HOST 와 같은 경로를 컨테이너에도 만들어 -d 와 일치시킴
-      - ${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}:${CARRIER_SCREENING_HOST:-/home/ken/carrier_screening}
+      - ${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}:${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}
       # sgNIPT: run_sgnipt.sh 가 직접 docker run을 실행 (carrier 패턴과 동일).
       # 스크립트(src/), 데이터(data/config/) — HOST:HOST 마운트로 docker -v 호스트 경로 일치.
       - ${SGNIPT_SRC_HOST:-/home/ken/sgnipt}:${SGNIPT_SRC_HOST:-/home/ken/sgnipt}:ro

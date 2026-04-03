@@ -166,6 +166,8 @@ class PipelineRunner:
             await self._update_status(job, OrderStatus.RUNNING, 10, "Starting pipeline...")
             command = await plugin.get_pipeline_command(job)
             logger.info(f"[{job.service_code}] Pipeline command: {command}")
+            job.params["_pipeline_command"] = command
+            await self._queue_manager.persist_job(job)
 
             exit_code = await self._run_pipeline(job, command)
 

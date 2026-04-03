@@ -69,7 +69,7 @@ class SgNIPTPlugin(ServicePlugin):
     def display_name(self) -> str:
         return "Single-gene NIPT"
 
-    def validate_params(self, params: Dict[str, Any]) -> Tuple[bool, str]:
+    def validate_params(self, params: Dict[str, Any], strict: bool = True) -> Tuple[bool, str]:
         return True, ""
 
     def sync_is_complete(self, job: Job) -> bool:

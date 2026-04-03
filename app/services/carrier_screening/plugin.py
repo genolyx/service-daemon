@@ -26,7 +26,10 @@ from ..base import ServicePlugin
 from ..wes_panels import interpretation_gene_set_for_job, should_apply_interpretation_post_filter
 from ...config import normalize_legacy_carrier_container_path, settings
 from ...models import Job, OutputFile
-from .layout_norm import carrier_run_analysis_work_arg, carrier_sequencing_folder
+from .layout_norm import (
+    carrier_run_analysis_work_arg,
+    carrier_sequencing_folder,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -419,19 +422,25 @@ class CarrierScreeningPlugin(ServicePlugin):
     def _get_dirs(self, job: Job) -> Dict[str, str]:
         """
         carrier-screening 디렉토리 구조:
-            <work_root>/fastq/<work_dir>/<sample_name>/  (work_root = layout_base or CARRIER_SCREENING_ARTIFACT_BASE)
-            <work_root>/analysis|output|log/<work_dir>/<sample_name>/
+            <work_root>/fastq/<work_segment>/<leaf>/  (work_root = layout_base or CARRIER_SCREENING_ARTIFACT_BASE)
+
+        Use the same ``work_segment`` as ``run_analysis.sh -w`` (``carrier_run_analysis_work_arg``) —
+        often from ``.../fastq/<segment>/...`` in R1 — not ``job.work_dir`` when the portal uses a
+        different date segment (e.g. work_dir=260403 but FASTQ under fastq/2601/...).
+        ``leaf`` is ``carrier_sequencing_folder`` (order_id / explicit sequencing folder).
         """
         work_root = settings.carrier_screening_work_root
+        wk = carrier_run_analysis_work_arg(job)
+        leaf = carrier_sequencing_folder(job)
         return {
             "fastq": job.fastq_dir
-            or os.path.join(work_root, "fastq", job.work_dir, job.sample_name),
+            or os.path.join(work_root, "fastq", wk, leaf),
             "analysis": job.analysis_dir
-            or os.path.join(work_root, "analysis", job.work_dir, job.sample_name),
+            or os.path.join(work_root, "analysis", wk, leaf),
             "output": job.output_dir
-            or os.path.join(work_root, "output", job.work_dir, job.sample_name),
+            or os.path.join(work_root, "output", wk, leaf),
             "log": job.log_dir
-            or os.path.join(work_root, "log", job.work_dir, job.sample_name),
+            or os.path.join(work_root, "log", wk, leaf),
         }
 
     def _qc_extra_search_dirs(self, job: Job, analysis_dir: str) -> List[str]:
@@ -442,9 +451,7 @@ class CarrierScreeningPlugin(ServicePlugin):
         Nextflow 출력이 job.sample_name 이 아닌 FASTQ 폴더명(sequencing_folder) 아래에만
         있을 수 있으므로, layout_base/analysis/{work}/ 샘플·시퀀싱 폴더 둘 다 후보에 넣습니다.
         """
-        from .layout_norm import carrier_sequencing_folder
-
-        wk = str(job.work_dir).strip() or "00"
+        wk = carrier_run_analysis_work_arg(job)
         base = settings.carrier_screening_layout_base
         seq = carrier_sequencing_folder(job)
         smp = str(job.sample_name).strip()
@@ -635,11 +642,28 @@ class CarrierScreeningPlugin(ServicePlugin):
 
         # Same sequencing run, new order / panel: reuse prior pipeline outputs (no Nextflow)
         if carrier_reuse_prior_pipeline_requested(job):
-            if not prepare_carrier_prior_pipeline_reuse(job):
-                return False
+            prepare_carrier_prior_pipeline_reuse(job)
             logger.info(
                 "[carrier_screening] prior pipeline reuse — skipping FASTQ download/check for %s",
                 job.order_id,
+            )
+            return True
+
+        # Portal / saved order: explicit R1/R2 paths take precedence over directory discovery
+        # (avoids wrong pairing when multiple sequencing pairs sit in one folder).
+        r1e = (job.fastq_r1_path or "").strip()
+        r2e = (job.fastq_r2_path or "").strip()
+        if r1e and r2e and os.path.isfile(r1e) and os.path.isfile(r2e):
+            perm_err = self._fastq_readable_by_process(r1e, r2e)
+            if perm_err:
+                logger.error("[carrier_screening] %s", perm_err)
+                raise RuntimeError(perm_err)
+            job.fastq_r1_path = r1e
+            job.fastq_r2_path = r2e
+            job.fastq_dir = os.path.dirname(os.path.abspath(r1e))
+            logger.info(
+                "[carrier_screening] Using explicit FASTQ paths from order: R1=%s",
+                r1e,
             )
             return True
 
@@ -647,6 +671,10 @@ class CarrierScreeningPlugin(ServicePlugin):
         r1_path, r2_path = self._find_fastq_files(dirs["fastq"], job.sample_name)
 
         if r1_path and r2_path:
+            perm_err = self._fastq_readable_by_process(r1_path, r2_path)
+            if perm_err:
+                logger.error("[carrier_screening] %s", perm_err)
+                raise RuntimeError(perm_err)
             logger.info(f"Found existing FASTQ files: R1={r1_path}, R2={r2_path}")
             job.fastq_r1_path = r1_path
             job.fastq_r2_path = r2_path
@@ -662,20 +690,74 @@ class CarrierScreeningPlugin(ServicePlugin):
             ok2 = await self._download_file(job.fastq_r2_url, r2_dest)
 
             if ok1 and ok2:
+                perm_err = self._fastq_readable_by_process(r1_dest, r2_dest)
+                if perm_err:
+                    logger.error("[carrier_screening] %s", perm_err)
+                    raise RuntimeError(perm_err)
                 job.fastq_r1_path = r1_dest
                 job.fastq_r2_path = r2_dest
                 return True
             else:
-                logger.error("Failed to download FASTQ files")
-                return False
+                msg = "Failed to download FASTQ files from URLs (wget returned non-zero)"
+                logger.error("[carrier_screening] %s", msg)
+                raise RuntimeError(msg)
 
-        # 지정된 로컬 경로 확인
+        # 지정된 로컬 경로 확인 (exists but not isfile — e.g. broken symlink)
         if job.fastq_r1_path and job.fastq_r2_path:
-            if os.path.exists(job.fastq_r1_path) and os.path.exists(job.fastq_r2_path):
+            if os.path.isfile(job.fastq_r1_path) and os.path.isfile(job.fastq_r2_path):
+                perm_err = self._fastq_readable_by_process(
+                    job.fastq_r1_path, job.fastq_r2_path
+                )
+                if perm_err:
+                    logger.error("[carrier_screening] %s", perm_err)
+                    raise RuntimeError(perm_err)
+                job.fastq_dir = os.path.dirname(os.path.abspath(job.fastq_r1_path))
                 return True
+            r1_ok = os.path.isfile((job.fastq_r1_path or "").strip())
+            r2_ok = os.path.isfile((job.fastq_r2_path or "").strip())
+            msg = (
+                f"FASTQ paths set on the order but not both readable files "
+                f"(R1 ok={r1_ok} R2 ok={r2_ok}): "
+                f"R1={job.fastq_r1_path!r} R2={job.fastq_r2_path!r}"
+            )
+            logger.error("[carrier_screening] %s", msg)
+            raise RuntimeError(msg)
 
-        logger.error(f"No FASTQ files found for sample {job.sample_name}")
-        return False
+        msg = (
+            f"No FASTQ files found for sample_name={job.sample_name!r} under {dirs['fastq']!r}. "
+            f"Set R1/R2 paths on the order, place *_R1_* / *_R2_* (or _1._/_2.) .fastq.gz in that folder, "
+            f"or enable prior pipeline reuse with a completed carrier/exome order."
+        )
+        logger.error("[carrier_screening] %s", msg)
+        raise RuntimeError(msg)
+
+    @staticmethod
+    def _fastq_readable_by_process(r1: str, r2: str) -> Optional[str]:
+        """
+        Return an error message if FASTQs exist but cannot be read by this process.
+
+        Typical host issue: files are mode 600/700 and owned by another user — bwa in the
+        Nextflow task then fails with 'fail to open file' even when paths are correct.
+        """
+        import stat as stat_mod
+
+        for label, p in (("R1", r1), ("R2", r2)):
+            if not p or not str(p).strip():
+                return f"{label} FASTQ path is empty"
+            if not os.path.isfile(p):
+                return f"{label} FASTQ not found: {p}"
+            if not os.access(p, os.R_OK):
+                try:
+                    st = os.stat(p)
+                    mode = stat_mod.filemode(st.st_mode)
+                except OSError:
+                    mode = "?"
+                return (
+                    f"{label} FASTQ not readable by the daemon user ({mode}): {p}. "
+                    "On the host: chmod a+r (or chown to HOST_UID from .env.compose), "
+                    "or chmod g+rX and run the daemon as a user in the file's group."
+                )
+        return None
 
     def _find_fastq_files(self, fastq_dir: str, sample_name: str) -> Tuple[Optional[str], Optional[str]]:
         """
@@ -1237,7 +1319,14 @@ class CarrierScreeningPlugin(ServicePlugin):
         layout_base = settings.carrier_screening_layout_base
         work_root = os.path.abspath(settings.carrier_screening_work_root)
         script_root_raw = (settings.carrier_screening_script_data_dir or "").strip()
-        wk = str(job.work_dir).strip() or "00"
+        # Pipeline -w / output tree follows FASTQ .../fastq/<segment>/... which may differ from job.work_dir
+        # (e.g. work_dir=260403 for the order but FASTQ under fastq/2601/...).
+        wk_run = carrier_run_analysis_work_arg(job)
+        wk_job = str(job.work_dir).strip() or "00"
+        work_segments: List[str] = []
+        for w in (wk_run, wk_job):
+            if w and w not in work_segments:
+                work_segments.append(w)
         seq = carrier_sequencing_folder(job)
         path_key = (str(job.sample_name).strip() or job.order_id or "").strip()
         leaves = list(dict.fromkeys([x for x in (path_key, seq) if x]))
@@ -1250,11 +1339,13 @@ class CarrierScreeningPlugin(ServicePlugin):
             if ba in seen_bases:
                 continue
             seen_bases.add(ba)
-            # 동일 트리를 artifact 쪽에서 이미 검색한 경우 스킵 (output 경로 중복 방지)
-            if ba == work_root:
-                continue
-            for leaf in leaves:
-                add(os.path.join(ba, "output", wk, leaf))
+            # Per-leaf output|analysis under layout/script roots. Do **not** skip when ba == work_root:
+            # job dirs use sample_name only, but run_analysis writes under sequencing_folder when it
+            # differs from sample_name — skipping the whole block hid output/<work>/<seq>/vcf/.
+            for wseg in work_segments:
+                for leaf in leaves:
+                    add(os.path.join(ba, "output", wseg, leaf))
+                    add(os.path.join(ba, "analysis", wseg, leaf))
 
         return roots
 

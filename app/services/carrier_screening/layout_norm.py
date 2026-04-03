@@ -7,12 +7,15 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Optional, Tuple
 
 from ...config import normalize_legacy_carrier_container_path, settings
 from ...models import Job
 
 logger = logging.getLogger(__name__)
+
+_CARRIER_LIKE = frozenset({"carrier_screening", "whole_exome"})
 
 
 def carrier_fastq_dir_from_local_paths(job: Job) -> Optional[str]:
@@ -37,30 +40,49 @@ def carrier_fastq_dir_from_local_paths(job: Job) -> Optional[str]:
     return d1
 
 
+def _work_segment_from_fastq_path_string(r1: str) -> Optional[str]:
+    """Return the path segment immediately under .../fastq/<segment>/... (e.g. 2601)."""
+    if not r1 or not isinstance(r1, str):
+        return None
+    m = re.search(r"/fastq/([^/]+)/", r1.replace("\\", "/"))
+    if m:
+        seg = (m.group(1) or "").strip()
+        return seg or None
+    return None
+
+
 def carrier_run_analysis_work_arg(job: Job) -> str:
     """
     ``-w`` for ``run_analysis.sh``: the wrapper expects ``fastq/<w>/<sequencing_folder>/``.
 
     When FASTQ lives under ``<work_root>/fastq/<work>/<seq>/``, use that ``<work>`` even if
     ``job.work_dir`` is a new date segment for a follow-up order.
+
+    Prefer parsing ``/fastq/<segment>/`` from the R1 path string first (works when R1 is on
+    another mount than ``CARRIER_SCREENING_ARTIFACT_BASE``/``work_root``, or when the file is
+    missing on disk but paths are still in the job).
     """
     wk = str(job.work_dir).strip() or "00"
+    r1 = (job.fastq_r1_path or "").strip()
+    if not r1:
+        return wk
+    parsed = _work_segment_from_fastq_path_string(r1)
+    if parsed:
+        return parsed
+    if not os.path.isfile(r1):
+        return wk
     work_root = os.path.realpath(settings.carrier_screening_work_root)
     fastq_root = os.path.realpath(os.path.join(work_root, "fastq"))
-    r1 = (job.fastq_r1_path or "").strip()
-    if not r1 or not os.path.isfile(r1):
-        return wk
     r1_dir = os.path.realpath(os.path.dirname(os.path.abspath(r1)))
     try:
         rel = os.path.relpath(r1_dir, fastq_root)
     except ValueError:
         return wk
     rel_norm = rel.replace("\\", "/")
-    if rel_norm == "." or rel_norm.startswith("../"):
-        return wk
-    parts = [p for p in rel_norm.split("/") if p]
-    if len(parts) >= 1:
-        return parts[0]
+    if rel_norm not in (".",) and not rel_norm.startswith("../"):
+        parts = [p for p in rel_norm.split("/") if p]
+        if len(parts) >= 1:
+            return parts[0]
     return wk
 
 
@@ -119,7 +141,7 @@ def align_carrier_job_dirs_from_main_vcf(job: Job, main_vcf: str) -> bool:
     Returns:
         경로가 하나라도 바뀌었으면 True.
     """
-    if job.service_code != "carrier_screening":
+    if job.service_code not in _CARRIER_LIKE:
         return False
     main_vcf = normalize_legacy_carrier_container_path(main_vcf) or main_vcf
     output_dir, tail = parse_carrier_output_tree_from_main_vcf(main_vcf)
@@ -161,7 +183,7 @@ def apply_carrier_layout_directories(job: Job) -> bool:
 
     Returns True if any path field changed.
     """
-    if job.service_code != "carrier_screening":
+    if job.service_code not in _CARRIER_LIKE:
         return False
     work_root = settings.carrier_screening_work_root
     wk = str(job.work_dir).strip() or "00"

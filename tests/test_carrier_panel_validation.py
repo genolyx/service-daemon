@@ -1,6 +1,7 @@
 """Carrier screening: interpretation panel required for standard orders (not extended programs)."""
 
 from app.services.carrier_screening.plugin import CarrierScreeningPlugin
+from app.services.whole_exome import WholeExomePlugin
 
 
 def test_standard_carrier_requires_wes_panel_id():
@@ -39,3 +40,10 @@ def test_unknown_panel_fails():
     )
     assert ok is False
     assert "unknown" in msg.lower()
+
+
+def test_whole_exome_validate_params_accepts_strict_kwarg():
+    """save_order passes strict=False; WholeExome must accept it (no TypeError → 500)."""
+    pl = WholeExomePlugin()
+    ok, _ = pl.validate_params({}, strict=False)
+    assert ok is True

@@ -51,8 +51,12 @@ def _prior_has_pipeline_paths(prior: Job) -> bool:
 
 
 def validate_prior_for_pipeline_reuse(prior: Job) -> Tuple[bool, str]:
-    if prior.service_code != "carrier_screening":
-        return False, f"prior order is not carrier_screening: {prior.service_code!r}"
+    # Same Nextflow stack as carrier_screening; whole_exome orders store VCF/output the same way.
+    if prior.service_code not in ("carrier_screening", "whole_exome"):
+        return (
+            False,
+            f"prior order must be carrier_screening or whole_exome (got {prior.service_code!r})",
+        )
     if prior.status not in (OrderStatus.COMPLETED, OrderStatus.REPORT_READY):
         return (
             False,
@@ -84,24 +88,27 @@ def apply_carrier_prior_reuse_metadata(job: Job, prior: Job) -> None:
 def prepare_carrier_prior_pipeline_reuse(job: Job) -> bool:
     """
     If reuse is requested, validate prior order and set job.params metadata.
-    Ensures new-order artifact dirs exist. Returns True when the caller should skip FASTQ prep.
+    Returns True when the caller should skip FASTQ prep; False when reuse is not requested.
+    Raises RuntimeError when reuse is requested but cannot be satisfied (caller should surface message).
     """
     if not carrier_reuse_prior_pipeline_requested(job):
         return False
     pid = carrier_prior_order_id(job)
     if not pid:
-        logger.error(
-            "[carrier_screening] reuse_prior_pipeline_outputs set but prior_order_id is empty"
-        )
-        return False
+        msg = "reuse_prior_pipeline_outputs is set but prior_order_id is empty"
+        logger.error("[carrier_screening] %s", msg)
+        raise RuntimeError(msg)
     prior = resolve_carrier_prior_job(pid)
     if not prior:
-        logger.error("[carrier_screening] prior order not found: %s", pid)
-        return False
+        msg = f"prior order not found: {pid!r} (save or run the prior order so it exists in the daemon DB)"
+        logger.error("[carrier_screening] %s", msg)
+        raise RuntimeError(msg)
     ok, err = validate_prior_for_pipeline_reuse(prior)
     if not ok:
-        logger.error("[carrier_screening] prior order %s invalid for reuse: %s", pid, err)
-        return False
+        logger.error(
+            "[carrier_screening] prior order %s invalid for reuse: %s", pid, err
+        )
+        raise RuntimeError(f"Prior pipeline reuse: {err}")
 
     apply_carrier_prior_reuse_metadata(job, prior)
     logger.info(

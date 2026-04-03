@@ -20,7 +20,7 @@ class WholeExomePlugin(CarrierScreeningPlugin):
     def display_name(self) -> str:
         return "Whole Exome"
 
-    def validate_params(self, params: Dict[str, Any]) -> Tuple[bool, str]:
+    def validate_params(self, params: Dict[str, Any], strict: bool = True) -> Tuple[bool, str]:
         carrier = (params or {}).get("carrier") or {}
         if carrier.get("reuse_prior_pipeline_outputs"):
             pid = (carrier.get("prior_order_id") or "").strip()
@@ -30,7 +30,8 @@ class WholeExomePlugin(CarrierScreeningPlugin):
                     "prior_order_id is required when reuse_prior_pipeline_outputs is true",
                 )
         wid = _resolve_carrier_wes_panel_id(params)
-        if wid:
+        # strict=False (Save draft): allow incomplete panel id like carrier_screening.
+        if wid and strict:
             from ..wes_panels import get_panel_by_id, resolve_panel_interpretation_genes
 
             panel = get_panel_by_id(wid)

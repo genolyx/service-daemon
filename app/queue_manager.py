@@ -19,7 +19,10 @@ from .order_store import (
     ingest_result_json_from_disk,
 )
 from .order_cleanup import delete_run_artifacts
-from .services.carrier_screening.layout_norm import apply_carrier_layout_directories
+from .services.carrier_screening.layout_norm import (
+    _CARRIER_LIKE,
+    apply_carrier_layout_directories,
+)
 from .services.sgnipt import apply_sgnipt_layout_directories
 from .services import get_plugin
 
@@ -75,7 +78,7 @@ class QueueManager:
         for job in jobs:
             st = job.status
             if (
-                job.service_code == "carrier_screening"
+                job.service_code in _CARRIER_LIKE
                 and st not in (OrderStatus.COMPLETED, OrderStatus.REPORT_READY)
                 and apply_carrier_layout_directories(job)
             ):
@@ -202,7 +205,7 @@ class QueueManager:
         Returns:
             현재 큐 위치 (1-based)
         """
-        if job.service_code == "carrier_screening":
+        if job.service_code in _CARRIER_LIKE:
             apply_carrier_layout_directories(job)
         elif job.service_code == "sgnipt":
             apply_sgnipt_layout_directories(job)
@@ -374,7 +377,7 @@ class QueueManager:
             job.status = OrderStatus.SAVED
             job.updated_at = now_kst_iso()
             self._saved_jobs[job.order_id] = job
-        if job.service_code == "carrier_screening":
+        if job.service_code in _CARRIER_LIKE:
             apply_carrier_layout_directories(job)
         elif job.service_code == "sgnipt":
             apply_sgnipt_layout_directories(job)
@@ -437,7 +440,7 @@ class QueueManager:
                 self._completed_jobs.pop(old_id)
                 self._completed_jobs[new_id] = new_job
 
-        if new_job.service_code == "carrier_screening":
+        if new_job.service_code in _CARRIER_LIKE:
             apply_carrier_layout_directories(new_job)
         elif new_job.service_code == "sgnipt":
             apply_sgnipt_layout_directories(new_job)
@@ -622,7 +625,7 @@ class QueueManager:
                 {},
             )
 
-        if job.service_code == "carrier_screening":
+        if job.service_code in _CARRIER_LIKE:
             apply_carrier_layout_directories(job)
         elif job.service_code == "sgnipt":
             apply_sgnipt_layout_directories(job)
@@ -751,7 +754,7 @@ class QueueManager:
             if fastq_r2_path is not None:
                 job.fastq_r2_path = fastq_r2_path or None
             job.updated_at = now_kst_iso()
-        if job.service_code == "carrier_screening":
+        if job.service_code in _CARRIER_LIKE:
             apply_carrier_layout_directories(job)
         elif job.service_code == "sgnipt":
             apply_sgnipt_layout_directories(job)

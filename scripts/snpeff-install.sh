@@ -7,7 +7,7 @@
 # 완료 후 .env.docker 에 다음 설정 확인:
 #   SNPEFF_JAR=/opt/tools/snpEff/snpEff.jar
 #   SNPEFF_DB=GRCh38.86
-#   SNPEFF_DATA_DIR=/data/carrier_screening_work/snpeff
+#   SNPEFF_DATA_DIR=/data/gx-exome-work/snpeff
 set -euo pipefail
 
 INSTALL_DIR="${SNPEFF_INSTALL_DIR:-/opt/tools}"

@@ -9,7 +9,7 @@ import logging
 import os
 from typing import Optional, Tuple
 
-from ...config import settings
+from ...config import normalize_legacy_carrier_container_path, settings
 from ...models import Job
 
 logger = logging.getLogger(__name__)
@@ -66,25 +66,22 @@ def carrier_run_analysis_work_arg(job: Job) -> str:
 
 def carrier_sequencing_folder(job: Job) -> str:
     """
-    Directory name under fastq/<work_dir>/ that matches on-disk FASTQ layout.
-    Prefer explicit params; else parent dir of R1; else job.sample_name.
+    fastq/<work_dir>/ 하위 디렉토리 이름 = run_analysis.sh --sample 인자.
+
+    우선순위:
+      1. params.carrier.sequencing_folder / fastq_sample_folder (명시적 지정)
+      2. job.order_id (기본값)
+
+    주의: R1 FASTQ 경로의 부모 디렉토리 이름으로 추론하지 않는다.
+    FASTQ가 다른 order의 디렉토리에 있을 경우 잘못된 --sample이 전달되어
+    다른 order의 FASTQ로 분석되고 결과가 덮어써지는 데이터 오염이 발생하기 때문.
+    FASTQ는 반드시 fastq/{work_dir}/{order_id}/ 경로에 위치해야 한다.
     """
     carrier = (job.params or {}).get("carrier") or {}
     sf = carrier.get("sequencing_folder") or carrier.get("fastq_sample_folder")
     if isinstance(sf, str) and sf.strip():
         return sf.strip()
-    r1 = job.fastq_r1_path or ""
-    if r1 and os.path.isfile(r1):
-        folder = os.path.basename(os.path.dirname(os.path.abspath(r1)))
-        if folder and folder != str(job.sample_name):
-            logger.info(
-                "[carrier_screening] sequencing folder=%s (from FASTQ path; job.sample_name=%s)",
-                folder,
-                job.sample_name,
-            )
-        if folder:
-            return folder
-    return str(job.sample_name)
+    return str(job.order_id)
 
 
 def parse_carrier_output_tree_from_main_vcf(main_vcf: str) -> Tuple[str, str]:
@@ -96,6 +93,7 @@ def parse_carrier_output_tree_from_main_vcf(main_vcf: str) -> Tuple[str, str]:
     """
     if not main_vcf:
         return "", ""
+    main_vcf = normalize_legacy_carrier_container_path(main_vcf) or main_vcf
     m = os.path.realpath(os.path.abspath(main_vcf))
     vdir = os.path.dirname(m)
     if os.path.basename(vdir) != "vcf":
@@ -123,6 +121,7 @@ def align_carrier_job_dirs_from_main_vcf(job: Job, main_vcf: str) -> bool:
     """
     if job.service_code != "carrier_screening":
         return False
+    main_vcf = normalize_legacy_carrier_container_path(main_vcf) or main_vcf
     output_dir, tail = parse_carrier_output_tree_from_main_vcf(main_vcf)
     if not output_dir or not tail:
         return False
@@ -166,13 +165,14 @@ def apply_carrier_layout_directories(job: Job) -> bool:
         return False
     work_root = settings.carrier_screening_work_root
     wk = str(job.work_dir).strip() or "00"
-    seq_folder = carrier_sequencing_folder(job)
-    path_key = str(job.sample_name).strip() or job.order_id
+    # fastq / analysis / output / log 모두 order_id 기준으로 통일.
+    # carrier_sequencing_folder 도 order_id 를 반환하므로 일관성 유지.
+    seq_folder = carrier_sequencing_folder(job)   # == order_id (명시 재정의 없는 한)
     explicit_fq = carrier_fastq_dir_from_local_paths(job)
     new_f = explicit_fq if explicit_fq else os.path.join(work_root, "fastq", wk, seq_folder)
-    new_a = os.path.join(work_root, "analysis", wk, path_key)
-    new_o = os.path.join(work_root, "output", wk, path_key)
-    new_l = os.path.join(work_root, "log", wk, path_key)
+    new_a = os.path.join(work_root, "analysis", wk, seq_folder)
+    new_o = os.path.join(work_root, "output", wk, seq_folder)
+    new_l = os.path.join(work_root, "log", wk, seq_folder)
     changed = (
         job.fastq_dir != new_f
         or job.analysis_dir != new_a
@@ -181,11 +181,12 @@ def apply_carrier_layout_directories(job: Job) -> bool:
     )
     if changed:
         logger.info(
-            "[carrier_screening] Normalized paths for order %s (work=%s seq=%s sample=%s) → analysis=%s",
+            "[carrier_screening] Normalized paths for order %s (work=%s sample=%s) "
+            "fastq=%s analysis=%s",
             job.order_id,
             wk,
             seq_folder,
-            path_key,
+            new_f,
             new_a,
         )
     job.fastq_dir = new_f

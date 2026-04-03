@@ -22,6 +22,9 @@ services:
       - path: .env
         required: false
 
+    environment:
+      CARRIER_SCREENING_HOST: ${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}
+
     command: /bin/sh -c "uvicorn app.main:app --host 0.0.0.0 --port $${APP_PORT:-8000} --no-access-log"
 
     ports:
@@ -39,7 +42,7 @@ services:
       # WeasyPrint uses templates baked into the image until the next --build.
       - ./data/carrier_report:/app/data/carrier_report:ro
       - ${BASE_DIR:-/data}:/data
-      - ${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}:/data/carrier_screening
+      - ${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}:/data/gx-exome
       - ${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}:${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}
       - ${SGNIPT_SRC_HOST:-/home/ken/sgnipt}:${SGNIPT_SRC_HOST:-/home/ken/sgnipt}:ro
       - ${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}:${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}

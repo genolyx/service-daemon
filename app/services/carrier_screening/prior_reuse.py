@@ -10,6 +10,7 @@ import logging
 import os
 from typing import Optional, Tuple
 
+from ...config import normalize_legacy_carrier_container_path
 from ...models import Job, OrderStatus
 from ...queue_manager import get_queue_manager
 
@@ -74,8 +75,10 @@ def apply_carrier_prior_reuse_metadata(job: Job, prior: Job) -> None:
     job.params["_prior_reuse_sample_name"] = prior.sample_name
     job.params["_prior_reuse_order_id"] = prior.order_id
     main = (prior.params or {}).get("main_vcf")
-    if isinstance(main, str) and main.strip() and os.path.isfile(main.strip()):
-        job.params["_prior_reuse_main_vcf_hint"] = os.path.abspath(main.strip())
+    if isinstance(main, str) and main.strip():
+        main = normalize_legacy_carrier_container_path(main.strip()) or main.strip()
+        if os.path.isfile(main):
+            job.params["_prior_reuse_main_vcf_hint"] = os.path.abspath(main)
 
 
 def prepare_carrier_prior_pipeline_reuse(job: Job) -> bool:

@@ -7,7 +7,7 @@ Service Daemon Data Models
 
 from enum import Enum
 from typing import Optional, Dict, Any, List, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .datetime_kst import now_kst_iso
 
@@ -239,6 +239,57 @@ class Job(BaseModel):
         if message is not None:
             self.message = message
         self.updated_at = now_kst_iso()
+
+    @model_validator(mode="after")
+    def _normalize_carrier_legacy_container_paths(self) -> "Job":
+        """
+        gx-exome rename: SQLite job_json may still list /data/carrier_screening/... for paths
+        and params (main_vcf, prior reuse hints). Map to /data/gx-exome* on load.
+        """
+        if self.service_code not in ("carrier_screening", "whole_exome"):
+            return self
+        from .config import normalize_legacy_carrier_container_path
+
+        def norm(s: Optional[str]) -> Optional[str]:
+            if not s or not isinstance(s, str):
+                return s
+            return normalize_legacy_carrier_container_path(s) or s
+
+        updates: Dict[str, Any] = {}
+        for fname in (
+            "fastq_dir",
+            "analysis_dir",
+            "output_dir",
+            "log_dir",
+            "fastq_r1_path",
+            "fastq_r2_path",
+        ):
+            v = getattr(self, fname)
+            nv = norm(v)
+            if nv != v:
+                updates[fname] = nv
+
+        p = dict(self.params or {})
+        param_keys = (
+            "main_vcf",
+            "_prior_reuse_main_vcf_hint",
+            "_prior_reuse_analysis_dir",
+            "_prior_reuse_output_dir",
+            "_prior_reuse_log_dir",
+        )
+        p_changed = False
+        for k in param_keys:
+            if k in p and isinstance(p[k], str):
+                nk = norm(p[k])
+                if nk != p[k]:
+                    p[k] = nk
+                    p_changed = True
+        if p_changed:
+            updates["params"] = p
+
+        if updates:
+            return self.model_copy(update=updates)
+        return self
 
 
 class NotificationResult(BaseModel):

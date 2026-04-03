@@ -32,6 +32,7 @@ import glob
 import logging
 from typing import Dict, Any, List, Optional, Tuple
 
+from ...config import normalize_legacy_carrier_container_path
 from ...datetime_kst import now_kst_iso
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,10 @@ def enrich_review_build_with_smaca_vcf_depths(
     if review_build.get("smaca_snp_depths"):
         return
     path = review_build.get("main_vcf")
-    if not path or not isinstance(path, str) or not os.path.isfile(path):
+    if not path or not isinstance(path, str):
+        return
+    path = normalize_legacy_carrier_container_path(path.strip()) or path.strip()
+    if not os.path.isfile(path):
         return
     try:
         import pysam

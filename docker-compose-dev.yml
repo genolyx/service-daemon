@@ -29,6 +29,8 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-dev}
       ENABLED_SERVICES: carrier_screening,whole_exome,sgnipt
+      # run_analysis.sh --data-dir: nested docker -v needs host path when SCRIPT_DATA_DIR unset
+      CARRIER_SCREENING_HOST: ${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}
 
     # 로그는 docker compose logs (표준출력). 호스트 session/ 마운트는 uid 불일치 시 Permission denied 유발.
     command: /bin/sh -c "uvicorn app.main:app --host 0.0.0.0 --port $${APP_PORT:-8000} --no-access-log --reload --reload-dir /app/app --reload-dir /app/portal"
@@ -42,16 +44,16 @@ services:
 
     volumes:
       - ${BASE_DIR:-/data}:/data
-      # Carrier: fastq 만 :ro 로 마운트하면 /data/carrier_screening 부모가 root 소유로 생겨
+      # Carrier / whole_exome: gx-exome 레포 → 컨테이너 /data/gx-exome (fastq 만 :ro 면 부모 root 소유 이슈 가능)
       # analysis/log/output 형제 디렉터리 생성 시 Permission denied 남. 프로젝트 루트 전체 rw 권장.
-      - ${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}:/data/carrier_screening
+      - ${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}:/data/gx-exome
       # run_analysis.sh → docker -v 는 호스트 경로 문자열을 씀. HOST 와 같은 경로를 컨테이너에도 만들어 -d 와 일치시킴
       - ${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}:${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}
       # sgNIPT: run_sgnipt.sh 가 직접 docker run을 실행 (carrier 패턴과 동일).
       # 스크립트(src/), 데이터(data/config/) — HOST:HOST 마운트로 docker -v 호스트 경로 일치.
       - ${SGNIPT_SRC_HOST:-/home/ken/sgnipt}:${SGNIPT_SRC_HOST:-/home/ken/sgnipt}:ro
       - ${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}:${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}
-      # sgNIPT 쓰기 전용 트리 (${BASE_DIR:-/data}/sgnipt_work): carrier 의 carrier_screening_work 와 동일. 레이아웃 data·config 를 :ro 로 덮어씀.
+      # sgNIPT 쓰기 전용 트리 (${BASE_DIR:-/data}/sgnipt_work): carrier artifact(gx-exome-work) 패턴과 동일. 레이아웃 data·config 를 :ro 로 덮어씀.
       - ${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}/data:${BASE_DIR:-/data}/sgnipt_work/data:ro
       - ${SGNIPT_LAYOUT_HOST:-/home/ken/sgNIPT}/config:${BASE_DIR:-/data}/sgnipt_work/config:ro
       # 레이아웃 FASTQ = SGNIPT_ROOT_DIR/fastq (run_sgnipt 자동검색·docker -v와 일치). :ro 아님 — 주문 폴더 생성·symlink 허용.

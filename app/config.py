@@ -10,6 +10,31 @@ from typing import Optional, List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator, model_validator
 
+# Renamed mount: compose uses /data/gx-exome; old .env may still reference /data/carrier_screening.
+_LEGACY_CARRIER_DATA_ROOT = "/data/carrier_screening"
+_GX_EXOME_DATA_ROOT = "/data/gx-exome"
+_LEGACY_CARRIER_WORK_ROOT = "/data/carrier_screening_work"
+_GX_EXOME_WORK_ROOT = "/data/gx-exome-work"
+
+
+def normalize_legacy_carrier_container_path(value: Optional[str]) -> Optional[str]:
+    """
+    Map deprecated /data/carrier_screening* paths to gx-exome layout.
+
+    Use for env-backed settings, persisted job.params paths (main_vcf, hints), and API payloads
+    so SQLite rows from before the gx-exome rename still resolve on disk.
+    """
+    if not value or not isinstance(value, str):
+        return value
+    t = value.strip()
+    if not t:
+        return value
+    if t == _LEGACY_CARRIER_DATA_ROOT or t.startswith(_LEGACY_CARRIER_DATA_ROOT + "/"):
+        return _GX_EXOME_DATA_ROOT + t[len(_LEGACY_CARRIER_DATA_ROOT) :]
+    if t == _LEGACY_CARRIER_WORK_ROOT or t.startswith(_LEGACY_CARRIER_WORK_ROOT + "/"):
+        return _GX_EXOME_WORK_ROOT + t[len(_LEGACY_CARRIER_WORK_ROOT) :]
+    return value
+
 
 class Settings(BaseSettings):
     """서비스 데몬 설정"""
@@ -227,7 +252,7 @@ class Settings(BaseSettings):
         description=(
             "Writable root for carrier fastq staging and analysis/output/log (subdirs fastq|analysis|output|log). "
             "When unset, those paths use carrier_screening_layout_base. "
-            "Set when the layout tree is not writable by the daemon UID (e.g. /data/carrier_screening_work)."
+            "Set when the layout tree is not writable by the daemon UID (e.g. /data/gx-exome-work)."
         ),
     )
     carrier_screening_report_output_root: Optional[str] = Field(
@@ -246,6 +271,17 @@ class Settings(BaseSettings):
             "Highest priority. Relative paths are resolved from the repo root (not process cwd). "
             "If unset: <CARRIER_SCREENING_REPORT_OUTPUT_ROOT>/carrier_report, then packaged "
             "data/carrier_report, then REPORT_TEMPLATE_DIR, then pipeline data/templates."
+        ),
+    )
+    carrier_capture_panel_bed_dir: Optional[str] = Field(
+        default=None,
+        description=(
+            "Capture panel BED root for run_analysis.sh --backbone-bed. "
+            "Layout: {dir}/{capture_panel_id}/targets.bed(.gz/.gz.tbi). "
+            "Must be a HOST path accessible inside the gx-exome inner docker container "
+            "(i.e. under CARRIER_SCREENING_SCRIPT_DATA_DIR/data/bed, or any path "
+            "explicitly mounted in run_analysis.sh docker run). "
+            "Default: {CARRIER_SCREENING_SCRIPT_DATA_DIR}/data/bed."
         ),
     )
     carrier_default_backbone_bed: Optional[str] = Field(
@@ -539,7 +575,7 @@ class Settings(BaseSettings):
     def carrier_screening_layout_base(self) -> str:
         """
         Carrier FASTQ 트리 상위 (fastq/ 가 그 아래).
-        CARRIER_SCREENING_FASTQ_DIR 가 .../fastq 로 끝나면 그 부모를 씀 (예: /data/carrier_screening).
+        CARRIER_SCREENING_FASTQ_DIR 가 .../fastq 로 끝나면 그 부모를 씀 (예: /data/gx-exome).
         """
         fq = (self.carrier_screening_fastq_dir or "").strip().rstrip("/")
         if fq.lower().endswith("/fastq"):
@@ -604,6 +640,24 @@ class Settings(BaseSettings):
         if not os.path.isdir(parent):
             return self
         return self.model_copy(update={"gene_knowledge_db": abspath})
+
+    @field_validator(
+        "carrier_screening_fastq_dir",
+        "carrier_screening_run_script",
+        "carrier_screening_script_data_dir",
+        "carrier_screening_script_ref_dir",
+        "carrier_screening_artifact_base",
+        "carrier_screening_report_output_root",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_legacy_carrier_paths(cls, v: object) -> object:
+        """Map /data/carrier_screening* → /data/gx-exome* when env still uses old mount paths."""
+        if v is None:
+            return v
+        if not isinstance(v, str):
+            return v
+        return normalize_legacy_carrier_container_path(v)
 
 
 # 전역 설정 인스턴스

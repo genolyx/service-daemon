@@ -19,15 +19,54 @@ import asyncio
 import json
 import logging
 import shlex
+import shutil
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..base import ServicePlugin
 from ..wes_panels import interpretation_gene_set_for_job, should_apply_interpretation_post_filter
-from ...config import settings
+from ...config import normalize_legacy_carrier_container_path, settings
 from ...models import Job, OutputFile
 from .layout_norm import carrier_run_analysis_work_arg, carrier_sequencing_folder
 
 logger = logging.getLogger(__name__)
+
+_GX_EXOME_LAYOUT_PREFIX = "/data/gx-exome"
+
+
+def _resolve_nextflow_executable() -> str:
+    """
+    Avoid exit 127 when NEXTFLOW_EXECUTABLE=nextflow but PATH is minimal in a subprocess.
+    Prefer a real file path (image default: /usr/local/bin/nextflow).
+    """
+    exe = (settings.nextflow_executable or "").strip() or "nextflow"
+    if os.path.isabs(exe) and os.path.isfile(exe):
+        return exe
+    if not os.path.isabs(exe) and os.path.isfile(exe):
+        return os.path.abspath(exe)
+    found = shutil.which(exe)
+    if found:
+        return found
+    for cand in ("/usr/local/bin/nextflow", "/usr/bin/nextflow"):
+        if os.path.isfile(cand):
+            return cand
+    raise RuntimeError(
+        "Nextflow executable not found. Set NEXTFLOW_EXECUTABLE to the full path "
+        "(e.g. NEXTFLOW_EXECUTABLE=/usr/local/bin/nextflow in .env.docker) or install Nextflow on PATH."
+    )
+
+
+def _bash_executable() -> str:
+    """bash for run_analysis.sh; fail fast with a clear error instead of exit 127."""
+    w = shutil.which("bash")
+    if w and os.path.isfile(w):
+        return w
+    for cand in ("/bin/bash", "/usr/bin/bash"):
+        if os.path.isfile(cand):
+            return cand
+    raise RuntimeError(
+        "bash not found (expected /bin/bash or /usr/bin/bash). "
+        "The service-daemon image should include bash; check PATH or base image."
+    )
 
 
 def carrier_report_generation_paths(job: Job) -> Tuple[str, str]:
@@ -397,7 +436,7 @@ class CarrierScreeningPlugin(ServicePlugin):
 
     def _qc_extra_search_dirs(self, job: Job, analysis_dir: str) -> List[str]:
         """
-        artifact 전용 analysis_dir(예: carrier_screening_work) 에 QC 파일이 없을 때,
+        artifact 전용 analysis_dir(예: gx-exome-work) 에 QC 파일이 없을 때,
         파이프라인 원본 디렉터리를 추가 검색합니다.
 
         Nextflow 출력이 job.sample_name 이 아닌 FASTQ 폴더명(sequencing_folder) 아래에만
@@ -582,7 +621,7 @@ class CarrierScreeningPlugin(ServicePlugin):
             logger.error(
                 "[carrier_screening] Permission denied creating %s — fix host ownership, set "
                 ".env.compose HOST_UID/HOST_GID to `id -u`/`id -g`, or set CARRIER_SCREENING_ARTIFACT_BASE "
-                "to a writable dir under /data (e.g. /data/carrier_screening_work) so fastq/analysis/output "
+                "to a writable dir under /data (e.g. /data/gx-exome-work) so fastq/analysis/output "
                 "staging is not under a read-only carrier layout tree.",
                 e.filename or dirs,
             )
@@ -700,7 +739,7 @@ class CarrierScreeningPlugin(ServicePlugin):
     def _effective_run_analysis_script(self) -> Optional[str]:
         """
         1) CARRIER_SCREENING_RUN_SCRIPT (절대 경로)
-        2) 프로젝트 루트(layout base, 예: /data/carrier_screening) 아래 src/run_analysis.sh
+        2) 프로젝트 루트(layout base, 예: /data/gx-exome) 아래 src/run_analysis.sh
            — compose 가 CARRIER_SCREENING_HOST 로 레포 전체를 붙인 경우
         3) CARRIER_SCREENING_PIPELINE_DIR 아래 src/, 루트, scripts/
         없으면 None → Nextflow 직접.
@@ -750,11 +789,23 @@ class CarrierScreeningPlugin(ServicePlugin):
         return None
 
     def _run_analysis_data_dir(self) -> str:
-        """run_analysis.sh -d: CARRIER_SCREENING_SCRIPT_DATA_DIR 또는 FASTQ 루트의 부모."""
+        """
+        run_analysis.sh --data-dir: must be a **host** path for nested `docker run -v`.
+
+        Prefer CARRIER_SCREENING_SCRIPT_DATA_DIR. If unset and layout is the container mount
+        /data/gx-exome, map via CARRIER_SCREENING_HOST (same as compose) so Docker binds real dirs.
+        """
         d = (settings.carrier_screening_script_data_dir or "").strip()
         if d:
             return d
-        return settings.carrier_screening_layout_base
+        host = os.environ.get("CARRIER_SCREENING_HOST", "").strip()
+        layout = settings.carrier_screening_layout_base
+        if host and layout.startswith(_GX_EXOME_LAYOUT_PREFIX):
+            suffix = layout[len(_GX_EXOME_LAYOUT_PREFIX) :].lstrip("/")
+            if suffix:
+                return os.path.join(host.rstrip("/"), suffix)
+            return host
+        return layout
 
     def _run_analysis_ref_dir(self) -> str:
         r = (settings.carrier_screening_script_ref_dir or "").strip()
@@ -762,27 +813,131 @@ class CarrierScreeningPlugin(ServicePlugin):
             return r
         return os.path.join(self._run_analysis_data_dir(), "data", "refs")
 
+    def _ensure_fastq_symlinks(self, job: Job, expected_fastq_dir: str) -> None:
+        """
+        fastq_r1_path / fastq_r2_path 가 expected_fastq_dir 밖에 있을 때,
+        expected_fastq_dir 안에 상대 심볼릭 링크를 생성한다.
+
+        목적:
+          - --sample = order_id 로 고정하되, FASTQ 는 어느 디렉토리에서든 선택 가능.
+          - 상대 링크이므로 docker DinD 에서 ${DATA_DIR}/fastq 를 마운트해도 정상 작동.
+          - 읽기 전용 FASTQ 를 여러 오더가 동시에 사용해도 안전 (read-only, 상태 없음).
+        """
+        for attr in ("fastq_r1_path", "fastq_r2_path"):
+            fq = (getattr(job, attr, None) or "").strip()
+            if not fq:
+                continue
+            fq_abs = os.path.abspath(fq)
+            if not os.path.isfile(fq_abs):
+                continue
+            fq_dir = os.path.realpath(os.path.dirname(fq_abs))
+            expected_real = os.path.realpath(expected_fastq_dir) if os.path.isdir(expected_fastq_dir) else expected_fastq_dir
+            if fq_dir == expected_real:
+                continue  # 이미 올바른 위치
+
+            os.makedirs(expected_fastq_dir, exist_ok=True)
+            fname = os.path.basename(fq_abs)
+            link_path = os.path.join(expected_fastq_dir, fname)
+            if os.path.exists(link_path) or os.path.islink(link_path):
+                continue  # 이미 존재
+
+            # 상대 경로 심볼릭 링크 생성 (같은 fastq/ 트리 내이면 docker mount 에서도 유효)
+            try:
+                rel_target = os.path.relpath(fq_abs, expected_fastq_dir)
+                os.symlink(rel_target, link_path)
+                logger.info(
+                    "[carrier_screening] FASTQ symlink created: %s → %s (order=%s)",
+                    link_path, rel_target, job.order_id,
+                )
+            except OSError as e:
+                logger.warning(
+                    "[carrier_screening] FASTQ symlink failed: %s → %s: %s — FASTQ must be copied manually.",
+                    link_path, fq_abs, e,
+                )
+
+    def _resolve_capture_panel_bed(self, capture_panel_id: str) -> Optional[str]:
+        """
+        capture_panel_id → run_analysis.sh 에 넘길 --backbone-bed 절대 경로.
+
+        탐색 순서:
+          1. CARRIER_CAPTURE_PANEL_BED_DIR/{capture_panel_id}/targets.bed  (명시적 설정)
+          2. {CARRIER_SCREENING_SCRIPT_DATA_DIR}/data/bed/{capture_panel_id}/targets.bed  (기본)
+
+        반환값은 HOST 경로 (run_analysis.sh 내부 docker run에서 직접 참조).
+        존재하지 않으면 None → --panel 폴백.
+        """
+        data_dir = self._run_analysis_data_dir()
+        candidates: List[str] = []
+
+        explicit_base = (settings.carrier_capture_panel_bed_dir or "").strip()
+        if explicit_base:
+            candidates.append(os.path.join(explicit_base, capture_panel_id, "targets.bed"))
+
+        # 기본: DATA_DIR/data/bed/{panel}/targets.bed  (gx-exome 표준 레이아웃)
+        candidates.append(os.path.join(data_dir, "data", "bed", capture_panel_id, "targets.bed"))
+
+        for path in candidates:
+            if os.path.isfile(path):
+                logger.info(
+                    "[carrier_screening] capture panel BED resolved: panel=%s path=%s",
+                    capture_panel_id, path,
+                )
+                return path
+
+        logger.warning(
+            "[carrier_screening] capture panel BED not found for panel=%s (tried: %s) — falling back to --panel",
+            capture_panel_id, candidates,
+        )
+        return None
+
     def _shell_command_run_analysis(self, job: Job, script: str) -> str:
         """
         gx-exome run_analysis.sh 호출 (long-form 인자).
         예: bash run_analysis.sh --work-dir 2601 --sample SAMPLE --data-dir /home/ken/gx-exome
-                --panel twist-exome2 --aligner bwa-mem2 --variant-caller deepvariant
-                --no-skip-vep --skip-cnv
-        --sample 은 fastq/<work>/<sample>/ 폴더명과 같아야 함.
-        --panel 은 params.carrier.capture_panel_id 로 지정 (기본: twist-exome2).
+                --backbone-bed /home/ken/gx-exome/data/bed/twist-exome2/targets.bed
+                --aligner bwa-mem2 --variant-caller deepvariant --no-skip-vep --skip-cnv
+
+        --backbone-bed 우선: service-daemon 이 패널→BED 경로를 직접 관리.
+        BED 파일이 없을 경우 --panel capture_panel_id 로 폴백.
+        --sample = order_id (항상 고정).
+          FASTQ 파일이 다른 디렉토리에 있을 경우 {data_dir}/fastq/{work}/{order_id}/ 아래에
+          상대 심볼릭 링크를 자동 생성하여 run_analysis.sh 에 올바른 --sample 을 전달한다.
+          output/analysis/log 는 항상 order_id 기준으로 생성된다.
         """
         data_dir = self._run_analysis_data_dir()
-        sample_folder = carrier_sequencing_folder(job)
+        sample_folder = carrier_sequencing_folder(job)   # == order_id (명시 재정의 없는 한)
+        work_arg = carrier_run_analysis_work_arg(job)
         carrier_params = (job.params or {}).get("carrier") or {}
         capture_panel = (carrier_params.get("capture_panel_id") or "").strip() or "twist-exome2"
 
+        # FASTQ가 예상 위치({data_dir}/fastq/{work}/{order_id}/)에 없으면 심볼릭 링크 생성.
+        # 같은 fastq/ 트리 내의 상대 링크이므로 docker DinD 마운트에서도 정상 작동.
+        fastq_dir = os.path.join(data_dir, "fastq", work_arg, sample_folder)
+        self._ensure_fastq_symlinks(job, fastq_dir)
+
+        if not os.path.isdir(fastq_dir):
+            raise FileNotFoundError(
+                f"[carrier_screening] FASTQ directory not found: {fastq_dir}\n"
+                f"  order_id='{job.order_id}', --sample='{sample_folder}'\n"
+                f"  FASTQ를 {fastq_dir}/ 에 위치시키거나 fastq_r1_path/r2_path 를 지정하세요."
+            )
+
         parts = [
-            "bash",
+            _bash_executable(),
             script,
-            "--work-dir", carrier_run_analysis_work_arg(job),
+            "--work-dir", work_arg,
             "--sample", sample_folder,
             "--data-dir", data_dir,
-            "--panel", capture_panel,
+        ]
+
+        # service-daemon 이 BED 경로를 알면 --backbone-bed 로 직접 전달 (패널 관리 주체 명확화)
+        bed_path = self._resolve_capture_panel_bed(capture_panel)
+        if bed_path:
+            parts += ["--backbone-bed", bed_path]
+        else:
+            parts += ["--panel", capture_panel]
+
+        parts += [
             "--aligner", "bwa-mem2",
             "--variant-caller", "deepvariant",
             "--no-skip-vep",
@@ -791,10 +946,8 @@ class CarrierScreeningPlugin(ServicePlugin):
 
         is_fresh = bool((job.params or {}).get("_pipeline_fresh"))
         logger.info(
-            "[carrier_screening] _shell_command_run_analysis: order=%s panel=%s fresh=%s",
-            job.order_id,
-            capture_panel,
-            is_fresh,
+            "[carrier_screening] _shell_command_run_analysis: order=%s sample=%s panel=%s bed=%s fresh=%s",
+            job.order_id, sample_folder, capture_panel, bed_path or "(--panel fallback)", is_fresh,
         )
         if is_fresh:
             parts.append("--fresh")
@@ -941,6 +1094,11 @@ class CarrierScreeningPlugin(ServicePlugin):
 
         script_path = self._effective_run_analysis_script()
         if script_path:
+            if not os.path.isfile(script_path):
+                raise RuntimeError(
+                    f"Carrier run script not found: {script_path!r} "
+                    "(mount gx-exome at /data/gx-exome or set CARRIER_SCREENING_RUN_SCRIPT)"
+                )
             cmd = self._shell_command_run_analysis(job, script_path)
             logger.info(
                 "[carrier_screening] Using run script %s: %s",
@@ -960,10 +1118,11 @@ class CarrierScreeningPlugin(ServicePlugin):
             nf_config or "(none)",
         )
 
-        # Nextflow 실행 명령 구성
+        # Nextflow 실행 명령 구성 (절대 경로로 127 방지)
         cmd_parts = [
-            settings.nextflow_executable,
-            "run", main_nf,
+            _resolve_nextflow_executable(),
+            "run",
+            main_nf,
         ]
 
         prof = (settings.carrier_screening_nextflow_profile or "").strip()
@@ -1046,7 +1205,7 @@ class CarrierScreeningPlugin(ServicePlugin):
         report_path = os.path.join(job.log_dir, "nextflow_report.html")
         cmd_parts.extend(["-with-report", report_path])
 
-        return " ".join(cmd_parts)
+        return shlex.join(cmd_parts)
 
     # ─── Step 3: 완료 확인 ─────────────────────────────────
 
@@ -1186,7 +1345,10 @@ class CarrierScreeningPlugin(ServicePlugin):
             )
             return False
 
-        hint = (job.params or {}).get("_prior_reuse_main_vcf_hint")
+        hint_raw = (job.params or {}).get("_prior_reuse_main_vcf_hint")
+        hint = ""
+        if isinstance(hint_raw, str) and hint_raw.strip():
+            hint = normalize_legacy_carrier_container_path(hint_raw.strip()) or hint_raw.strip()
         main_vcf: str
         if hint and os.path.isfile(hint):
             by_real: Dict[str, str] = {}
@@ -1210,7 +1372,7 @@ class CarrierScreeningPlugin(ServicePlugin):
             len(vcf_files),
             main_vcf,
         )
-        job.params["main_vcf"] = main_vcf
+        job.params["main_vcf"] = normalize_legacy_carrier_container_path(main_vcf) or main_vcf
         return True
 
     # ─── Step 4: 결과 후처리 (Annotation) ──────────────────
@@ -1242,7 +1404,14 @@ class CarrierScreeningPlugin(ServicePlugin):
             from .layout_norm import align_carrier_job_dirs_from_main_vcf
 
             # ── 0. main VCF 실제 위치와 job.analysis|output|log 정렬 (work_root ≠ 파이프 산출 트리인 경우)
-            main_vcf = job.params.get("main_vcf")
+            main_raw = job.params.get("main_vcf")
+            main_vcf = (
+                normalize_legacy_carrier_container_path(main_raw)
+                if isinstance(main_raw, str)
+                else None
+            )
+            if main_vcf and main_raw != main_vcf:
+                job.params["main_vcf"] = main_vcf
             if not main_vcf or not os.path.exists(main_vcf):
                 logger.error(f"Main VCF not found: {main_vcf}")
                 return False

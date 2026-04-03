@@ -771,6 +771,15 @@
     #orderDetailBody .detail-fastq-grid .kv-value.kv-value--path-short{
       display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;cursor:default
     }
+    #orderDetailBody .detail-fastq-grid .kv-value.kv-value--path-full{
+      display:block;word-break:break-all;white-space:normal;line-height:1.5
+    }
+    #orderDetailBody .detail-fastq-grid .fastq-dir{
+      color:var(--muted);font-weight:400
+    }
+    #orderDetailBody .detail-fastq-grid .fastq-base{
+      color:var(--text);font-weight:600
+    }
     @media(max-width:600px){
       #orderDetailBody .detail-kv:not(.detail-kv-full){grid-template-columns:1fr}
     }
@@ -5297,11 +5306,14 @@
           if (!fp) {
             return `<div class="kv-item kv-item--full"><div class="kv-label">${escapeHtml(label)}</div><div class="kv-value kv-value--path">—</div></div>`;
           }
-          const shortName = pathBasename(fp) || fp;
-          const title = ` title="${escapeAttr(fp)}"`;
+          const dir = fp.includes('/') ? fp.substring(0, fp.lastIndexOf('/') + 1) : '';
+          const base = pathBasename(fp) || fp;
+          const display = dir
+            ? `<span class="fastq-dir">${escapeHtml(dir)}</span><span class="fastq-base">${escapeHtml(base)}</span>`
+            : escapeHtml(fp);
           return (
             `<div class="kv-item kv-item--full"><div class="kv-label">${escapeHtml(label)}</div>` +
-            `<div class="kv-value kv-value--path kv-value--path-short"${title}>${escapeHtml(shortName)}</div></div>`
+            `<div class="kv-value kv-value--path kv-value--path-full">${display}</div></div>`
           );
         }
         return (

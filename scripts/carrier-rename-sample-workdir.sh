@@ -22,7 +22,7 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 WORK_DIR="$1"
 OLD_SAMPLE="$2"
 NEW_SAMPLE="$3"
-WORK_ROOT="${4:-/data/carrier_screening_work}"
+WORK_ROOT="${4:-/data/gx-exome-work}"
 
 [[ -n "$WORK_DIR" ]] || die "work_dir empty"
 [[ -n "$OLD_SAMPLE" ]] || die "old_sample empty"

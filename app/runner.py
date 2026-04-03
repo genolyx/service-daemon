@@ -21,6 +21,40 @@ from .telegram_notify import schedule_order_telegram
 
 logger = logging.getLogger(__name__)
 
+_STD_PATH_PREFIXES = ("/usr/local/bin", "/usr/bin", "/bin", "/sbin")
+
+
+def _pipeline_subprocess_env() -> dict:
+    """Guarantee standard dirs on PATH — avoids exit 127 for nextflow/bash/true in minimal envs."""
+    env = os.environ.copy()
+    raw = env.get("PATH", "")
+    parts = [p for p in raw.split(":") if p]
+    for p in reversed(_STD_PATH_PREFIXES):
+        if p not in parts:
+            parts.insert(0, p)
+    env["PATH"] = ":".join(parts) if parts else ":".join(_STD_PATH_PREFIXES)
+    return env
+
+
+def _pipeline_log_path(job: Job) -> str:
+    log_dir = job.log_dir or os.path.join(
+        settings.log_base_dir, job.service_code, job.work_dir, job.sample_name
+    )
+    return os.path.join(log_dir, "pipeline.log")
+
+
+def _read_log_tail(path: str, max_chars: int = 4000) -> str:
+    if not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, "r", errors="replace") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - max_chars))
+            return f.read()
+    except OSError:
+        return ""
+
 
 class PipelineRunner:
     """
@@ -185,8 +219,17 @@ class PipelineRunner:
                 return
 
             if exit_code != 0:
+                hint = ""
+                if exit_code == 127:
+                    hint = (
+                        " (127 = command not found: check NEXTFLOW_EXECUTABLE, run_analysis.sh mount, "
+                        "and CARRIER_SCREENING_SCRIPT_DATA_DIR / CARRIER_SCREENING_HOST for nested docker -v)"
+                    )
+                    tail = _read_log_tail(_pipeline_log_path(job), 6000).strip()
+                    if tail:
+                        hint += "\n\n--- pipeline.log (tail) ---\n" + tail
                 raise RuntimeError(
-                    f"Pipeline exited with code {exit_code}"
+                    f"Pipeline exited with code {exit_code}{hint}"
                 )
 
             # ── Step 3: 완료 확인 ──
@@ -298,12 +341,9 @@ class PipelineRunner:
         """
         plugin = get_plugin(job.service_code)
         # 로그 디렉토리 생성
-        log_dir = job.log_dir or os.path.join(
-            settings.log_base_dir, job.service_code, job.work_dir, job.sample_name
-        )
+        log_file = _pipeline_log_path(job)
+        log_dir = os.path.dirname(log_file)
         os.makedirs(log_dir, exist_ok=True)
-        
-        log_file = os.path.join(log_dir, "pipeline.log")
         
         logger.info(f"[{job.service_code}] Running pipeline, log: {log_file}")
 
@@ -321,6 +361,7 @@ class PipelineRunner:
                 stdout=log_f,
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=cwd,
+                env=_pipeline_subprocess_env(),
             )
 
         job.pid = process.pid

@@ -4,6 +4,6 @@
 set -euo pipefail
 JAR="${SNPEFF_JAR:-/opt/tools/snpEff/snpEff.jar}"
 DB="${SNPEFF_DB:-GRCh38.86}"
-DD="${SNPEFF_DATA_DIR:-/data/carrier_screening_work/snpeff}"
+DD="${SNPEFF_DATA_DIR:-/data/gx-exome-work/snpeff}"
 mkdir -p "$DD"
 exec java -jar "$JAR" download -v "$DB" -dataDir "$DD"

@@ -43,6 +43,25 @@ def test_report_bed_and_interpretation(wes_test_catalog):
     assert r["total_target_bp"] > 0
 
 
+def test_fallback_to_backbone_bed_when_no_disease_bed(tmp_path):
+    """Gene-coverage uses backbone_bed when disease_bed is unset (common for interpretation_gene panels)."""
+    bed = tmp_path / "capture.bed"
+    bed.write_text(
+        "chr12\t102838398\t102840000\tPAH;NM_000277.3;ENST00000307000.7\n",
+        encoding="utf-8",
+    )
+    job = Job(
+        order_id="ord_bb_only",
+        service_code="carrier_screening",
+        sample_name="sam",
+        work_dir="00",
+        params={"backbone_bed": str(bed.resolve())},
+    )
+    r = build_gene_panel_coverage_report(job, "PAH")
+    assert r["disease_bed_source"] == "job.params.backbone_bed"
+    assert len(r["bed_regions"]) >= 1
+
+
 def test_bed_col4_twist_style_semicolon_gene(tmp_path):
     """Twist-style column 4: GENE;NM_...;ENST... — match HGNC token, not full string."""
     bed = tmp_path / "twist_like.bed"

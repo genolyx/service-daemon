@@ -192,7 +192,13 @@ def _wes_panel_id_from_job(job: Job) -> str:
 
 
 def _effective_disease_bed_path(job: Job, panel: Optional[Dict[str, Any]]) -> Tuple[Optional[str], str]:
-    """Prefer job.params.disease_bed, else panel catalog disease_bed."""
+    """
+    BED used to list target intervals (column 4) for a gene symbol.
+
+    Order: explicit ``disease_bed`` → panel ``disease_bed`` → **``backbone_bed``** (Twist capture
+    often labels column 4 with HGNC; many panels omit ``disease_bed`` when
+    ``narrow_with_panel_bed=false``) → panel ``backbone_bed`` → daemon defaults.
+    """
     p = job.params or {}
     db = (p.get("disease_bed") or "").strip()
     if db:
@@ -205,6 +211,36 @@ def _effective_disease_bed_path(job: Job, panel: Optional[Dict[str, Any]]) -> Tu
             abs_p = _resolve_repo_path(rel)
             if os.path.isfile(abs_p):
                 return abs_p, "panel_catalog.disease_bed"
+
+    bb = (p.get("backbone_bed") or "").strip()
+    if bb:
+        bb_abs = os.path.normpath(bb)
+        if os.path.isfile(bb_abs):
+            return bb_abs, "job.params.backbone_bed"
+    if panel:
+        rel = str(panel.get("backbone_bed") or "").strip()
+        if rel:
+            abs_p = _resolve_repo_path(rel)
+            if os.path.isfile(abs_p):
+                return abs_p, "panel_catalog.backbone_bed"
+
+    try:
+        from ..config import settings
+
+        for opt, label in (
+            (getattr(settings, "carrier_default_disease_bed", None), "settings.carrier_default_disease_bed"),
+            (getattr(settings, "carrier_default_backbone_bed", None), "settings.carrier_default_backbone_bed"),
+            (getattr(settings, "wes_panel_gene_source_bed", None), "settings.wes_panel_gene_source_bed"),
+            (getattr(settings, "gene_bed", None), "settings.gene_bed"),
+        ):
+            if not opt or not str(opt).strip():
+                continue
+            ap = os.path.normpath(str(opt).strip())
+            if os.path.isfile(ap):
+                return ap, label
+    except Exception as e:
+        logger.debug("[gene_panel_coverage] settings BED fallback: %s", e)
+
     return None, ""
 
 
@@ -548,9 +584,16 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
 
     notes: List[str] = []
     if bed_path and regions:
-        notes.append(
-            "Regions are rows from the panel disease BED whose 4th column matches this gene (design / capture target)."
-        )
+        src = (bed_source or "").lower()
+        if "backbone" in src:
+            notes.append(
+                "Regions are from the capture/backbone BED (column 4 matches this gene); "
+                "no separate disease BED was set on this order."
+            )
+        else:
+            notes.append(
+                "Regions are rows from the panel disease BED whose 4th column matches this gene (design / capture target)."
+            )
     elif bed_path and not regions:
         notes.append(
             "Disease BED is set, but no rows use this gene name in column 4 — the gene may be listed only in interpretation_genes, or labels differ from HGNC symbols."

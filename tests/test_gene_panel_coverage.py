@@ -62,6 +62,37 @@ def test_fallback_to_backbone_bed_when_no_disease_bed(tmp_path):
     assert len(r["bed_regions"]) >= 1
 
 
+def test_prefers_backbone_intervals_when_both_disease_and_backbone_have_gene(tmp_path):
+    """Clinical disease BED can be huge; depth stats should use capture (backbone) intervals when present."""
+    dis = tmp_path / "acmg_like.bed"
+    dis.write_text(
+        "chr12\t0\t200000000\tPAH\n",
+        encoding="utf-8",
+    )
+    cap = tmp_path / "twist_capture.bed"
+    cap.write_text(
+        "chr12\t102838398\t102840000\tPAH;NM_000277.3;ENST00000307000.7\n",
+        encoding="utf-8",
+    )
+    job = Job(
+        order_id="ord_both_beds",
+        service_code="carrier_screening",
+        sample_name="sam",
+        work_dir="00",
+        params={
+            "disease_bed": str(dis.resolve()),
+            "backbone_bed": str(cap.resolve()),
+        },
+    )
+    r = build_gene_panel_coverage_report(job, "PAH")
+    assert r["disease_bed_source"] == "job.params.backbone_bed"
+    assert r["clinical_disease_bed_path"] == str(dis.resolve())
+    assert len(r["bed_regions"]) == 1
+    assert r["bed_regions"][0]["start"] == 102838398
+    assert r["bed_regions"][0]["end"] == 102840000
+    assert r["total_target_bp"] == 102840000 - 102838398
+
+
 def test_bed_col4_twist_style_semicolon_gene(tmp_path):
     """Twist-style column 4: GENE;NM_...;ENST... — match HGNC token, not full string."""
     bed = tmp_path / "twist_like.bed"

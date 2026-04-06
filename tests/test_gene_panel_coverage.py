@@ -62,6 +62,30 @@ def test_fallback_to_backbone_bed_when_no_disease_bed(tmp_path):
     assert len(r["bed_regions"]) >= 1
 
 
+def test_clips_disease_to_capture_when_capture_bed_has_no_gene_in_col4(tmp_path):
+    """If capture BED does not name HGNC in col4, intersect disease rows with full capture targets."""
+    dis = tmp_path / "clinical.bed"
+    dis.write_text("chr1\t1000\t50000\tCPT2\n", encoding="utf-8")
+    cap = tmp_path / "twist_all.bed"
+    cap.write_text("chr1\t10000\t11000\tOTHER_GENE;NM_1\nchr1\t20000\t20500\tX\n", encoding="utf-8")
+    job = Job(
+        order_id="ord_clip",
+        service_code="carrier_screening",
+        sample_name="sam",
+        work_dir="00",
+        params={
+            "disease_bed": str(dis.resolve()),
+            "backbone_bed": str(cap.resolve()),
+        },
+    )
+    r = build_gene_panel_coverage_report(job, "CPT2")
+    assert r["intervals_clipped_to_capture"] is True
+    assert r["disease_bed_source"] == "job.params.backbone_bed"
+    assert r["clinical_disease_bed_path"] == str(dis.resolve())
+    assert len(r["bed_regions"]) == 2
+    assert sum(x["length_bp"] for x in r["bed_regions"]) == 1000 + 500
+
+
 def test_prefers_backbone_intervals_when_both_disease_and_backbone_have_gene(tmp_path):
     """Clinical disease BED can be huge; depth stats should use capture (backbone) intervals when present."""
     dis = tmp_path / "acmg_like.bed"

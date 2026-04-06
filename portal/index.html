@@ -1909,6 +1909,17 @@
     </div>
   </div>
 
+  <!-- Gene vs panel coverage — outside #viewReview so fixed overlay covers the viewport -->
+  <div id="geneCoverageBackdrop" class="modal-overlay hidden" style="z-index:20003" aria-hidden="true" onclick="if(event.target===this)closeGeneCoverageModal()">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="geneCoverageTitle" onclick="event.stopPropagation()" style="max-width:min(560px,94vw);max-height:min(85vh,720px);overflow:auto;padding:16px 18px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px">
+        <h3 id="geneCoverageTitle" style="margin:0;font-size:15px">Gene coverage</h3>
+        <button type="button" class="btn" style="padding:4px 10px;font-size:11px" onclick="closeGeneCoverageModal()">Close</button>
+      </div>
+      <div id="geneCoverageBody" class="muted" style="font-size:12px;line-height:1.5"></div>
+    </div>
+  </div>
+
   <script>
     // ═══════════════════════════════════════════════════════════
     // Configuration
@@ -8668,7 +8679,10 @@
           <td>${v.clinvar_sig_primary ? pill(v.clinvar_sig_primary, v.clinvar_sig_primary.toLowerCase().includes('pathogenic') ? 'err' : v.clinvar_sig_primary.toLowerCase().includes('benign') ? 'done' : 'warn') : '-'}</td>
           <td><span class="${acmgClass(v.acmg_classification)}">${v.acmg_classification || '-'}</span></td>
           <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;font-size:11px" title="${disease}">${disease !== '-' ? disease : ''}</td>
-          <td><button class="btn" style="padding:3px 10px;font-size:11px" onclick="showVariantDetail('${v.variant_id}')">Detail</button></td>
+          <td style="white-space:nowrap">
+            <button type="button" class="btn" style="padding:3px 8px;font-size:11px" onclick="showVariantDetail('${v.variant_id}')">Detail</button>
+            <button type="button" class="btn" style="padding:3px 8px;font-size:11px;margin-left:4px" onclick='openGenePanelCoverage(${JSON.stringify(v.gene || "")})'>Coverage</button>
+          </td>
         `;
         tb.appendChild(tr);
       });
@@ -8729,6 +8743,107 @@
       onVariantSelectionChanged();
     }
 
+    function renderGeneCoverageHtml(data) {
+      if (!data) return '<p class="muted">No data.</p>';
+      const rows = (data.bed_regions || [])
+        .map(
+          r =>
+            `<tr><td style="font-family:monospace;font-size:11px">${escapeHtml(r.chrom)}</td><td style="text-align:right">${r.start}</td><td style="text-align:right">${r.end}</td><td style="text-align:right">${r.length_bp}</td></tr>`
+        )
+        .join('');
+      const gqc = data.global_qc_coverage || {};
+      const gqcParts = Object.keys(gqc).length
+        ? Object.entries(gqc)
+            .slice(0, 12)
+            .map(([k, v]) => `<div>${escapeHtml(k)}: <strong>${escapeHtml(String(v))}</strong></div>`)
+            .join('')
+        : '<span class="muted">—</span>';
+      const pg = data.per_gene_depth;
+      const gt = data.gene_depth_thresholds;
+      const gtBlock =
+        gt && (gt.pct_bases_ge_10x != null || gt.pct_bases_ge_20x != null)
+          ? `<div style="margin:10px 0;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--table-bg)">
+            <div class="muted" style="font-size:11px;margin-bottom:6px">Gene target regions (panel BED) — % of bases at depth</div>
+            <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:baseline;font-size:13px">
+              <span>≥10×: <strong>${gt.pct_bases_ge_10x != null ? Number(gt.pct_bases_ge_10x).toFixed(1) + '%' : '—'}</strong></span>
+              <span>≥20×: <strong>${gt.pct_bases_ge_20x != null ? Number(gt.pct_bases_ge_20x).toFixed(1) + '%' : '—'}</strong></span>
+              ${
+                gt.total_bases_assessed != null
+                  ? `<span class="muted" style="font-size:11px">(${Number(gt.total_bases_assessed).toLocaleString()} bp in BED intervals)</span>`
+                  : ''
+              }
+            </div>
+            ${gt.source_file ? `<p class="muted" style="font-size:10px;margin:6px 0 0;word-break:break-all">${escapeHtml(gt.source_file)}</p>` : ''}
+          </div>`
+          : '';
+      const notes = (data.notes || []).map(n => `<li>${escapeHtml(n)}</li>`).join('');
+      return `
+        <div style="font-size:12px;line-height:1.5;color:var(--text)">
+          <p style="margin:0 0 8px"><strong>${escapeHtml(data.panel_label || data.wes_panel_id || 'Panel')}</strong>
+            ${data.wes_panel_id ? `<span class="muted"> (${escapeHtml(data.wes_panel_id)})</span>` : ''}</p>
+          <p style="margin:0 0 8px">In interpretation gene set: <strong>${data.in_interpretation_set ? 'yes' : 'no'}</strong>
+            ${data.interpretation_gene_count != null ? ` <span class="muted">(${data.interpretation_gene_count} genes)</span>` : ''}</p>
+          ${data.disease_bed_path ? `<p class="muted" style="font-size:11px;margin:0 0 8px;word-break:break-all">BED (depth intervals): ${escapeHtml(data.disease_bed_path)}</p>` : ''}
+          ${
+            data.clinical_disease_bed_path
+              ? `<p class="muted" style="font-size:11px;margin:0 0 8px;word-break:break-all">Clinical/disease BED: ${escapeHtml(data.clinical_disease_bed_path)}</p>`
+              : ''
+          }
+          ${gtBlock}
+          <div style="margin:8px 0"><div class="muted" style="font-size:11px;margin-bottom:4px">Run-wide QC (result.json)</div>${gqcParts}</div>
+          ${
+            pg && pg.mean_coverage != null
+              ? `<p style="margin:8px 0">Per-gene depth (sidecar): <strong>${Number(pg.mean_coverage).toFixed(1)}×</strong>${pg.source_file ? `<span class="muted" style="font-size:11px;display:block;word-break:break-all;margin-top:4px">${escapeHtml(pg.source_file)}</span>` : ''}</p>`
+              : '<p class="muted" style="font-size:11px">No per-gene depth sidecar found under analysis/output paths (optional).</p>'
+          }
+          ${notes ? `<ul style="margin:8px 0 0;padding-left:1.2em;font-size:11px;color:var(--muted)">${notes}</ul>` : ''}
+          ${
+            rows
+              ? `<div style="margin-top:10px;font-weight:600;font-size:12px">Target regions (this gene)</div>
+            <div style="overflow-x:auto;margin-top:6px"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr><th>Chr</th><th style="text-align:right">Start</th><th style="text-align:right">End</th><th style="text-align:right">bp</th></tr></thead><tbody>${rows}</tbody></table></div>`
+              : '<p class="muted" style="margin-top:10px">No BED intervals with this gene name in column 4.</p>'
+          }
+        </div>`;
+    }
+
+    async function openGenePanelCoverage(gene) {
+      const g = (gene || '').trim();
+      if (!g) {
+        toast('No gene on this variant — cannot load panel coverage.', false);
+        return;
+      }
+      const oid = (reviewLoadedOrderId || (qs('reviewOrderSelect') && qs('reviewOrderSelect').value) || '').trim();
+      if (!oid) {
+        toast('Load an order first', false);
+        return;
+      }
+      const backdrop = qs('geneCoverageBackdrop');
+      const body = qs('geneCoverageBody');
+      const title = qs('geneCoverageTitle');
+      if (!backdrop || !body) {
+        toast('Coverage UI missing — hard-refresh the portal (Ctrl+Shift+R).', false);
+        return;
+      }
+      backdrop.classList.remove('hidden');
+      backdrop.setAttribute('aria-hidden', 'false');
+      if (title) title.textContent = 'Coverage — ' + g;
+      body.innerHTML = '<p class="muted">Loading…</p>';
+      try {
+        const data = await apiGet(`/order/${encodeURIComponent(oid)}/gene-coverage/${encodeURIComponent(g)}`);
+        body.innerHTML = renderGeneCoverageHtml(data);
+      } catch (e) {
+        body.innerHTML = '<p style="color:var(--err)">' + escapeHtml(e.message || 'Request failed') + '</p>';
+      }
+    }
+
+    function closeGeneCoverageModal() {
+      const backdrop = qs('geneCoverageBackdrop');
+      if (backdrop) {
+        backdrop.classList.add('hidden');
+        backdrop.setAttribute('aria-hidden', 'true');
+      }
+    }
+
     // ── Variant Detail ──
     function showVariantDetail(variantId) {
       if (!reviewData) return;
@@ -8742,9 +8857,12 @@
       const panel = qs('variantDetail');
       panel.classList.remove('hidden');
       panel.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
           <h3 style="margin:0;font-size:16px">${v.gene} - ${v.hgvsp || v.hgvsc || v.variant_id}</h3>
-          <button class="btn" style="padding:4px 12px;font-size:11px" onclick="qs('variantDetail').classList.add('hidden')">Close</button>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button type="button" class="btn" style="padding:4px 12px;font-size:11px" onclick='openGenePanelCoverage(${JSON.stringify(v.gene || "")})'>Panel coverage</button>
+            <button class="btn" style="padding:4px 12px;font-size:11px" onclick="qs('variantDetail').classList.add('hidden')">Close</button>
+          </div>
         </div>
         <div class="detail-grid">
           <div class="detail-item"><div class="detail-label">Position</div><div class="detail-value">${v.chrom}:${v.pos} ${v.ref}>${v.alt}</div></div>

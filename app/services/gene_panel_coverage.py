@@ -30,6 +30,9 @@ _CARRIER_LIKE = frozenset({"carrier_screening", "whole_exome", "health_screening
 
 _GENE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,24}$")
 
+# (realpath, mtime) -> merged intervals per chrom for full-BED reads (capture clipping)
+_CAPTURE_INTERVALS_CACHE: Dict[str, Tuple[float, Dict[str, List[Tuple[int, int]]]]] = {}
+
 # mosdepth per-base: chrom, start, end, depth (BED intervals, depth constant on each segment)
 _MOSDEPTH_PER_BASE_PATTERNS = (
     "*mosdepth*.per-base.bed.gz",
@@ -71,6 +74,126 @@ def overlap_bp(g0: int, g1: int, seg0: int, seg1: int) -> int:
     a = max(seg0, g0)
     b = min(seg1, g1)
     return max(0, b - a)
+
+
+def _merge_intervals_sorted(intervals: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    if not intervals:
+        return []
+    intervals = sorted(intervals)
+    out: List[Tuple[int, int]] = [intervals[0]]
+    for s, e in intervals[1:]:
+        ls, le = out[-1]
+        if s <= le:
+            out[-1] = (ls, max(le, e))
+        else:
+            out.append((s, e))
+    return out
+
+
+def _intersect_with_merged_blocks(g0: int, g1: int, merged: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    """Sub-intervals of [g0,g1) covered by merged blocks (each block half-open)."""
+    res: List[Tuple[int, int]] = []
+    for a, b in merged:
+        if b <= g0:
+            continue
+        if a >= g1:
+            break
+        s, e = max(g0, a), min(g1, b)
+        if e > s:
+            res.append((s, e))
+    return res
+
+
+def _load_merged_intervals_by_chrom(bed_path: str) -> Dict[str, List[Tuple[int, int]]]:
+    """
+    Every interval in a capture/design BED, merged per chromosome (no gene filter).
+    Cached by realpath + mtime.
+    """
+    if not bed_path or not os.path.isfile(bed_path):
+        return {}
+    try:
+        rp = os.path.realpath(bed_path)
+        mtime = os.path.getmtime(rp)
+    except OSError:
+        return {}
+    hit = _CAPTURE_INTERVALS_CACHE.get(rp)
+    if hit and hit[0] == mtime:
+        return hit[1]
+
+    by_chrom: Dict[str, List[Tuple[int, int]]] = {}
+    opener = gzip.open if bed_path.endswith(".gz") else open
+    try:
+        with opener(bed_path, "rt", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or line.startswith("track"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) < 3:
+                    continue
+                chrom = parts[0].strip()
+                try:
+                    s0, s1 = int(parts[1]), int(parts[2])
+                except (ValueError, TypeError):
+                    continue
+                if s1 <= s0:
+                    continue
+                by_chrom.setdefault(chrom, []).append((s0, s1))
+    except OSError as e:
+        logger.warning("[gene_panel_coverage] Cannot read capture BED %s: %s", bed_path, e)
+        return {}
+
+    merged: Dict[str, List[Tuple[int, int]]] = {c: _merge_intervals_sorted(lst) for c, lst in by_chrom.items()}
+    _CAPTURE_INTERVALS_CACHE[rp] = (mtime, merged)
+    return merged
+
+
+def _merged_blocks_for_chrom(
+    cap_by_chrom: Dict[str, List[Tuple[int, int]]], chrom: str
+) -> Optional[List[Tuple[int, int]]]:
+    for ctry in _chrom_name_variants(chrom):
+        blk = cap_by_chrom.get(ctry)
+        if blk:
+            return blk
+    return None
+
+
+def _clip_regions_to_capture_bed(
+    regions: List[Dict[str, Any]],
+    capture_bed_path: str,
+) -> List[Dict[str, Any]]:
+    """
+    Intersect gene-specific disease intervals with the full capture BED (all targets).
+    Use when the capture BED does not repeat HGNC in column 4 but still defines what was sequenced.
+    """
+    cap = _load_merged_intervals_by_chrom(capture_bed_path)
+    if not cap:
+        return []
+    out: List[Dict[str, Any]] = []
+    for reg in regions:
+        chrom = str(reg.get("chrom") or "").strip()
+        try:
+            g0 = int(reg.get("start", 0))
+            g1 = int(reg.get("end", 0))
+        except (ValueError, TypeError):
+            continue
+        if g1 <= g0:
+            continue
+        blocks = _merged_blocks_for_chrom(cap, chrom)
+        if not blocks:
+            continue
+        name = reg.get("name")
+        for s, e in _intersect_with_merged_blocks(g0, g1, blocks):
+            out.append(
+                {
+                    "chrom": chrom,
+                    "start": s,
+                    "end": e,
+                    "name": name,
+                    "length_bp": e - s,
+                }
+            )
+    return out
 
 
 def _find_mosdepth_per_base_bed(roots: List[str]) -> Optional[str]:
@@ -135,10 +258,11 @@ def _pct_bases_ge_depths_from_per_base(
             if g1 <= g0:
                 continue
             chrom = str(reg.get("chrom") or "").strip()
-            fetched = False
             for ctry in _chrom_name_variants(chrom):
                 try:
+                    row_n = 0
                     for row in tb.fetch(ctry, g0, g1):
+                        row_n += 1
                         parts = row.strip().split("\t")
                         if len(parts) < 4:
                             continue
@@ -155,12 +279,12 @@ def _pct_bases_ge_depths_from_per_base(
                         for t in thresholds:
                             if d >= t:
                                 ge_counts[t] += L
-                    fetched = True
-                    break
+                    if row_n > 0:
+                        break
                 except Exception as e:
                     logger.debug("[gene_panel_coverage] tabix fetch %s %s-%s: %s", ctry, g0, g1, e)
                     continue
-            if not fetched:
+            else:
                 continue
     finally:
         try:
@@ -576,6 +700,8 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
 
     clinical_disease_bed_path: Optional[str] = None
     clinical_disease_bed_source: Optional[str] = None
+    intervals_clipped_to_capture = False
+    capture_overlap_miss = False
 
     if r_bb:
         regions = r_bb
@@ -583,8 +709,20 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
         if dis_path and dis_path != bb_path:
             clinical_disease_bed_path, clinical_disease_bed_source = dis_path, dis_src
     elif r_dis:
-        regions = r_dis
-        bed_path, bed_source = dis_path, dis_src
+        clipped: List[Dict[str, Any]] = []
+        if bb_path:
+            clipped = _clip_regions_to_capture_bed(r_dis, bb_path)
+        if clipped:
+            regions = clipped
+            bed_path, bed_source = bb_path, bb_src
+            intervals_clipped_to_capture = True
+            if dis_path:
+                clinical_disease_bed_path, clinical_disease_bed_source = dis_path, dis_src
+        else:
+            regions = r_dis
+            bed_path, bed_source = dis_path, dis_src
+            if bb_path:
+                capture_overlap_miss = True
     else:
         bed_path, bed_source = _effective_disease_bed_path(job, panel)
         regions = _bed_intervals_for_gene(bed_path or "", gene) if bed_path else []
@@ -626,7 +764,12 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
 
     notes: List[str] = []
     if bed_path and regions:
-        if clinical_disease_bed_path:
+        if intervals_clipped_to_capture:
+            notes.append(
+                "Target intervals are **disease panel rows for this gene intersected with the full capture (backbone) design**. "
+                "Many capture BEDs omit HGNC in column 4; clipping limits depth stats to bases that are both clinically listed and on the sequencing design."
+            )
+        elif clinical_disease_bed_path:
             notes.append(
                 "Depth percentages use **capture (backbone) target** intervals for this gene (bases typically sequenced at high depth on this exome). "
                 "A separate clinical/disease panel BED may span more bases (e.g. intronic or off-capture), where depth is often low — that mismatch can make disease-BED-only stats look worse than run-wide exome QC."
@@ -648,6 +791,12 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
         )
     if not bed_path:
         notes.append("No BED resolved for this order/panel — interval list unavailable.")
+
+    if capture_overlap_miss:
+        notes.append(
+            "A capture (backbone) BED is set, but **no genomic overlap** was found between disease intervals and capture targets "
+            "(check chromosome naming chr* vs numeric, or disjoint designs). Depth is still computed on full disease intervals and may look worse than on-target reality."
+        )
 
     if gene_depth_thresholds and gene_depth_thresholds.get("method") == "mosdepth_per_base_tabix":
         notes.append(
@@ -671,6 +820,7 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
         "disease_bed_source": bed_source or None,
         "clinical_disease_bed_path": clinical_disease_bed_path,
         "clinical_disease_bed_source": clinical_disease_bed_source,
+        "intervals_clipped_to_capture": intervals_clipped_to_capture,
         "bed_regions": regions,
         "total_target_bp": total_bp,
         "panel_bed_region_count": len(regions),

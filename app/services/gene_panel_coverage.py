@@ -678,6 +678,37 @@ def _scan_per_gene_depth(roots: List[str], gene: str) -> Optional[Dict[str, Any]
     return None
 
 
+def _carrier_pipeline_backbone_bed(job: Job) -> Optional[str]:
+    """
+    Backbone BED path as used by carrier ``process_results`` / Nextflow: ``job.params`` → settings
+    default → first ``data/bed/backbone*.bed`` under pipeline / layout trees.
+
+    Gene coverage previously skipped that last fallback, so capture targets were missing and
+    depth % was computed over huge clinical disease intervals (often mostly off-kit) — contradicting
+    high per-variant depth in the variant table.
+    """
+    if job.service_code not in _CARRIER_LIKE:
+        return None
+    try:
+        from ..config import settings
+        from . import get_plugin
+
+        pl = get_plugin(job.service_code)
+        resolve = getattr(pl, "_resolve_carrier_bed", None)
+        if not callable(resolve):
+            return None
+        out = resolve(
+            job,
+            "backbone_bed",
+            "backbone",
+            getattr(settings, "carrier_default_backbone_bed", None),
+        )
+        return out if out and os.path.isfile(out) else None
+    except Exception as e:
+        logger.debug("[gene_panel_coverage] carrier backbone resolve: %s", e)
+        return None
+
+
 def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
     """
     Build a JSON-serializable report for the portal.
@@ -690,11 +721,24 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
     panel = get_panel_by_id(wpid) if wpid else None
     panel_label = (panel.get("label") or wpid) if panel else None
 
+    if job.service_code in _CARRIER_LIKE and wpid:
+        try:
+            from .wes_panels import apply_wes_panel_to_job_params
+
+            apply_wes_panel_to_job_params(job)
+        except Exception as e:
+            logger.debug("[gene_panel_coverage] apply_wes_panel_to_job_params: %s", e)
+
     interp = interpretation_gene_set_for_job(job)
     in_set = gene in interp
 
     dis_path, dis_src = _explicit_disease_bed_path(job, panel)
     bb_path, bb_src = _effective_backbone_bed_path(job, panel)
+    used_carrier_pipeline_backbone = False
+    pl_bb = _carrier_pipeline_backbone_bed(job)
+    if pl_bb:
+        bb_path, bb_src = pl_bb, "carrier_pipeline.backbone_bed"
+        used_carrier_pipeline_backbone = True
     r_bb = _bed_intervals_for_gene(bb_path or "", gene) if bb_path else []
     r_dis = _bed_intervals_for_gene(dis_path or "", gene) if dis_path else []
 
@@ -796,6 +840,12 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
         notes.append(
             "A capture (backbone) BED is set, but **no genomic overlap** was found between disease intervals and capture targets "
             "(check chromosome naming chr* vs numeric, or disjoint designs). Depth is still computed on full disease intervals and may look worse than on-target reality."
+        )
+
+    if used_carrier_pipeline_backbone:
+        notes.append(
+            "Capture (backbone) BED was resolved with the **same rules as the carrier pipeline** (job params → settings default → "
+            "data/bed/backbone*.bed under gx-exome / carrier layout). Panel JSON often omits backbone_bed; without this fallback, depth %% was computed on huge clinical disease intervals and could disagree with per-variant depth."
         )
 
     if gene_depth_thresholds and gene_depth_thresholds.get("method") == "mosdepth_per_base_tabix":

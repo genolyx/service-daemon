@@ -8779,6 +8779,11 @@
       const notes = (data.notes || []).map(n => `<li>${escapeHtml(n)}</li>`).join('');
       return `
         <div style="font-size:12px;line-height:1.5;color:var(--text)">
+          <p class="muted" style="font-size:11px;margin:0 0 10px;line-height:1.45">
+            Allele / read depth in the variant row is for <strong>that site only</strong>. The percentages below are
+            “% of bases in the listed BED intervals at ≥10× / ≥20×” (often many kb per gene). If those intervals are mostly
+            off-capture, the % can look low even when exonic variants show high depth.
+          </p>
           <p style="margin:0 0 8px"><strong>${escapeHtml(data.panel_label || data.wes_panel_id || 'Panel')}</strong>
             ${data.wes_panel_id ? `<span class="muted"> (${escapeHtml(data.wes_panel_id)})</span>` : ''}</p>
           <p style="margin:0 0 8px">In interpretation gene set: <strong>${data.in_interpretation_set ? 'yes' : 'no'}</strong>

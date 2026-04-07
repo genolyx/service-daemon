@@ -8800,6 +8800,11 @@
           ${
             rows
               ? `<div style="margin-top:10px;font-weight:600;font-size:12px">Target regions (this gene)</div>
+            <p class="muted" style="font-size:11px;margin:4px 0 8px;line-height:1.45">
+              Each row is one interval from the Twist <code>targets.bed</code> whose name column matches this gene (HGNC token in col4).
+              Coordinates are <strong>0-based half-open</strong> <code>[start, end)</code>, so <code>end − start</code> is the length in bp.
+              Twist lists many <strong>short, separate</strong> design windows (probes / baits), so <strong>1 bp</strong> rows are normal — they are not exon summaries and we do not merge them.
+            </p>
             <div style="overflow-x:auto;margin-top:6px"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr><th>Chr</th><th style="text-align:right">Start</th><th style="text-align:right">End</th><th style="text-align:right">bp</th></tr></thead><tbody>${rows}</tbody></table></div>`
               : '<p class="muted" style="margin-top:10px">No BED intervals with this gene name in column 4.</p>'
           }

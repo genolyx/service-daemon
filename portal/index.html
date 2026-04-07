@@ -578,8 +578,33 @@
     }
     #repeatPlotsModalHost .dg-repeat-plots-msg{color:#455a64;font-size:13px;padding:12px;margin:0;line-height:1.45}
     .dark-genes-visual-evidence .dg-visual-sub{margin:10px 0 6px;font-size:12px;font-weight:600;color:var(--text)}
-    /* Review → Coverage tab: IGV.js expects a light viewport */
-    #coverageIgvHost{background:#f4f6fb;border-radius:10px;border:1px solid var(--line);min-height:460px;position:relative}
+    /* Review → Coverage tab: IGV.js expects a light viewport (tall enough for coverage + reads when zoomed) */
+    #coverageIgvHost{
+      background:#f4f6fb;
+      border-radius:10px;
+      border:1px solid var(--line);
+      min-height:640px;
+      height:clamp(560px, 75vh, 1100px);
+      position:relative;
+      box-sizing:border-box;
+      display:flex;
+      flex-direction:column;
+      align-items:stretch;
+    }
+    /* Fill the panel: igv’s .igv-container defaults to content height only; stretch it and the track column. */
+    #coverageIgvHost > .igv-container{
+      flex:1 1 auto;
+      width:100%;
+      min-height:0;
+      height:100%;
+      align-self:stretch;
+      align-items:stretch;
+    }
+    #coverageIgvHost .igv-column-container{
+      flex:1 1 auto;
+      min-height:0;
+      align-self:stretch;
+    }
     body.light #coverageIgvHost{background:#fff}
     #coverageIgvHost .muted{padding:14px}
     .dark-genes-visual-evidence .dg-repeat-row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start}
@@ -2353,6 +2378,7 @@
     let reviewLoadedOrderId = null;
     let reviewCoverageContext = null;
     let coverageIgvBrowser = null;
+    let coverageIgvResizeObserver = null;
     let selectedVariants = new Set();
     let variantComments = {};
     /** Review Case sub-tab: per-variant editable gene_description + variant_summary for PDF */
@@ -8926,6 +8952,14 @@
     }
 
     function teardownCoverageIgv() {
+      if (coverageIgvResizeObserver) {
+        try {
+          coverageIgvResizeObserver.disconnect();
+        } catch (e) {
+          /* ignore */
+        }
+        coverageIgvResizeObserver = null;
+      }
       if (coverageIgvBrowser) {
         try {
           if (typeof coverageIgvBrowser.dispose === 'function') coverageIgvBrowser.dispose();
@@ -8974,6 +9008,27 @@
       return tr.find(t => t.has_index) || null;
     }
 
+    /** Vertical space for navbar, ideogram, ruler, ref, gene — remainder goes to alignment track. */
+    function coverageIgvPreferredTrackHeight(hostEl) {
+      let h = Math.floor((hostEl && hostEl.getBoundingClientRect().height) || (hostEl && hostEl.clientHeight) || 0);
+      if (!h || h < 200) h = 560;
+      const reserved = 220;
+      return Math.min(1100, Math.max(320, h - reserved));
+    }
+
+    function coverageIgvApplyTrackHeightFromHost() {
+      const host = qs('coverageIgvHost');
+      const br = coverageIgvBrowser;
+      if (!host || !br || !br.trackViews || !br.trackViews.length) return;
+      const th = coverageIgvPreferredTrackHeight(host);
+      for (const tv of br.trackViews) {
+        if (tv.track && tv.track.type === 'alignment' && typeof tv.setTrackHeight === 'function') {
+          tv.setTrackHeight(th, false);
+          break;
+        }
+      }
+    }
+
     async function startCoverageIgvBrowser(initialLocus) {
       const oid = (reviewLoadedOrderId || (qs('reviewOrderSelect') && qs('reviewOrderSelect').value) || '').trim();
       const host = qs('coverageIgvHost');
@@ -9016,12 +9071,15 @@
         locus = defaultCoverageIgvLocus() || 'BRCA1';
         if (locInp) locInp.value = locus;
       }
+      const th0 = coverageIgvPreferredTrackHeight(host);
       const track = {
         type: 'alignment',
         format: 'bam',
         url: bamUrl,
         indexURL: indexUrl,
         name: meta.label || rel.split('/').pop(),
+        height: th0,
+        maxHeight: Math.max(th0 + 80, 720),
       };
       const hdr = coverageTrackHeaders();
       if (hdr) track.headers = hdr;
@@ -9031,6 +9089,37 @@
           locus,
           tracks: [track],
         });
+        try {
+          coverageIgvApplyTrackHeightFromHost();
+        } catch (e) {
+          /* ignore */
+        }
+        try {
+          if (typeof ResizeObserver !== 'undefined') {
+            if (coverageIgvResizeObserver) {
+              try {
+                coverageIgvResizeObserver.disconnect();
+              } catch (e2) {
+                /* ignore */
+              }
+            }
+            coverageIgvResizeObserver = new ResizeObserver(() => {
+              try {
+                coverageIgvApplyTrackHeightFromHost();
+              } catch (e3) {
+                /* ignore */
+              }
+            });
+            coverageIgvResizeObserver.observe(host);
+          }
+        } catch (e) {
+          /* ignore */
+        }
+        try {
+          window.dispatchEvent(new Event('resize'));
+        } catch (e) {
+          /* ignore */
+        }
         const gotoLoc = ((locInp && locInp.value.trim()) || locus || '').trim();
         if (gotoLoc && coverageIgvBrowser) {
           try {

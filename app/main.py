@@ -2593,38 +2593,56 @@ def _order_bam_search_roots(job: Job) -> List[str]:
     return out
 
 
+_ANCILLARY_BAM_TOKENS = (
+    "paraphase", "eh_realigned", "fmr1", "fragile", "frax",
+    "smn_combined", "smn_merged", "smn_unified",
+    "smn1_realigned", "smn2_realigned", "smn1_aln", "smn2_aln",
+    "smn1_tagged", "smn2_tagged",
+    "smn_raw", "strc_aln", "strc_realigned", "strc_gene2_realigned",
+    "pms2_aln", "pms2_realigned",
+    "gba_aln", "gba_realigned", "gba_tagged",
+    "hba_aln", "hba_realigned",
+    "no_dup", "nodup", "no-dup", "pre_dedup", "before_dedup",
+)
+
+_ANCILLARY_BAM_SUFFIXES = (
+    "_realigned_old.bam", "_realigned_tagged.bam",
+)
+
+
+def _is_ancillary_bam(basename: str) -> bool:
+    b = basename.lower()
+    for tok in _ANCILLARY_BAM_TOKENS:
+        if tok in b:
+            return True
+    for suf in _ANCILLARY_BAM_SUFFIXES:
+        if b.endswith(suf):
+            return True
+    return False
+
+
 def _bam_basename_preference_rank(job: Job, basename: str) -> int:
     """
-    Lower = better candidate for IGV primary track. Used as a tie-break within a root
-    and after root priority (analysis before report dir).
+    Lower = better candidate for IGV primary track.
+
+    Ancillary / targeted BAMs (paraphase, SMN, FMR1, STRC, GBA, HBA, PMS2, no_dup, …)
+    are checked **first** so a shared FASTQ stem cannot override the blacklist.
     """
     b = basename.lower()
-    # Match main alignments named after the sample or order id (e.g. exome_test.recal.bam).
+    if _is_ancillary_bam(basename):
+        return 8
+    # Markdup / recal are the canonical pipeline output.
+    if any(tok in b for tok in ("markdup", "mkdup", "recalibrated", "bqsr", ".md.")):
+        return 0
+    # Match main alignments named after the sample or order id.
     for token in (job.sample_name, job.order_id):
         t = (token or "").strip().lower().replace("-", "_")
         if t and len(t) >= 2 and t in b.replace("-", "_"):
-            return 0
+            return 1
     # FASTQ library name on the order often matches the dedup/recal BAM stem.
     for stem in _fastq_derived_bam_match_stems(job):
         if stem.lower() in b:
-            return 0
-    if any(tok in b for tok in ("markdup", "mkdup", "recalibrated", "bqsr")):
-        return 1
-    # SMN1/2 or other small-region merges — not genome-wide exome BAMs for IGV.
-    if "smn_combined" in b or "smn_merged" in b:
-        return 8
-    if b.startswith(("smn1.", "smn2.", "smn1_", "smn2_")):
-        return 8
-    # FMR1 / Fragile-X / expansion-hunter realignments (targeted), not primary exome BAM.
-    if "eh_realigned" in b or "fmr1" in b:
-        return 8
-    if "fragile" in b or "frax" in b:
-        return 8
-    # Paraphase / phasing extracts — tiny footprint vs genome-wide exome BAM.
-    if "paraphase" in b:
-        return 8
-    if any(tok in b for tok in ("no_dup", "nodup", "no-dup", "pre_dedup", "before_dedup")):
-        return 6
+            return 1
     return 3
 
 
@@ -3011,22 +3029,44 @@ def _resolve_order_artifact_path(job: Job, filename: str) -> Optional[str]:
         return hits[0]
 
 
+def _resolve_order_file_or_404(order_id: str, filename: str) -> str:
+    queue_manager = get_queue_manager()
+    job = queue_manager.get_job(order_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
+    file_path = _resolve_order_artifact_path(job, filename)
+    if not file_path:
+        raise HTTPException(status_code=404, detail=f"File not found: {filename}")
+    return file_path
+
+
+@app.head("/order/{order_id}/file/{filename:path}")
+async def head_order_file(order_id: str, filename: str):
+    """HEAD for IGV.js / byte-range clients that probe Content-Length before Range GETs."""
+    file_path = _resolve_order_file_or_404(order_id, filename)
+    try:
+        stat = os.stat(file_path)
+    except OSError:
+        raise HTTPException(status_code=404, detail="File not found")
+    return PlainTextResponse(
+        content="",
+        headers={
+            "Content-Length": str(stat.st_size),
+            "Content-Type": _guess_content_type(filename),
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+        },
+    )
+
+
 @app.get("/order/{order_id}/file/{filename:path}")
 async def download_order_file(order_id: str, filename: str):
     """
     주문의 특정 출력 파일을 다운로드합니다.
     filename 에 슬래시 포함 가능 (예 qc/plot.png).
     """
-    queue_manager = get_queue_manager()
-    job = queue_manager.get_job(order_id)
-
-    if not job:
-        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
-
-    file_path = _resolve_order_artifact_path(job, filename)
-    if not file_path:
-        raise HTTPException(status_code=404, detail=f"File not found: {filename}")
-
+    file_path = _resolve_order_file_or_404(order_id, filename)
     base_name = os.path.basename(filename) or "download"
     return FileResponse(
         path=file_path,

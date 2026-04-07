@@ -8780,20 +8780,15 @@
       return `
         <div style="font-size:12px;line-height:1.5;color:var(--text)">
           <p class="muted" style="font-size:11px;margin:0 0 10px;line-height:1.45">
-            Allele / read depth in the variant row is for <strong>that site only</strong>. The percentages below use
-            <strong>mosdepth</strong> (from the pipeline) intersected with the <strong>BED intervals</strong> shown — the BAM is not rescanned in the portal.
-            They mean “% of bases in those intervals at ≥10× / ≥20×”. Wrong interval source (e.g. ACMG clinical footprint vs Twist targets) makes the % disagree with variant-level depth.
+            Allele / read depth in the variant row is for <strong>that site only</strong>. Below, percentages are
+            <strong>mosdepth</strong> ∩ <strong>Twist exome targets</strong> for this gene (not the clinical gene-list BED). The BAM is not rescanned here.
+            They mean “% of bases in those Twist intervals at ≥10× / ≥20×”.
           </p>
           <p style="margin:0 0 8px"><strong>${escapeHtml(data.panel_label || data.wes_panel_id || 'Panel')}</strong>
             ${data.wes_panel_id ? `<span class="muted"> (${escapeHtml(data.wes_panel_id)})</span>` : ''}</p>
           <p style="margin:0 0 8px">In interpretation gene set: <strong>${data.in_interpretation_set ? 'yes' : 'no'}</strong>
             ${data.interpretation_gene_count != null ? ` <span class="muted">(${data.interpretation_gene_count} genes)</span>` : ''}</p>
-          ${data.disease_bed_path ? `<p class="muted" style="font-size:11px;margin:0 0 8px;word-break:break-all">BED (depth intervals): ${escapeHtml(data.disease_bed_path)}</p>` : ''}
-          ${
-            data.clinical_disease_bed_path
-              ? `<p class="muted" style="font-size:11px;margin:0 0 8px;word-break:break-all">Clinical/disease BED: ${escapeHtml(data.clinical_disease_bed_path)}</p>`
-              : ''
-          }
+          ${data.disease_bed_path ? `<p class="muted" style="font-size:11px;margin:0 0 8px;word-break:break-all">Twist exome BED (depth intervals): ${escapeHtml(data.disease_bed_path)}</p>` : ''}
           ${gtBlock}
           <div style="margin:8px 0"><div class="muted" style="font-size:11px;margin-bottom:4px">Run-wide QC (result.json)</div>${gqcParts}</div>
           ${

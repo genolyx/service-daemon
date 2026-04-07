@@ -1,9 +1,10 @@
 """
-Portal: gene vs ordered WES / carrier panel — target BED intervals and optional per-gene depth.
+Portal: gene-level depth vs **Twist exome** capture targets (carrier / whole_exome / health_screening).
 
-Uses ``job.params`` + panel catalog (``wes_panel_id``) to resolve ``disease_bed``, then lists BED
-rows whose 4th column matches the HGNC symbol. Optionally scans pipeline output for small
-``*gene*coverage*`` / ``*coverage*by*gene*`` TSV-style sidecars (Twist / custom QC).
+Clinical interpretation panels are **gene lists** (``interpretation_genes`` / ``wes_panel_id``), not BED
+coordinates — carrier disease/backbone/ACMG BEDs are **not** used for this report. Intervals are rows
+from ``data/bed/twist-exome2/targets.bed`` (or the built-in Twist hg38 filename) whose column 4 matches
+the HGNC symbol. Optionally scans pipeline output for per-gene depth sidecars.
 """
 
 from __future__ import annotations
@@ -18,20 +19,13 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..models import Job
-from .wes_panels import (
-    _resolve_repo_path,
-    get_panel_by_id,
-    interpretation_gene_set_for_job,
-)
+from .wes_panels import get_panel_by_id, interpretation_gene_set_for_job
 
 logger = logging.getLogger(__name__)
 
 _CARRIER_LIKE = frozenset({"carrier_screening", "whole_exome", "health_screening"})
 
 _GENE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,24}$")
-
-# (realpath, mtime) -> merged intervals per chrom for full-BED reads (capture clipping)
-_CAPTURE_INTERVALS_CACHE: Dict[str, Tuple[float, Dict[str, List[Tuple[int, int]]]]] = {}
 
 # mosdepth per-base: chrom, start, end, depth (BED intervals, depth constant on each segment)
 _MOSDEPTH_PER_BASE_PATTERNS = (
@@ -74,126 +68,6 @@ def overlap_bp(g0: int, g1: int, seg0: int, seg1: int) -> int:
     a = max(seg0, g0)
     b = min(seg1, g1)
     return max(0, b - a)
-
-
-def _merge_intervals_sorted(intervals: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
-    if not intervals:
-        return []
-    intervals = sorted(intervals)
-    out: List[Tuple[int, int]] = [intervals[0]]
-    for s, e in intervals[1:]:
-        ls, le = out[-1]
-        if s <= le:
-            out[-1] = (ls, max(le, e))
-        else:
-            out.append((s, e))
-    return out
-
-
-def _intersect_with_merged_blocks(g0: int, g1: int, merged: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
-    """Sub-intervals of [g0,g1) covered by merged blocks (each block half-open)."""
-    res: List[Tuple[int, int]] = []
-    for a, b in merged:
-        if b <= g0:
-            continue
-        if a >= g1:
-            break
-        s, e = max(g0, a), min(g1, b)
-        if e > s:
-            res.append((s, e))
-    return res
-
-
-def _load_merged_intervals_by_chrom(bed_path: str) -> Dict[str, List[Tuple[int, int]]]:
-    """
-    Every interval in a capture/design BED, merged per chromosome (no gene filter).
-    Cached by realpath + mtime.
-    """
-    if not bed_path or not os.path.isfile(bed_path):
-        return {}
-    try:
-        rp = os.path.realpath(bed_path)
-        mtime = os.path.getmtime(rp)
-    except OSError:
-        return {}
-    hit = _CAPTURE_INTERVALS_CACHE.get(rp)
-    if hit and hit[0] == mtime:
-        return hit[1]
-
-    by_chrom: Dict[str, List[Tuple[int, int]]] = {}
-    opener = gzip.open if bed_path.endswith(".gz") else open
-    try:
-        with opener(bed_path, "rt", encoding="utf-8", errors="replace") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or line.startswith("track"):
-                    continue
-                parts = line.split("\t")
-                if len(parts) < 3:
-                    continue
-                chrom = parts[0].strip()
-                try:
-                    s0, s1 = int(parts[1]), int(parts[2])
-                except (ValueError, TypeError):
-                    continue
-                if s1 <= s0:
-                    continue
-                by_chrom.setdefault(chrom, []).append((s0, s1))
-    except OSError as e:
-        logger.warning("[gene_panel_coverage] Cannot read capture BED %s: %s", bed_path, e)
-        return {}
-
-    merged: Dict[str, List[Tuple[int, int]]] = {c: _merge_intervals_sorted(lst) for c, lst in by_chrom.items()}
-    _CAPTURE_INTERVALS_CACHE[rp] = (mtime, merged)
-    return merged
-
-
-def _merged_blocks_for_chrom(
-    cap_by_chrom: Dict[str, List[Tuple[int, int]]], chrom: str
-) -> Optional[List[Tuple[int, int]]]:
-    for ctry in _chrom_name_variants(chrom):
-        blk = cap_by_chrom.get(ctry)
-        if blk:
-            return blk
-    return None
-
-
-def _clip_regions_to_capture_bed(
-    regions: List[Dict[str, Any]],
-    capture_bed_path: str,
-) -> List[Dict[str, Any]]:
-    """
-    Intersect gene-specific disease intervals with the full capture BED (all targets).
-    Use when the capture BED does not repeat HGNC in column 4 but still defines what was sequenced.
-    """
-    cap = _load_merged_intervals_by_chrom(capture_bed_path)
-    if not cap:
-        return []
-    out: List[Dict[str, Any]] = []
-    for reg in regions:
-        chrom = str(reg.get("chrom") or "").strip()
-        try:
-            g0 = int(reg.get("start", 0))
-            g1 = int(reg.get("end", 0))
-        except (ValueError, TypeError):
-            continue
-        if g1 <= g0:
-            continue
-        blocks = _merged_blocks_for_chrom(cap, chrom)
-        if not blocks:
-            continue
-        name = reg.get("name")
-        for s, e in _intersect_with_merged_blocks(g0, g1, blocks):
-            out.append(
-                {
-                    "chrom": chrom,
-                    "start": s,
-                    "end": e,
-                    "name": name,
-                    "length_bp": e - s,
-                }
-            )
-    return out
 
 
 def _find_mosdepth_per_base_bed(roots: List[str]) -> Optional[str]:
@@ -313,83 +187,6 @@ def _wes_panel_id_from_job(job: Job) -> str:
     if not pid and isinstance(p.get("carrier"), dict):
         pid = p["carrier"].get("wes_panel_id")
     return (str(pid).strip() if pid else "") or ""
-
-
-def _explicit_disease_bed_path(job: Job, panel: Optional[Dict[str, Any]]) -> Tuple[Optional[str], str]:
-    """``disease_bed`` from job params or panel catalog only (no backbone)."""
-    p = job.params or {}
-    db = (p.get("disease_bed") or "").strip()
-    if db:
-        db_abs = os.path.normpath(db)
-        if os.path.isfile(db_abs):
-            return db_abs, "job.params.disease_bed"
-    if panel:
-        rel = str(panel.get("disease_bed") or "").strip()
-        if rel:
-            abs_p = _resolve_repo_path(rel)
-            if os.path.isfile(abs_p):
-                return abs_p, "panel_catalog.disease_bed"
-    return None, ""
-
-
-def _effective_backbone_bed_path(job: Job, panel: Optional[Dict[str, Any]]) -> Tuple[Optional[str], str]:
-    """Capture / exome target BED (HGNC in col4 for Twist-style kits)."""
-    p = job.params or {}
-    bb = (p.get("backbone_bed") or "").strip()
-    if bb:
-        bb_abs = os.path.normpath(bb)
-        if os.path.isfile(bb_abs):
-            return bb_abs, "job.params.backbone_bed"
-    if panel:
-        rel = str(panel.get("backbone_bed") or "").strip()
-        if rel:
-            abs_p = _resolve_repo_path(rel)
-            if os.path.isfile(abs_p):
-                return abs_p, "panel_catalog.backbone_bed"
-    try:
-        from ..config import settings
-
-        for opt, label in (
-            (getattr(settings, "carrier_default_backbone_bed", None), "settings.carrier_default_backbone_bed"),
-            (getattr(settings, "wes_panel_gene_source_bed", None), "settings.wes_panel_gene_source_bed"),
-        ):
-            if not opt or not str(opt).strip():
-                continue
-            ap = os.path.normpath(str(opt).strip())
-            if os.path.isfile(ap):
-                return ap, label
-    except Exception as e:
-        logger.debug("[gene_panel_coverage] backbone settings fallback: %s", e)
-    return None, ""
-
-
-def _effective_disease_bed_path(job: Job, panel: Optional[Dict[str, Any]]) -> Tuple[Optional[str], str]:
-    """
-    Last-resort: any BED path for gene-interval lookup when explicit disease + backbone yield no rows.
-
-    Order: explicit disease → panel disease → backbone chain → disease defaults → gene_bed.
-    """
-    dis_p, dis_s = _explicit_disease_bed_path(job, panel)
-    if dis_p:
-        return dis_p, dis_s
-    bb_p, bb_s = _effective_backbone_bed_path(job, panel)
-    if bb_p:
-        return bb_p, bb_s
-    try:
-        from ..config import settings
-
-        for opt, label in (
-            (getattr(settings, "carrier_default_disease_bed", None), "settings.carrier_default_disease_bed"),
-            (getattr(settings, "gene_bed", None), "settings.gene_bed"),
-        ):
-            if not opt or not str(opt).strip():
-                continue
-            ap = os.path.normpath(str(opt).strip())
-            if os.path.isfile(ap):
-                return ap, label
-    except Exception as e:
-        logger.debug("[gene_panel_coverage] settings BED fallback: %s", e)
-    return None, ""
 
 
 def _bed_col4_matches_gene(name_field: str, gene: str) -> bool:
@@ -683,18 +480,13 @@ _TWIST_EXOME2_BUILTIN_BED = (
 )
 
 
-def _carrier_sequencing_targets_bed(job: Job) -> Optional[str]:
+def _twist_exome_targets_bed(job: Job) -> Optional[str]:
     """
-    Capture / variant-calling targets: ``data/bed/<capture_panel_id>/targets.bed`` — **same** as
-    ``run_analysis.sh --backbone-bed`` (see ``CarrierScreeningPlugin._resolve_capture_panel_bed``).
+    **Twist exome capture only** (fixed ``twist-exome2`` kit layout).
 
-    This is distinct from ``_resolve_carrier_bed(..., \"backbone\")`` (``backbone*.bed`` + params),
-    which often resolves to **Carrier_ACMG2021.bed** on disk. That file is a **clinical gene list**,
-    not the Twist exome probe footprint — using it for depth ∩ mosdepth yields huge PAH windows
-    and ~few % ≥20× even when exonic sites show 70×+ in the variant table.
-
-    We do **not** re-scan BAMs here; mosdepth already summarized read depth. Wrong BED × correct
-    mosdepth still gives misleading percentages.
+    Interpretation panels are gene lists, not BEDs — we intentionally **ignore** carrier
+    disease/backbone/ACMG BED params for depth intervals. ``job.params.carrier.capture_panel_id``
+    is not used here so Agilent/other kits do not swap this path; this report is Twist-exome–scoped.
     """
     if job.service_code not in _CARRIER_LIKE:
         return None
@@ -704,11 +496,9 @@ def _carrier_sequencing_targets_bed(job: Job) -> Optional[str]:
         pl = get_plugin(job.service_code)
         if pl is None:
             return None
-        carrier = (job.params or {}).get("carrier") or {}
-        capture_panel = (carrier.get("capture_panel_id") or "").strip() or "twist-exome2"
         resolve_cap = getattr(pl, "_resolve_capture_panel_bed", None)
         if callable(resolve_cap):
-            path = resolve_cap(capture_panel)
+            path = resolve_cap("twist-exome2")
             if path and os.path.isfile(path):
                 return path
         run_dd = getattr(pl, "_run_analysis_data_dir", None)
@@ -720,34 +510,7 @@ def _carrier_sequencing_targets_bed(job: Job) -> Optional[str]:
             return longp
         return None
     except Exception as e:
-        logger.debug("[gene_panel_coverage] sequencing targets bed: %s", e)
-        return None
-
-
-def _carrier_pipeline_backbone_bed(job: Job) -> Optional[str]:
-    """
-    Legacy ``backbone*.bed`` + params resolution (``process_results`` BED filter). Used only when
-    ``targets.bed``-style capture panel path is missing.
-    """
-    if job.service_code not in _CARRIER_LIKE:
-        return None
-    try:
-        from ..config import settings
-        from . import get_plugin
-
-        pl = get_plugin(job.service_code)
-        resolve = getattr(pl, "_resolve_carrier_bed", None)
-        if not callable(resolve):
-            return None
-        out = resolve(
-            job,
-            "backbone_bed",
-            "backbone",
-            getattr(settings, "carrier_default_backbone_bed", None),
-        )
-        return out if out and os.path.isfile(out) else None
-    except Exception as e:
-        logger.debug("[gene_panel_coverage] carrier backbone resolve: %s", e)
+        logger.debug("[gene_panel_coverage] twist exome targets bed: %s", e)
         return None
 
 
@@ -774,50 +537,19 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
     interp = interpretation_gene_set_for_job(job)
     in_set = gene in interp
 
-    dis_path, dis_src = _explicit_disease_bed_path(job, panel)
-    bb_path, bb_src = _effective_backbone_bed_path(job, panel)
-    used_carrier_pipeline_backbone = False
-    used_sequencing_capture_panel = False
-    seq_targets = _carrier_sequencing_targets_bed(job)
-    if seq_targets:
-        bb_path, bb_src = seq_targets, "carrier_sequencing.targets_bed"
-        used_sequencing_capture_panel = True
-    else:
-        pl_bb = _carrier_pipeline_backbone_bed(job)
-        if pl_bb:
-            bb_path, bb_src = pl_bb, "carrier_pipeline.backbone_bed"
-            used_carrier_pipeline_backbone = True
-    r_bb = _bed_intervals_for_gene(bb_path or "", gene) if bb_path else []
-    r_dis = _bed_intervals_for_gene(dis_path or "", gene) if dis_path else []
-
     clinical_disease_bed_path: Optional[str] = None
     clinical_disease_bed_source: Optional[str] = None
     intervals_clipped_to_capture = False
-    capture_overlap_miss = False
 
-    if r_bb:
-        regions = r_bb
-        bed_path, bed_source = bb_path, bb_src
-        if dis_path and dis_path != bb_path:
-            clinical_disease_bed_path, clinical_disease_bed_source = dis_path, dis_src
-    elif r_dis:
-        clipped: List[Dict[str, Any]] = []
-        if bb_path:
-            clipped = _clip_regions_to_capture_bed(r_dis, bb_path)
-        if clipped:
-            regions = clipped
-            bed_path, bed_source = bb_path, bb_src
-            intervals_clipped_to_capture = True
-            if dis_path:
-                clinical_disease_bed_path, clinical_disease_bed_source = dis_path, dis_src
-        else:
-            regions = r_dis
-            bed_path, bed_source = dis_path, dis_src
-            if bb_path:
-                capture_overlap_miss = True
+    if job.service_code not in _CARRIER_LIKE:
+        bed_path: Optional[str] = None
+        bed_source = ""
+        regions: List[Dict[str, Any]] = []
     else:
-        bed_path, bed_source = _effective_disease_bed_path(job, panel)
-        regions = _bed_intervals_for_gene(bed_path or "", gene) if bed_path else []
+        twist_path = _twist_exome_targets_bed(job)
+        bed_path = twist_path
+        bed_source = "twist_exome2.targets_bed" if twist_path else ""
+        regions = _bed_intervals_for_gene(twist_path or "", gene) if twist_path else []
 
     total_bp = sum(int(r.get("length_bp") or 0) for r in regions)
 
@@ -855,51 +587,18 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
                 gene_depth_thresholds["pct_bases_ge_20x"] = p20
 
     notes: List[str] = []
-    if bed_path and regions:
-        if intervals_clipped_to_capture:
-            notes.append(
-                "Target intervals are **disease panel rows for this gene intersected with the full capture (backbone) design**. "
-                "Many capture BEDs omit HGNC in column 4; clipping limits depth stats to bases that are both clinically listed and on the sequencing design."
-            )
-        elif clinical_disease_bed_path:
-            notes.append(
-                "Depth percentages use **capture (backbone) target** intervals for this gene (bases typically sequenced at high depth on this exome). "
-                "A separate clinical/disease panel BED may span more bases (e.g. intronic or off-capture), where depth is often low — that mismatch can make disease-BED-only stats look worse than run-wide exome QC."
-            )
-        else:
-            src = (bed_source or "").lower()
-            if "backbone" in src:
-                notes.append(
-                    "Regions are from the capture/backbone BED (column 4 matches this gene); "
-                    "no separate disease BED was set on this order."
-                )
-            else:
-                notes.append(
-                    "Regions are rows from the panel disease BED whose 4th column matches this gene (design / capture target)."
-                )
-    elif bed_path and not regions:
+    if job.service_code in _CARRIER_LIKE:
         notes.append(
-            "A BED path resolved, but no rows use this gene name in column 4 — the gene may be listed only in interpretation_genes, or labels differ from HGNC symbols."
+            "The **interpretation panel** (gene list you selected) filters which genes are analyzed — it does **not** supply these BED intervals. "
+            "Depth % uses **Twist exome** ``data/bed/twist-exome2/targets.bed`` (or the built-in Twist hg38 BED) intersected with **mosdepth** output; carrier disease/ACMG BEDs are not used here."
         )
-    if not bed_path:
-        notes.append("No BED resolved for this order/panel — interval list unavailable.")
-
-    if capture_overlap_miss:
+    if bed_path and not regions:
         notes.append(
-            "A capture (backbone) BED is set, but **no genomic overlap** was found between disease intervals and capture targets "
-            "(check chromosome naming chr* vs numeric, or disjoint designs). Depth is still computed on full disease intervals and may look worse than on-target reality."
+            "Twist exome BED is present but **no interval names this gene in column 4** — check HGNC vs vendor labels (e.g. ``PAH;NM_…``)."
         )
-
-    if used_sequencing_capture_panel:
+    if not bed_path and job.service_code in _CARRIER_LIKE:
         notes.append(
-            "Depth intervals use **sequencing capture targets** (``…/data/bed/<capture_panel_id>/targets.bed``), "
-            "the same class of file as ``run_analysis.sh --backbone-bed`` — not the ACMG clinical disease BED. "
-            "Percentages come from **precomputed mosdepth** segments intersected with those intervals (BAM is not re-read here)."
-        )
-    elif used_carrier_pipeline_backbone:
-        notes.append(
-            "Capture BED fell back to **carrier backbone resolution** (params / settings / data/bed/backbone*.bed). "
-            "Prefer installing ``data/bed/twist-exome2/targets.bed`` (or your panel folder) so stats match the exome kit."
+            "Twist exome targets file not found. Add ``data/bed/twist-exome2/targets.bed`` (and .gz/.tbi if used) under the gx-exome project data directory."
         )
 
     if gene_depth_thresholds and gene_depth_thresholds.get("method") == "mosdepth_per_base_tabix":

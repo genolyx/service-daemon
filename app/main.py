@@ -1875,6 +1875,34 @@ async def get_order_result(
     raise HTTPException(status_code=404, detail=detail)
 
 
+@app.get("/order/{order_id}/gene-coverage/{gene_symbol}")
+async def get_order_gene_coverage(order_id: str, gene_symbol: str):
+    """
+    Twist exome target intervals for a gene (HGNC in BED column 4) plus optional per-gene depth
+    sidecars — supports Variant Review (carrier / whole_exome / health_screening). Clinical panel
+    is gene-list filtered; carrier disease/ACMG BEDs are not used for these intervals.
+    """
+    queue_manager = get_queue_manager()
+    job = queue_manager.get_job(order_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
+    if job.service_code not in _CARRIER_LIKE:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Gene panel coverage is only available for carrier_screening, whole_exome, "
+                "and health_screening orders."
+            ),
+        )
+    from app.services.gene_panel_coverage import build_gene_panel_coverage_report
+
+    try:
+        report = build_gene_panel_coverage_report(job, gene_symbol)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return JSONResponse(content=report)
+
+
 async def _dark_genes_review_impl(order_id: str, body: DarkGenesReviewRequest) -> Dict[str, Any]:
     """
     Save per-section **Approve**, **Notes**, and **Risk** (PDF title accent) for the Dark genes detailed report.

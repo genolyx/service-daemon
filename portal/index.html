@@ -8777,6 +8777,17 @@
           </div>`
           : '';
       const notes = (data.notes || []).map(n => `<li>${escapeHtml(n)}</li>`).join('');
+      const rawProbeRows = Number(data.twist_raw_interval_count) || 0;
+      const mergedBlocks = (data.bed_regions || []).length;
+      const totalSpanBp = data.total_target_bp != null ? Number(data.total_target_bp) : null;
+      const mergeSummary =
+        totalSpanBp != null
+          ? `Total Twist on-target span for this gene: <strong>${totalSpanBp.toLocaleString()}</strong> bp (sum of merged intervals).${
+              rawProbeRows > mergedBlocks && rawProbeRows > 0
+                ? ` Merged from <strong>${rawProbeRows}</strong> separate rows in <code>targets.bed</code> → <strong>${mergedBlocks}</strong> contiguous block${mergedBlocks === 1 ? '' : 's'}.`
+                : ''
+            }`
+          : '';
       return `
         <div style="font-size:12px;line-height:1.5;color:var(--text)">
           <p class="muted" style="font-size:11px;margin:0 0 10px;line-height:1.45">
@@ -8801,9 +8812,9 @@
             rows
               ? `<div style="margin-top:10px;font-weight:600;font-size:12px">Target regions (this gene)</div>
             <p class="muted" style="font-size:11px;margin:4px 0 8px;line-height:1.45">
-              Each row is one interval from the Twist <code>targets.bed</code> whose name column matches this gene (HGNC token in col4).
-              Coordinates are <strong>0-based half-open</strong> <code>[start, end)</code>, so <code>end − start</code> is the length in bp.
-              Twist lists many <strong>short, separate</strong> design windows (probes / baits), so <strong>1 bp</strong> rows are normal — they are not exon summaries and we do not merge them.
+              Intervals are from the Twist <code>targets.bed</code> (col4 matches HGNC), then <strong>merged</strong> on each chromosome:
+              overlapping or touching half-open ranges <code>[start, end)</code> become one row. Gaps between probes stay separate blocks.
+              ${mergeSummary ? `<span style="display:block;margin-top:6px">${mergeSummary}</span>` : ''}
             </p>
             <div style="overflow-x:auto;margin-top:6px"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr><th>Chr</th><th style="text-align:right">Start</th><th style="text-align:right">End</th><th style="text-align:right">bp</th></tr></thead><tbody>${rows}</tbody></table></div>`
               : '<p class="muted" style="margin-top:10px">No BED intervals with this gene name in column 4.</p>'

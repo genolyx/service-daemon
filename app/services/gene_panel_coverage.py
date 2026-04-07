@@ -255,6 +255,56 @@ def _bed_intervals_for_gene(bed_path: str, gene: str) -> List[Dict[str, Any]]:
     return rows
 
 
+def _merge_bed_regions_half_open(regions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Merge overlapping or directly adjacent half-open intervals per chromosome.
+
+    Twist ``targets.bed`` often lists many short probe rows per gene; merging yields a small
+    number of contiguous blocks and a single total span for depth ∩ mosdepth (same bases).
+    """
+    if not regions:
+        return []
+    by_chrom: Dict[str, List[Dict[str, Any]]] = {}
+    for r in regions:
+        c = str(r.get("chrom") or "").strip()
+        if not c:
+            continue
+        by_chrom.setdefault(c, []).append(r)
+    merged_all: List[Dict[str, Any]] = []
+    for chrom, lst in by_chrom.items():
+        lst.sort(key=lambda x: (int(x.get("start", 0)), int(x.get("end", 0))))
+        cur_s = int(lst[0]["start"])
+        cur_e = int(lst[0]["end"])
+        nm = lst[0].get("name")
+        for r in lst[1:]:
+            s, e = int(r["start"]), int(r["end"])
+            if s <= cur_e:
+                cur_e = max(cur_e, e)
+            else:
+                merged_all.append(
+                    {
+                        "chrom": chrom,
+                        "start": cur_s,
+                        "end": cur_e,
+                        "name": nm,
+                        "length_bp": cur_e - cur_s,
+                    }
+                )
+                cur_s, cur_e = s, e
+                nm = r.get("name")
+        merged_all.append(
+            {
+                "chrom": chrom,
+                "start": cur_s,
+                "end": cur_e,
+                "name": nm,
+                "length_bp": cur_e - cur_s,
+            }
+        )
+    merged_all.sort(key=lambda x: (x["chrom"], x["start"]))
+    return merged_all
+
+
 def _coverage_search_roots(job: Job) -> List[str]:
     roots: List[str] = []
     seen: set = set()
@@ -541,6 +591,7 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
     clinical_disease_bed_source: Optional[str] = None
     intervals_clipped_to_capture = False
 
+    twist_raw_interval_count = 0
     if job.service_code not in _CARRIER_LIKE:
         bed_path: Optional[str] = None
         bed_source = ""
@@ -549,7 +600,9 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
         twist_path = _twist_exome_targets_bed(job)
         bed_path = twist_path
         bed_source = "twist_exome2.targets_bed" if twist_path else ""
-        regions = _bed_intervals_for_gene(twist_path or "", gene) if twist_path else []
+        raw_regions = _bed_intervals_for_gene(twist_path or "", gene) if twist_path else []
+        twist_raw_interval_count = len(raw_regions)
+        regions = _merge_bed_regions_half_open(raw_regions)
 
     total_bp = sum(int(r.get("length_bp") or 0) for r in regions)
 
@@ -590,7 +643,8 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
     if job.service_code in _CARRIER_LIKE:
         notes.append(
             "The **interpretation panel** (gene list you selected) filters which genes are analyzed — it does **not** supply these BED intervals. "
-            "Depth % uses **Twist exome** ``data/bed/twist-exome2/targets.bed`` (or the built-in Twist hg38 BED) intersected with **mosdepth** output; carrier disease/ACMG BEDs are not used here."
+            "Depth % uses **Twist exome** ``data/bed/twist-exome2/targets.bed`` (or the built-in Twist hg38 BED) intersected with **mosdepth** output; carrier disease/ACMG BEDs are not used here. "
+            "Target rows in the table are **merged** (overlapping / adjacent probe intervals on the same chromosome) so you see contiguous blocks and one total length per locus."
         )
     if bed_path and not regions:
         notes.append(
@@ -624,6 +678,7 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
         "clinical_disease_bed_path": clinical_disease_bed_path,
         "clinical_disease_bed_source": clinical_disease_bed_source,
         "intervals_clipped_to_capture": intervals_clipped_to_capture,
+        "twist_raw_interval_count": twist_raw_interval_count if job.service_code in _CARRIER_LIKE else 0,
         "bed_regions": regions,
         "total_target_bp": total_bp,
         "panel_bed_region_count": len(regions),

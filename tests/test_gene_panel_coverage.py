@@ -4,7 +4,11 @@ import pytest
 
 from app.models import Job
 from app.services import gene_panel_coverage as gpc
-from app.services.gene_panel_coverage import build_gene_panel_coverage_report, overlap_bp
+from app.services.gene_panel_coverage import (
+    _merge_bed_regions_half_open,
+    build_gene_panel_coverage_report,
+    overlap_bp,
+)
 from app.services.wes_panels import apply_wes_panel_to_job_params
 
 
@@ -16,6 +20,38 @@ def twist_bed_pa(tmp_path):
         encoding="utf-8",
     )
     return p
+
+
+def test_merge_bed_regions_adjacent_and_gap():
+    raw = [
+        {"chrom": "chr1", "start": 10, "end": 11, "name": "G", "length_bp": 1},
+        {"chrom": "chr1", "start": 11, "end": 20, "name": "G", "length_bp": 9},
+        {"chrom": "chr1", "start": 100, "end": 105, "name": "G", "length_bp": 5},
+    ]
+    m = _merge_bed_regions_half_open(raw)
+    assert len(m) == 2
+    assert m[0]["start"] == 10 and m[0]["end"] == 20 and m[0]["length_bp"] == 10
+    assert m[1]["start"] == 100 and m[1]["end"] == 105
+
+
+def test_report_merges_multiple_twist_rows(tmp_path, monkeypatch):
+    tb = tmp_path / "t.bed"
+    tb.write_text(
+        "chr1\t10\t11\tFOO\nchr1\t11\t20\tFOO\nchr1\t100\t105\tFOO\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(gpc, "_twist_exome_targets_bed", lambda _j: str(tb.resolve()))
+    job = Job(
+        order_id="ord_merge",
+        service_code="carrier_screening",
+        sample_name="sam",
+        work_dir="00",
+        params={},
+    )
+    r = build_gene_panel_coverage_report(job, "FOO")
+    assert r["twist_raw_interval_count"] == 3
+    assert len(r["bed_regions"]) == 2
+    assert r["total_target_bp"] == 10 + 5
 
 
 def test_overlap_bp_math():

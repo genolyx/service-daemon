@@ -578,6 +578,10 @@
     }
     #repeatPlotsModalHost .dg-repeat-plots-msg{color:#455a64;font-size:13px;padding:12px;margin:0;line-height:1.45}
     .dark-genes-visual-evidence .dg-visual-sub{margin:10px 0 6px;font-size:12px;font-weight:600;color:var(--text)}
+    /* Review → Coverage tab: IGV.js expects a light viewport */
+    #coverageIgvHost{background:#f4f6fb;border-radius:10px;border:1px solid var(--line);min-height:460px;position:relative}
+    body.light #coverageIgvHost{background:#fff}
+    #coverageIgvHost .muted{padding:14px}
     .dark-genes-visual-evidence .dg-repeat-row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start}
     .dark-genes-visual-evidence .dg-repeat-svg,.dark-genes-visual-evidence .dg-snap-png{max-width:100%;max-height:520px;border-radius:8px;border:1px solid var(--line);background:var(--card)}
     a.omim-link{color:var(--brand);text-decoration:underline;text-underline-offset:2px}
@@ -1583,6 +1587,7 @@
       <!-- Review sub-tabs -->
       <div class="sub-tabs" id="reviewSubTabs">
         <div class="sub-tab active" data-tab="variants" onclick="showReviewTab('variants')">Variants</div>
+        <div class="sub-tab" data-tab="coverage" onclick="showReviewTab('coverage')">Coverage</div>
         <div class="sub-tab" data-tab="diseases" onclick="showReviewTab('diseases')">Disease Summary</div>
         <div class="sub-tab" data-tab="qc" onclick="showReviewTab('qc')">QC Summary</div>
         <div class="sub-tab" data-tab="darkgenes" onclick="showReviewTab('darkgenes')">Dark genes</div>
@@ -1641,6 +1646,37 @@
             <tbody id="tblVariantsBody"></tbody>
           </table>
         </div>
+      </div>
+
+      <!-- Coverage tab: gene search + stats + IGV -->
+      <div id="reviewCoverage" class="hidden">
+        <p class="muted" style="margin:0 0 10px;font-size:12px;line-height:1.5">
+          Search any HGNC symbol (panel / interpretation list + free text). Coverage stats use the same API as the variant-row <strong>Coverage</strong> button. IGV uses this order’s indexed exome-style BAM; <strong>Jump to variant</strong>, <strong>Lookup coverage</strong>, or <strong>Locus</strong> + <strong>Go</strong> — at whole-chromosome zoom alignments stay blank until you zoom to a gene or coordinates.
+        </p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px">
+          <input id="coverageGeneInput" placeholder="Gene symbol (e.g. BRCA1)" style="max-width:200px" autocomplete="off" />
+          <button type="button" class="btn primary" id="coverageLookupBtn">Lookup coverage</button>
+          <span class="muted" id="coverageLookupStatus" style="font-size:11px"></span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px">
+          <span class="muted" style="margin:0;font-size:12px;flex-shrink:0">IGV BAM</span>
+          <span id="coverageBamInfo" class="muted" style="font-size:12px;word-break:break-all;flex:1;min-width:160px">—</span>
+          <button type="button" class="btn" id="coverageIgvLoadBtn">Load / refresh IGV</button>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px">
+          <label class="muted" style="margin:0;font-size:12px">Jump to variant</label>
+          <select id="coverageVariantSelect" style="width:auto;min-width:280px;max-width:100%">
+            <option value="">— Select variant —</option>
+          </select>
+          <label class="muted" style="margin:0;font-size:12px">Locus</label>
+          <input id="coverageLocusInput" placeholder="chr13:32315474-32400266 or BRCA1" style="max-width:280px;font-family:monospace;font-size:12px" />
+          <button type="button" class="btn" id="coverageGotoLocusBtn">Go</button>
+        </div>
+        <div id="coverageReportBody" class="card" style="margin:0 0 14px;padding:12px 14px"></div>
+        <p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.45">
+          IGV only draws reads/coverage when zoomed to a narrow region (on the order of tens of kb). If you see an empty track, pick a variant or enter a locus and click <strong>Go</strong>.
+        </p>
+        <div id="coverageIgvHost"><p class="muted">Click <strong>Load / refresh IGV</strong> to open alignments for this order’s BAM, then lookup a gene or pick a variant.</p></div>
       </div>
 
       <!-- Disease Summary Tab -->
@@ -2315,6 +2351,8 @@
     let reviewData = null;
     /** loadReviewData 성공 후 유지 — 드롭다운이 아직 비어 있어도 Review Case 탭 등에서 주문 ID 사용 */
     let reviewLoadedOrderId = null;
+    let reviewCoverageContext = null;
+    let coverageIgvBrowser = null;
     let selectedVariants = new Set();
     let variantComments = {};
     /** Review Case sub-tab: per-variant editable gene_description + variant_summary for PDF */
@@ -6202,6 +6240,9 @@
         ensureReviewOrderOption(orderId);
         qs('reviewOrderSelect').value = orderId;
 
+        teardownCoverageIgv();
+        reviewCoverageContext = null;
+
         selectedVariants = new Set();
         variantComments = {};
         variantReportTexts = {};
@@ -6211,7 +6252,7 @@
         autoSelectPathogenicVariantsForReport();
 
         // sgNIPT: carrier-only 서브탭 숨김
-        const carrierOnlyTabs = ['diseases', 'darkgenes', 'report', 'genedb'];
+        const carrierOnlyTabs = ['coverage', 'diseases', 'darkgenes', 'report', 'genedb'];
         document.querySelectorAll('#reviewSubTabs .sub-tab').forEach(el => {
           const tab = el.dataset.tab;
           el.style.display = (isSgNIPT && carrierOnlyTabs.includes(tab)) ? 'none' : '';
@@ -6338,7 +6379,7 @@
       });
     }
 
-    const REVIEW_SUB_TAB_KEYS = ['variants', 'diseases', 'qc', 'darkgenes', 'stats', 'report', 'genedb'];
+    const REVIEW_SUB_TAB_KEYS = ['variants', 'coverage', 'diseases', 'qc', 'darkgenes', 'stats', 'report', 'genedb'];
 
     function getSavedReviewSubTab() {
       try {
@@ -6351,11 +6392,21 @@
 
     function showReviewTab(tab) {
       if (!REVIEW_SUB_TAB_KEYS.includes(tab)) tab = 'variants';
+      if (reviewData && reviewData._service_code === 'sgnipt' && tab === 'coverage') tab = 'variants';
       try {
         localStorage.setItem('reviewSubTab', tab);
       } catch (e) { /* ignore */ }
 
-      const tabMap = { variants: 'reviewVariants', diseases: 'reviewDiseases', qc: 'reviewQc', darkgenes: 'reviewDarkGenes', stats: 'reviewStats', report: 'reviewReport', genedb: 'reviewGeneDb' };
+      const tabMap = {
+        variants: 'reviewVariants',
+        coverage: 'reviewCoverage',
+        diseases: 'reviewDiseases',
+        qc: 'reviewQc',
+        darkgenes: 'reviewDarkGenes',
+        stats: 'reviewStats',
+        report: 'reviewReport',
+        genedb: 'reviewGeneDb',
+      };
       Object.values(tabMap).forEach(id => { const el = qs(id); if (el) el.classList.add('hidden'); });
       const target = tabMap[tab];
       if (target) qs(target).classList.remove('hidden');
@@ -6370,6 +6421,9 @@
       }
       if (tab === 'genedb') {
         fetchGeneKnowledgeForReview(false);
+      }
+      if (tab === 'coverage') {
+        void refreshReviewCoverageTab();
       }
       /** Dark genes: refetch result.json so the tab updates after «Reprocess» without full Load */
       if (tab === 'darkgenes') {
@@ -8745,12 +8799,6 @@
 
     function renderGeneCoverageHtml(data) {
       if (!data) return '<p class="muted">No data.</p>';
-      const rows = (data.bed_regions || [])
-        .map(
-          r =>
-            `<tr><td style="font-family:monospace;font-size:11px">${escapeHtml(r.chrom)}</td><td style="text-align:right">${r.start}</td><td style="text-align:right">${r.end}</td><td style="text-align:right">${r.length_bp}</td></tr>`
-        )
-        .join('');
       const gqc = data.global_qc_coverage || {};
       const gqcParts = Object.keys(gqc).length
         ? Object.entries(gqc)
@@ -8785,18 +8833,36 @@
             ${gt.source_file ? `<p class="muted" style="font-size:10px;margin:6px 0 0;word-break:break-all">${escapeHtml(gt.source_file)}</p>` : ''}
           </div>`
           : '';
-      const notes = (data.notes || []).map(n => `<li>${escapeHtml(n)}</li>`).join('');
-      const rawProbeRows = Number(data.twist_raw_interval_count) || 0;
-      const mergedBlocks = (data.bed_regions || []).length;
-      const totalSpanBp = data.total_target_bp != null ? Number(data.total_target_bp) : null;
-      const mergeSummary =
-        totalSpanBp != null && totalSpanBp >= 0
-          ? `Total Twist on-target span (sum of merged rows below): <strong>${totalSpanBp.toLocaleString()}</strong> bp.${
-              rawProbeRows > mergedBlocks && rawProbeRows > 0
-                ? ` From <strong>${rawProbeRows}</strong> <code>targets.bed</code> rows → <strong>${mergedBlocks}</strong> merged block${mergedBlocks === 1 ? '' : 's'}.`
-                : ''
-            }`
+      const ex = data.exon_coverage;
+      const exonRows =
+        ex && Array.isArray(ex.exons) && ex.exons.length
+          ? ex.exons
+              .map(e => {
+                const q = e.coverage_quality || 'unknown';
+                const qStyle =
+                  q === 'good'
+                    ? 'color:var(--ok);font-weight:600'
+                    : q === 'low'
+                      ? 'color:var(--err);font-weight:600'
+                      : 'color:var(--muted)';
+                const p20 = e.pct_bases_ge_20x != null ? Number(e.pct_bases_ge_20x).toFixed(1) + '%' : '—';
+                return `<tr><td style="text-align:right">${escapeHtml(String(e.exon_label ?? e.exon_index ?? ''))}</td><td style="font-family:monospace;font-size:11px">${escapeHtml(e.chrom || '')}</td><td style="text-align:right">${e.start}</td><td style="text-align:right">${e.end}</td><td style="text-align:right">${e.length_bp}</td><td style="text-align:right">${p20}</td><td style="${qStyle}">${escapeHtml(q)}</td></tr>`;
+              })
+              .join('')
           : '';
+      const exonBlock =
+        exonRows
+          ? `<div style="margin:12px 0 0">
+            <div style="font-weight:600;font-size:12px;margin-bottom:4px">Exons (reference GFF)</div>
+            <p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.45">
+              Coordinates are genomic (0-based half-open BED-style). Transcript <code style="font-size:10px">${escapeHtml(ex.transcript_id || '')}</code>.
+              Quality: <strong style="color:var(--ok)">good</strong> if ≥20× covers ≥${ex.quality_rule_ge_20x_pct_min != null ? Number(ex.quality_rule_ge_20x_pct_min) : 80}% of bases in the exon (mosdepth); <strong style="color:var(--err)">low</strong> otherwise; <span class="muted">unknown</span> if mosdepth does not overlap.
+            </p>
+            ${ex.source_gff ? `<p class="muted" style="font-size:10px;margin:0 0 8px;word-break:break-all">${escapeHtml(ex.source_gff)}</p>` : ''}
+            <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr><th style="text-align:right">Exon</th><th>Chr</th><th style="text-align:right">Start</th><th style="text-align:right">End</th><th style="text-align:right">bp</th><th style="text-align:right">≥20×</th><th>Quality</th></tr></thead><tbody>${exonRows}</tbody></table></div>
+          </div>`
+          : '';
+      const notes = (data.notes || []).map(n => `<li>${escapeHtml(n)}</li>`).join('');
       return `
         <div style="font-size:12px;line-height:1.5;color:var(--text)">
           <p class="muted" style="font-size:11px;margin:0 0 10px;line-height:1.45">
@@ -8810,6 +8876,7 @@
             ${data.interpretation_gene_count != null ? ` <span class="muted">(${data.interpretation_gene_count} genes)</span>` : ''}</p>
           ${data.disease_bed_path ? `<p class="muted" style="font-size:11px;margin:0 0 8px;word-break:break-all">Twist exome BED (depth intervals): ${escapeHtml(data.disease_bed_path)}</p>` : ''}
           ${gtBlock}
+          ${exonBlock}
           <div style="margin:8px 0"><div class="muted" style="font-size:11px;margin-bottom:4px">Run-wide QC (result.json)</div>${gqcParts}</div>
           ${
             pg && pg.mean_coverage != null
@@ -8817,18 +8884,6 @@
               : '<p class="muted" style="font-size:11px">No per-gene depth sidecar found under analysis/output paths (optional).</p>'
           }
           ${notes ? `<ul style="margin:8px 0 0;padding-left:1.2em;font-size:11px;color:var(--muted)">${notes}</ul>` : ''}
-          ${
-            rows
-              ? `<div style="margin-top:10px;font-weight:600;font-size:12px">Target regions (this gene)</div>
-            <p class="muted" style="font-size:11px;margin:4px 0 8px;line-height:1.45">
-              Merged Twist <code>targets.bed</code> intervals (col4 matches HGNC): half-open <code>[start, end)</code>; touching or overlapping ranges on the same chromosome are one row. Gaps between probes stay separate rows.
-              ${mergeSummary ? `<span style="display:block;margin-top:6px">${mergeSummary}</span>` : ''}
-            </p>
-            <div style="overflow-x:auto;margin-top:6px"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr><th>Chr</th><th style="text-align:right">Start</th><th style="text-align:right">End</th><th style="text-align:right">bp</th></tr></thead><tbody>${rows}</tbody></table></div>`
-              : data.disease_bed_path
-                ? '<p class="muted" style="margin-top:10px">No Twist target intervals name this gene in BED column 4.</p>'
-                : ''
-          }
         </div>`;
     }
 
@@ -8868,6 +8923,299 @@
         backdrop.classList.add('hidden');
         backdrop.setAttribute('aria-hidden', 'true');
       }
+    }
+
+    function teardownCoverageIgv() {
+      if (coverageIgvBrowser) {
+        try {
+          if (typeof coverageIgvBrowser.dispose === 'function') coverageIgvBrowser.dispose();
+        } catch (e) {
+          /* ignore */
+        }
+        coverageIgvBrowser = null;
+      }
+      const host = qs('coverageIgvHost');
+      if (host) {
+        host.innerHTML =
+          '<p class="muted">Click <strong>Load / refresh IGV</strong> to open alignments for this order’s BAM, then lookup a gene or pick a variant.</p>';
+      }
+    }
+
+    function coverageOrderFileUrl(orderId, relPath) {
+      const parts = String(relPath || '')
+        .replace(/^\/+/, '')
+        .split('/')
+        .filter(Boolean)
+        .map(encodeURIComponent);
+      return `${API_BASE}${apiPath(`/order/${encodeURIComponent(orderId)}/file/${parts.join('/')}`)}`;
+    }
+
+    function coverageTrackHeaders() {
+      const k = getDaemonApiKey();
+      if (!k) return undefined;
+      return { 'X-API-Key': k };
+    }
+
+    function ensureIgvScriptLoaded() {
+      if (window.igv) return Promise.resolve();
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/igv@2.15.5/dist/igv.min.js';
+        s.async = true;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error('Could not load igv.js'));
+        document.head.appendChild(s);
+      });
+    }
+
+    /** First indexed BAM from coverage-context (server already drops ancillary paraphase/SMN/FMR1/…). */
+    function pickCoverageOrderBamTrack() {
+      const tr = (reviewCoverageContext && reviewCoverageContext.bam_tracks) || [];
+      return tr.find(t => t.has_index) || null;
+    }
+
+    async function startCoverageIgvBrowser(initialLocus) {
+      const oid = (reviewLoadedOrderId || (qs('reviewOrderSelect') && qs('reviewOrderSelect').value) || '').trim();
+      const host = qs('coverageIgvHost');
+      if (!oid || !host) {
+        toast('Load an order first', false);
+        return;
+      }
+      const meta = pickCoverageOrderBamTrack();
+      if (!meta || !meta.rel_path) {
+        const hint = (reviewCoverageContext && reviewCoverageContext.igv_bam_message) || '';
+        toast(
+          hint
+            ? hint
+            : 'No indexed exome BAM (.bai) found for this order. Paraphase/SMN/FMR1 BAMs are not used for IGV.',
+          false
+        );
+        return;
+      }
+      const rel = meta.rel_path;
+      try {
+        await ensureIgvScriptLoaded();
+      } catch (e) {
+        toast(e.message || 'IGV script load failed', false);
+        return;
+      }
+      if (coverageIgvBrowser) {
+        try {
+          if (typeof coverageIgvBrowser.dispose === 'function') coverageIgvBrowser.dispose();
+        } catch (e) {
+          /* ignore */
+        }
+        coverageIgvBrowser = null;
+      }
+      host.innerHTML = '';
+      const bamUrl = coverageOrderFileUrl(oid, rel);
+      const indexUrl = coverageOrderFileUrl(oid, meta.index_rel_path);
+      const locInp = qs('coverageLocusInput');
+      let locus = (initialLocus || (locInp && locInp.value.trim()) || '').trim();
+      if (!locus) {
+        locus = defaultCoverageIgvLocus() || 'BRCA1';
+        if (locInp) locInp.value = locus;
+      }
+      const track = {
+        type: 'alignment',
+        format: 'bam',
+        url: bamUrl,
+        indexURL: indexUrl,
+        name: meta.label || rel.split('/').pop(),
+      };
+      const hdr = coverageTrackHeaders();
+      if (hdr) track.headers = hdr;
+      try {
+        coverageIgvBrowser = await igv.createBrowser(host, {
+          genome: (reviewCoverageContext && reviewCoverageContext.genome_id) || 'hg38',
+          locus,
+          tracks: [track],
+        });
+        const gotoLoc = ((locInp && locInp.value.trim()) || locus || '').trim();
+        if (gotoLoc && coverageIgvBrowser) {
+          try {
+            if (typeof coverageIgvBrowser.search === 'function') await coverageIgvBrowser.search(gotoLoc);
+            else if (typeof coverageIgvBrowser.goto === 'function') await coverageIgvBrowser.goto(gotoLoc);
+          } catch (eNav) {
+            /* e.g. Unsatisfiable range — surface once */
+            toast(eNav.message || 'IGV could not go to locus', false);
+          }
+        }
+      } catch (e) {
+        host.innerHTML =
+          '<p class="muted" style="padding:12px;color:var(--err)">IGV failed: ' +
+          escapeHtml(e.message || String(e)) +
+          '</p>';
+        toast(e.message || 'IGV failed', false);
+      }
+    }
+
+    async function coverageIgvGoto(locus) {
+      const loc = (locus || '').trim();
+      if (!loc) return;
+      if (!coverageIgvBrowser) {
+        toast('Load IGV first (Load / refresh)', false);
+        return;
+      }
+      try {
+        if (typeof coverageIgvBrowser.search === 'function') await coverageIgvBrowser.search(loc);
+        else if (typeof coverageIgvBrowser.goto === 'function') await coverageIgvBrowser.goto(loc);
+        else toast('IGV browser has no search/goto API', false);
+      } catch (e) {
+        toast(e.message || 'IGV navigation failed', false);
+      }
+    }
+
+    function coverageBedRegionsToLocus(regions) {
+      if (!regions || !regions.length) return null;
+      const chrom = regions[0].chrom;
+      const s = Math.min(...regions.map(r => Number(r.start)));
+      const e = Math.max(...regions.map(r => Number(r.end)));
+      if (!chrom || Number.isNaN(s) || Number.isNaN(e)) return null;
+      return `${chrom}:${s + 1}-${e}`;
+    }
+
+    async function runCoverageTabLookup() {
+      const inp = qs('coverageGeneInput');
+      const gene = ((inp && inp.value) || '').trim();
+      const st = qs('coverageLookupStatus');
+      const body = qs('coverageReportBody');
+      const oid = (reviewLoadedOrderId || (qs('reviewOrderSelect') && qs('reviewOrderSelect').value) || '').trim();
+      if (!oid) {
+        toast('Load an order first (Variants → Load)', false);
+        return;
+      }
+      if (!gene) {
+        toast('Enter a gene symbol', false);
+        return;
+      }
+      if (st) st.textContent = 'Loading…';
+      try {
+        const data = await apiGet(`/order/${encodeURIComponent(oid)}/gene-coverage/${encodeURIComponent(gene)}`);
+        if (body) body.innerHTML = renderGeneCoverageHtml(data);
+        if (st) st.textContent = '';
+        const locus = coverageBedRegionsToLocus(data && data.bed_regions) || gene;
+        const locInp = qs('coverageLocusInput');
+        if (locInp) locInp.value = locus;
+        if (coverageIgvBrowser) await coverageIgvGoto(locus);
+      } catch (e) {
+        if (body) body.innerHTML = '<p style="color:var(--err)">' + escapeHtml(e.message || 'Failed') + '</p>';
+        if (st) st.textContent = '';
+        toast(e.message || 'Coverage lookup failed', false);
+      }
+    }
+
+    function variantToCoverageLocus(v) {
+      const c = (v.chrom || '').trim();
+      const p = parseInt(String(v.pos || ''), 10);
+      if (!c || Number.isNaN(p)) return '';
+      const pad = 45;
+      const a = Math.max(1, p - pad);
+      const b = p + pad;
+      return `${c}:${a}-${b}`;
+    }
+
+    /** Narrow region so IGV shows alignments (avoids whole-chromosome blank track). */
+    function defaultCoverageIgvLocus() {
+      const vars = (reviewData && reviewData.variants) || [];
+      for (let i = 0; i < vars.length; i++) {
+        const z = variantToCoverageLocus(vars[i]);
+        if (z) return z;
+        const g = (vars[i].gene || '').trim();
+        if (g) return g;
+      }
+      return '';
+    }
+
+    function populateCoverageVariantSelect() {
+      const sel = qs('coverageVariantSelect');
+      if (!sel) return;
+      const vars = (reviewData && reviewData.variants) || [];
+      const opts = ['<option value="">— Select variant —</option>'];
+      vars.forEach(v => {
+        const vid = String(v.variant_id || '');
+        const lab = [v.gene, v.hgvsc || `${v.chrom}:${v.pos}`].filter(Boolean).join(' · ');
+        opts.push(`<option value=${JSON.stringify(vid)}>${escapeHtml(lab)}</option>`);
+      });
+      sel.innerHTML = opts.join('');
+    }
+
+    async function refreshReviewCoverageTab() {
+      wireReviewCoverageTabOnce();
+      populateCoverageVariantSelect();
+      const oid = (reviewLoadedOrderId || (qs('reviewOrderSelect') && qs('reviewOrderSelect').value) || '').trim();
+      const bamInfo = qs('coverageBamInfo');
+      if (!oid) {
+        if (bamInfo) bamInfo.textContent = '—';
+        reviewCoverageContext = null;
+        return;
+      }
+      try {
+        reviewCoverageContext = await apiGet(`/order/${encodeURIComponent(oid)}/coverage-context`);
+        const tracks = reviewCoverageContext.bam_tracks || [];
+        const msg = reviewCoverageContext.igv_bam_message;
+        const primary = pickCoverageOrderBamTrack();
+        if (bamInfo) {
+          if (msg)
+            bamInfo.innerHTML = '<span class="muted" style="line-height:1.45">' + escapeHtml(msg) + '</span>';
+          else if (primary && primary.label)
+            bamInfo.innerHTML =
+              '<strong style="color:var(--text)">' +
+              escapeHtml(primary.label) +
+              '</strong> <span class="muted">(auto)</span>';
+          else if (tracks.length)
+            bamInfo.textContent =
+              tracks.length +
+              ' exome-style BAM(s) found but none have a .bai beside them — IGV needs an index.';
+          else bamInfo.textContent = 'No exome-style BAM found under this order’s analysis/output paths.';
+        }
+      } catch (e) {
+        reviewCoverageContext = null;
+        if (bamInfo) bamInfo.textContent = '—';
+        const bb = qs('coverageReportBody');
+        if (bb)
+          bb.innerHTML =
+            '<p class="muted">Coverage context unavailable: ' + escapeHtml(e.message || '') + '</p>';
+      }
+    }
+
+    function wireReviewCoverageTabOnce() {
+      if (window._reviewCoverageWired) return;
+      window._reviewCoverageWired = true;
+      const lb = qs('coverageLookupBtn');
+      if (lb) lb.addEventListener('click', () => void runCoverageTabLookup());
+      const gi = qs('coverageGeneInput');
+      if (gi)
+        gi.addEventListener('keydown', e => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            void runCoverageTabLookup();
+          }
+        });
+      const igb = qs('coverageIgvLoadBtn');
+      if (igb)
+        igb.addEventListener('click', () => {
+          const loc = (qs('coverageLocusInput') && qs('coverageLocusInput').value.trim()) || '';
+          void startCoverageIgvBrowser(loc);
+        });
+      const gb = qs('coverageGotoLocusBtn');
+      if (gb)
+        gb.addEventListener('click', () => {
+          const loc = qs('coverageLocusInput') && qs('coverageLocusInput').value.trim();
+          void coverageIgvGoto(loc);
+        });
+      const vs = qs('coverageVariantSelect');
+      if (vs)
+        vs.addEventListener('change', () => {
+          const vid = vs.value;
+          if (!vid || !reviewData || !reviewData.variants) return;
+          const v = reviewData.variants.find(x => String(x.variant_id) === vid);
+          if (!v) return;
+          const locus = variantToCoverageLocus(v);
+          const locInp = qs('coverageLocusInput');
+          if (locInp) locInp.value = locus;
+          void coverageIgvGoto(locus);
+        });
     }
 
     // ── Variant Detail ──

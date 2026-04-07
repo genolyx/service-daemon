@@ -7,6 +7,8 @@ This project will contain the generalized service daemon.
    ```bash
    cp .env.integration .env
    # .env에서 CARRIER_SCREENING_PIPELINE_DIR, SGNIPT_PIPELINE_DIR 등 경로 확인
+   # Portal에서 Whole Exome / Health Screening 주문을 쓰려면 ENABLED_SERVICES에
+   # whole_exome, health_screening가 포함되어야 합니다 (예시 .env.integration 참고).
    ```
 
 2. **실행**

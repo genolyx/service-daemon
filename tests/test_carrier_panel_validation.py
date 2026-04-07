@@ -19,12 +19,12 @@ def test_extended_program_skips_panel_requirement():
     assert ok is True
 
 
-def test_known_panel_passes():
+def test_known_panel_passes(wes_test_catalog):
     pl = CarrierScreeningPlugin()
     ok, msg = pl.validate_params(
         {
             "carrier": {"test_category": "standard_carrier"},
-            "wes_panel_id": "carrier_demo_subset",
+            "wes_panel_id": "test_carrier_panel",
         }
     )
     assert ok is True, msg

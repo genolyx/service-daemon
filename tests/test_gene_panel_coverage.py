@@ -2,9 +2,12 @@
 
 import pytest
 
+from app.config import settings
 from app.models import Job
 from app.services import gene_panel_coverage as gpc
 from app.services.gene_panel_coverage import (
+    _exon_coverage_rows,
+    _exons_for_gene_from_gff,
     _merge_bed_regions_half_open,
     build_gene_panel_coverage_report,
     overlap_bp,
@@ -174,3 +177,64 @@ def test_api_route_exists():
 
     paths = [getattr(r, "path", None) for r in app.routes]
     assert any(p and "/gene-coverage/" in p for p in paths)
+
+
+def test_exons_from_gff_picks_most_exon_rich_transcript(tmp_path):
+    gff = tmp_path / "m.gff3"
+    gff.write_text(
+        "\n".join(
+            [
+                "##gff-version 3",
+                "chr1\t.\texon\t101\t200\t.\t.\t.\tParent=txB;gene=FOO;exon_number=1",
+                "chr1\t.\texon\t301\t400\t.\t.\t.\tParent=txA;gene=FOO;exon_number=1",
+                "chr1\t.\texon\t401\t500\t.\t.\t.\tParent=txA;gene=FOO;exon_number=2",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    ex, tid = _exons_for_gene_from_gff(str(gff.resolve()), "FOO")
+    assert tid == "txA"
+    assert len(ex) == 2
+    assert ex[0]["start"] == 300 and ex[0]["end"] == 400 and ex[0]["length_bp"] == 100
+    assert ex[1]["start"] == 400 and ex[1]["end"] == 500
+
+
+def test_exon_coverage_rows_without_mosdepth(tmp_path):
+    gff = tmp_path / "m.gff3"
+    gff.write_text(
+        "chr1\t.\texon\t2\t3\t.\t.\t.\tParent=t1;gene_name=BAR;exon_number=1\n",
+        encoding="utf-8",
+    )
+    ex, _tid = _exons_for_gene_from_gff(str(gff.resolve()), "BAR")
+    rows = _exon_coverage_rows(ex, None)
+    assert len(rows) == 1
+    assert rows[0]["coverage_quality"] == "unknown"
+    assert rows[0]["pct_bases_ge_20x"] is None
+    assert rows[0]["start"] == 1 and rows[0]["end"] == 3 and rows[0]["length_bp"] == 2
+
+
+def test_report_includes_exon_coverage_when_mane_gff_set(tmp_path, monkeypatch, wes_test_catalog):
+    tb = tmp_path / "t.bed"
+    tb.write_text("chr1\t1\t999\tATAD3\n", encoding="utf-8")
+    gff = tmp_path / "mane.gff3"
+    gff.write_text(
+        "chr1\t.\texon\t10\t19\t.\t.\t.\tParent=NM_fake;gene_name=ATAD3;exon_number=1\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(gpc, "_twist_exome_targets_bed", lambda _j: str(tb.resolve()))
+    monkeypatch.setattr(settings, "mane_gff", str(gff.resolve()))
+
+    job = Job(
+        order_id="ord_ex",
+        service_code="carrier_screening",
+        sample_name="sam",
+        work_dir="00",
+        params={"wes_panel_id": "test_carrier_panel"},
+    )
+    apply_wes_panel_to_job_params(job)
+    r = build_gene_panel_coverage_report(job, "ATAD3")
+    assert r.get("exon_coverage") is not None
+    ec = r["exon_coverage"]
+    assert ec["transcript_id"] == "NM_fake"
+    assert len(ec["exons"]) >= 1
+    assert ec["exons"][0]["chrom"] == "chr1"

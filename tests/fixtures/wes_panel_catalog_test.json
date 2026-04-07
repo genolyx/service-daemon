@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "panels": [
+    {
+      "id": "test_carrier_panel",
+      "label": "Test carrier panel (CI)",
+      "category": "carrier_screening",
+      "description": "Same shape as a typical carrier gene-list panel; disease_bed merge skipped when narrow_with_panel_bed is false.",
+      "disease_bed": "data/bed/Carrier_test.bed",
+      "interpretation_genes_file": "data/gene_lists/carrier_demo_genes.txt",
+      "narrow_with_panel_bed": false
+    }
+  ]
+}

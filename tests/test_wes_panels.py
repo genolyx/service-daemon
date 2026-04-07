@@ -1,7 +1,5 @@
 """WES/exome panel catalog (order-time BED selection)."""
 
-import os
-
 from app.services.wes_panels import (
     apply_wes_panel_to_job_params,
     get_panel_by_id,
@@ -15,31 +13,33 @@ from app.services.carrier_screening.plugin import _filter_variants_by_interpreta
 from app.models import Job
 
 
-def test_catalog_loads():
+def test_catalog_loads(wes_test_catalog):
     panels = list_panels()
     assert isinstance(panels, list)
-    assert any(p.get("id") == "carrier_demo_subset" for p in panels)
+    assert any(p.get("id") == "test_carrier_panel" for p in panels)
     # custom file may be empty; merged list still includes bundled
     assert any((p.get("_source") or "") in ("bundled", "custom") for p in panels)
 
 
-def test_get_panel():
-    p = get_panel_by_id("carrier_demo_subset")
+def test_get_panel(wes_test_catalog):
+    p = get_panel_by_id("test_carrier_panel")
     assert p is not None
     assert "disease_bed" in p
 
 
-def test_apply_sets_disease_bed():
+def test_apply_sets_disease_bed(wes_test_catalog):
     job = Job(
         order_id="x",
         service_code="carrier_screening",
         sample_name="x",
         work_dir="01",
-        params={"wes_panel_id": "carrier_demo_subset"},
+        params={"wes_panel_id": "test_carrier_panel"},
     )
     apply_wes_panel_to_job_params(job)
-    db = job.params.get("disease_bed")
-    assert db and os.path.isfile(db)
+    # Gene-list panels with narrow_with_panel_bed=false do not merge disease_bed into params.
+    assert job.params.get("panel_interpretation_genes")
+    assert job.params.get("panel_filter_after_analysis") is True
+    assert job.params.get("disease_bed") is None
 
 
 def test_api_payload_shape():

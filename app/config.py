@@ -529,8 +529,12 @@ class Settings(BaseSettings):
 
     # ─── Enabled Services ──────────────────────────────────
     enabled_services: str = Field(
-        default="carrier_screening,nipt,sgnipt",
-        description="Comma-separated list of enabled service codes"
+        default="carrier_screening,whole_exome,health_screening,nipt,sgnipt",
+        description=(
+            "Comma-separated list of enabled service codes. "
+            "Must include any code the portal exposes (e.g. whole_exome, health_screening) "
+            "or save/submit will return Unknown service_code."
+        ),
     )
 
     @field_validator("gemini_api_key", "acmg_ai_api_key", mode="before")

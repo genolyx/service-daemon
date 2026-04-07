@@ -19,7 +19,7 @@ the daemon environment.
 Example (panel lists from the running app):
   cd /path/to/service-daemon && PYTHONPATH=. python -c "
   from app.services.wes_panels import get_panel_by_id, resolve_panel_interpretation_genes
-  for pid in ('carrier_acmg2021_full', 'invitae_302'):
+  for pid in ('invitae_302',):
       g = resolve_panel_interpretation_genes(get_panel_by_id(pid) or {})
       open(f'/tmp/{pid}_genes.txt','w').write('\\n'.join(g))
   "

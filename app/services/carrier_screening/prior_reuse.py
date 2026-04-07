@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from ...config import normalize_legacy_carrier_container_path
 from ...models import Job, OrderStatus
@@ -68,6 +68,26 @@ def validate_prior_for_pipeline_reuse(prior: Job) -> Tuple[bool, str]:
             "prior order has no analysis/output directories on disk — run the full pipeline first",
         )
     return True, ""
+
+
+def prior_reuse_artifact_roots(job: Job) -> List[str]:
+    """
+    Directories from the completed prior order when ``_prior_reuse`` is set (panel reflex /
+    new order from existing). Used for mosdepth/BAM discovery and ``/order/.../file`` so
+    coverage and IGV resolve the same alignments as the source run.
+    """
+    if not (job.params or {}).get("_prior_reuse"):
+        return []
+    out: List[str] = []
+    for key in (
+        "_prior_reuse_analysis_dir",
+        "_prior_reuse_output_dir",
+        "_prior_reuse_log_dir",
+    ):
+        p = (job.params or {}).get(key)
+        if isinstance(p, str) and (pt := p.strip()) and os.path.isdir(pt):
+            out.append(pt)
+    return out
 
 
 def apply_carrier_prior_reuse_metadata(job: Job, prior: Job) -> None:

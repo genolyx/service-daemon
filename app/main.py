@@ -6,11 +6,13 @@ Service Daemon - FastAPI Application
 """
 
 import os
+import re
 import json
 import asyncio
 import glob
 import hmac
 import logging
+from urllib.parse import unquote, urlparse
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -40,6 +42,7 @@ from .annotation_resources import annotation_resource_report
 from .runner import get_runner
 from .platform_client import get_platform_client
 from .services import load_plugins, get_plugin, list_service_codes, get_all_plugins
+from .services.carrier_screening.prior_reuse import prior_reuse_artifact_roots
 
 logger = logging.getLogger(__name__)
 
@@ -1903,6 +1906,48 @@ async def get_order_gene_coverage(order_id: str, gene_symbol: str):
     return JSONResponse(content=report)
 
 
+@app.get("/order/{order_id}/coverage-context")
+async def get_order_coverage_context(order_id: str):
+    """
+    Portal **Coverage** tab: interpretation gene symbols (panel + extras) and BAM paths for IGV.js.
+    """
+    queue_manager = get_queue_manager()
+    job = queue_manager.get_job(order_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
+    if job.service_code not in _CARRIER_LIKE:
+        raise HTTPException(
+            status_code=400,
+            detail="Coverage context is only available for carrier_screening, whole_exome, and health_screening.",
+        )
+    from app.services.wes_panels import interpretation_gene_set_for_job
+
+    genes = sorted(interpretation_gene_set_for_job(job))
+    bams_all = _list_order_bam_tracks(job)
+    # Never offer paraphase / SMN / FMR1 / … as auto-IGV tracks — only genome-wide candidates.
+    bams_igv = [t for t in bams_all if not t.get("ancillary")]
+    ctx: Dict[str, Any] = {
+        "order_id": order_id,
+        "interpretation_genes": genes,
+        "bam_tracks": bams_igv,
+        "genome_id": "hg38",
+    }
+    if bams_all and not bams_igv:
+        ctx["igv_bam_message"] = (
+            "Only ancillary BAMs (e.g. paraphase) were found under this order; they are not used for auto-IGV. "
+            "Add the main exome BAM and .bai under analysis/output (or prior-reuse paths), or set "
+            "params.igv_bam to that BAM’s absolute path."
+        )
+    if (job.params or {}).get("_prior_reuse"):
+        pid = (job.params or {}).get("_prior_reuse_order_id")
+        if isinstance(pid, str) and pid.strip():
+            ctx["prior_reuse_order_id"] = pid.strip()
+    return JSONResponse(
+        content=ctx,
+        headers=_RESULT_JSON_CACHE_HEADERS,
+    )
+
+
 async def _dark_genes_review_impl(order_id: str, body: DarkGenesReviewRequest) -> Dict[str, Any]:
     """
     Save per-section **Approve**, **Notes**, and **Risk** (PDF title accent) for the Dark genes detailed report.
@@ -2360,8 +2405,13 @@ def _order_artifact_roots(job: Job) -> List[str]:
     For carrier-like services, ``carrier_report_output_dir`` is listed first when set so
     ``Report_*.pdf`` / ``report.json`` match Generate Report even when
     ``CARRIER_SCREENING_REPORT_OUTPUT_ROOT`` differs from ``job.output_dir``.
+
+    When ``_prior_reuse`` is set (reflex / new order from prior), the prior run's
+    analysis/output trees are prepended so BAMs, mosdepth, and ``/order/.../file`` match
+    the source sequencing run.
     """
     roots: List[str] = []
+    roots.extend(prior_reuse_artifact_roots(job))
     if (job.service_code or "").strip() in _CARRIER_LIKE:
         from .services.carrier_screening.plugin import carrier_report_output_dir
 
@@ -2413,7 +2463,448 @@ def _order_artifact_roots(job: Job) -> List[str]:
             continue
         seen.add(key)
         out.append(root)
+    # Dirs used for mosdepth / gene coverage (plugin dark_genes roots, etc.) — needed so
+    # BAM next to *.per-base.bed.gz resolves for /order/.../file and IGV.
+    try:
+        from .services.gene_panel_coverage import _coverage_search_roots
+
+        for root in _coverage_search_roots(job):
+            if not root:
+                continue
+            try:
+                key = os.path.realpath(root)
+            except OSError:
+                continue
+            if not os.path.isdir(root):
+                continue
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(root)
+    except Exception:
+        pass
     return out
+
+
+def _order_file_basename_from_path_or_url(path_or_url: Optional[str]) -> str:
+    """Bare filename from a local path or http(s) URL path component."""
+    if not path_or_url or not isinstance(path_or_url, str):
+        return ""
+    s = path_or_url.strip()
+    if s.lower().startswith(("http://", "https://")):
+        u = urlparse(s)
+        return unquote(os.path.basename((u.path or "").rstrip("/")))
+    return os.path.basename(s.replace("\\", "/"))
+
+
+def _fastq_basename_alignment_match_stems(name: str) -> List[str]:
+    """
+    Substrings likely shared with the primary BAM: strip FASTQ extensions, drop Illumina
+    read tokens, and add the prefix before _R1_/_R2_ (e.g. ..._S106 vs ..._R1_001_...).
+    """
+    out: List[str] = []
+    base = (name or "").strip()
+    if not base:
+        return out
+    low = base.lower()
+    for suf in (".fastq.gz", ".fq.gz", ".fastq", ".fq"):
+        if low.endswith(suf):
+            base = base[: -len(suf)].strip()
+            low = base.lower()
+            break
+
+    def add(stem: str) -> None:
+        stem = stem.strip().strip("._")
+        if len(stem) >= 12:
+            out.append(stem)
+
+    ubase = base.upper()
+    for marker in ("_R1_", "_R2_"):
+        ix = ubase.find(marker.upper())
+        if ix >= 12:
+            add(base[:ix])
+
+    stripped = re.sub(r"_R[12]_\d{3}(?=_|$)", "", base, flags=re.IGNORECASE).strip()
+    add(stripped)
+    slo = stripped.lower()
+    j = slo.find("_downsampled")
+    if j >= 12:
+        add(stripped[:j])
+
+    seen: set = set()
+    uniq: List[str] = []
+    for s in sorted(out, key=len, reverse=True):
+        k = s.lower()
+        if k not in seen:
+            seen.add(k)
+            uniq.append(s)
+    return uniq
+
+
+def _fastq_derived_bam_match_stems(job: Job) -> List[str]:
+    stems: List[str] = []
+    for raw in (job.fastq_r1_path, job.fastq_r2_path, job.fastq_r1_url, job.fastq_r2_url):
+        bn = _order_file_basename_from_path_or_url(raw)
+        stems.extend(_fastq_basename_alignment_match_stems(bn))
+    seen: set = set()
+    out: List[str] = []
+    for s in stems:
+        k = s.lower()
+        if k not in seen:
+            seen.add(k)
+            out.append(s)
+    out.sort(key=len, reverse=True)
+    return out
+
+
+def _order_bam_scan_path_ok(path: str) -> bool:
+    norm = path.replace("\\", "/").lower()
+    return "/env/" not in norm and "/viz_env/" not in norm
+
+
+def _order_bam_search_roots(job: Job) -> List[str]:
+    """
+    Roots to scan for BAMs. Prefer pipeline ``analysis_dir`` / ``output_dir`` before
+    ``carrier_report_output_dir`` so the primary exome/carrier alignments win over
+    incidental copies (e.g. ``no_dup.bam``) under the report mirror tree.
+    """
+    seen: set = set()
+    out: List[str] = []
+
+    def add(path: Optional[str]) -> None:
+        p = (path or "").strip()
+        if not p or not os.path.isdir(p):
+            return
+        try:
+            key = os.path.realpath(p)
+        except OSError:
+            return
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(p)
+
+    for p in prior_reuse_artifact_roots(job):
+        add(p)
+    add(job.analysis_dir)
+    add(job.output_dir)
+    for r in _order_artifact_roots(job):
+        add(r)
+    return out
+
+
+def _bam_basename_preference_rank(job: Job, basename: str) -> int:
+    """
+    Lower = better candidate for IGV primary track. Used as a tie-break within a root
+    and after root priority (analysis before report dir).
+    """
+    b = basename.lower()
+    # Match main alignments named after the sample or order id (e.g. exome_test.recal.bam).
+    for token in (job.sample_name, job.order_id):
+        t = (token or "").strip().lower().replace("-", "_")
+        if t and len(t) >= 2 and t in b.replace("-", "_"):
+            return 0
+    # FASTQ library name on the order often matches the dedup/recal BAM stem.
+    for stem in _fastq_derived_bam_match_stems(job):
+        if stem.lower() in b:
+            return 0
+    if any(tok in b for tok in ("markdup", "mkdup", "recalibrated", "bqsr")):
+        return 1
+    # SMN1/2 or other small-region merges — not genome-wide exome BAMs for IGV.
+    if "smn_combined" in b or "smn_merged" in b:
+        return 8
+    if b.startswith(("smn1.", "smn2.", "smn1_", "smn2_")):
+        return 8
+    # FMR1 / Fragile-X / expansion-hunter realignments (targeted), not primary exome BAM.
+    if "eh_realigned" in b or "fmr1" in b:
+        return 8
+    if "fragile" in b or "frax" in b:
+        return 8
+    # Paraphase / phasing extracts — tiny footprint vs genome-wide exome BAM.
+    if "paraphase" in b:
+        return 8
+    if any(tok in b for tok in ("no_dup", "nodup", "no-dup", "pre_dedup", "before_dedup")):
+        return 6
+    return 3
+
+
+def _bam_path_sort_key(job: Job, fp: str) -> Tuple[int, float]:
+    rank = _bam_basename_preference_rank(job, os.path.basename(fp))
+    try:
+        mtime = os.path.getmtime(fp)
+    except OSError:
+        mtime = 0.0
+    return (rank, -mtime)
+
+
+def _safe_mtime(path: str) -> float:
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
+
+def _mosdepth_per_base_stem(per_base_basename: str) -> str:
+    for suf in (
+        ".mosdepth.global.per-base.bed.gz",
+        ".mosdepth.per-base.bed.gz",
+        ".global.per-base.bed.gz",
+        ".per-base.bed.gz",
+    ):
+        if per_base_basename.endswith(suf):
+            return per_base_basename[: -len(suf)]
+    return ""
+
+
+def _bam_paths_in_dir_sharing_mosdepth_stem(dir_path: str, stem: str) -> List[str]:
+    if not stem or not os.path.isdir(dir_path):
+        return []
+    out_paths: List[str] = []
+    sl = stem.lower()
+    try:
+        for fn in os.listdir(dir_path):
+            low = fn.lower()
+            if not low.endswith(".bam"):
+                continue
+            fp = os.path.join(dir_path, fn)
+            if not os.path.isfile(fp):
+                continue
+            base = fn[: -4]
+            bl = base.lower()
+            if bl == sl or base.startswith(stem + ".") or base.startswith(stem + "_"):
+                out_paths.append(fp)
+    except OSError:
+        return []
+    seen_rp: set = set()
+    uniq_paths: List[str] = []
+    for p in out_paths:
+        try:
+            rp = os.path.realpath(p)
+        except OSError:
+            rp = p
+        if rp in seen_rp:
+            continue
+        seen_rp.add(rp)
+        uniq_paths.append(p)
+    return uniq_paths
+
+
+def _order_file_rel_from_abs_bam(job: Job, bam_abs: str) -> Optional[Dict[str, Any]]:
+    """Build track dict for ``/order/{{id}}/file/{{rel}}`` if the BAM sits under a known root."""
+    try:
+        bam_abs = os.path.realpath(bam_abs)
+    except OSError:
+        return None
+    if not os.path.isfile(bam_abs) or not bam_abs.lower().endswith(".bam"):
+        return None
+    for root in _order_artifact_roots(job):
+        try:
+            root_r = os.path.realpath(root)
+        except OSError:
+            continue
+        if not (bam_abs == root_r or bam_abs.startswith(root_r + os.sep)):
+            continue
+        try:
+            rel = os.path.relpath(bam_abs, root).replace("\\", "/")
+        except ValueError:
+            continue
+        if ".." in rel:
+            continue
+        bai = bam_abs + ".bai"
+        index_rel: Optional[str] = None
+        if os.path.isfile(bai):
+            try:
+                index_rel = os.path.relpath(bai, root).replace("\\", "/")
+            except ValueError:
+                index_rel = None
+        return {
+            "rel_path": rel,
+            "label": os.path.basename(bam_abs),
+            "has_index": bool(index_rel),
+            "index_rel_path": index_rel,
+        }
+    return None
+
+
+def _pick_best_bam_path_for_igv(
+    job: Job, paths: List[str], *, allow_ancillary_fallback: bool = False
+) -> Optional[str]:
+    """
+    Pick one BAM path. By default, returns None if only ``rank >= 8`` (paraphase / SMN / …)
+    candidates exist — caller should widen search instead of auto-loading an ancillary BAM.
+    """
+    if not paths:
+        return None
+    with_bai = [p for p in paths if os.path.isfile(p + ".bai")]
+    pool = with_bai if with_bai else paths
+    if not pool:
+        return None
+    non_anc = [p for p in pool if _bam_basename_preference_rank(job, os.path.basename(p)) < 8]
+    use = non_anc if non_anc else (pool if allow_ancillary_fallback else [])
+    if not use:
+        return None
+    use.sort(
+        key=lambda p: (
+            _bam_basename_preference_rank(job, os.path.basename(p)),
+            -_safe_mtime(p),
+        )
+    )
+    return use[0]
+
+
+def _igv_bam_track_from_explicit_param(job: Job) -> Optional[Dict[str, Any]]:
+    raw = (job.params or {}).get("igv_bam")
+    if raw is None:
+        car = (job.params or {}).get("carrier")
+        if isinstance(car, dict):
+            raw = car.get("igv_bam")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    p = os.path.abspath(os.path.normpath(raw.strip()))
+    if not os.path.isfile(p):
+        return None
+    return _order_file_rel_from_abs_bam(job, p)
+
+
+def _igv_bam_track_from_mosdepth_sibling(job: Job) -> Optional[Dict[str, Any]]:
+    try:
+        from .services.gene_panel_coverage import _coverage_search_roots, _find_mosdepth_per_base_bed
+    except Exception:
+        return None
+    roots = _coverage_search_roots(job)
+    pb = _find_mosdepth_per_base_bed(roots)
+    if not pb or not os.path.isfile(pb):
+        return None
+    stem = _mosdepth_per_base_stem(os.path.basename(pb))
+    if len(stem) < 2:
+        return None
+    d = os.path.dirname(pb)
+    for _ in range(5):
+        cands = _bam_paths_in_dir_sharing_mosdepth_stem(d, stem)
+        best = _pick_best_bam_path_for_igv(job, cands, allow_ancillary_fallback=False)
+        if best:
+            return _order_file_rel_from_abs_bam(job, best)
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    return None
+
+
+def _list_order_bam_tracks_glob(job: Job, cap: int) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    seen_real: set = set()
+    for root in _order_bam_search_roots(job):
+        if len(out) >= cap:
+            break
+        if not root or not os.path.isdir(root):
+            continue
+        try:
+            matches = glob.glob(os.path.join(root, "**", "*.bam"), recursive=True)
+        except Exception:
+            continue
+        matches = [p for p in matches if os.path.isfile(p) and _order_bam_scan_path_ok(p)]
+        try:
+            matches.sort(key=lambda p: _bam_path_sort_key(job, p))
+        except Exception:
+            pass
+        for fp in matches:
+            if len(out) >= cap:
+                break
+            try:
+                rk = os.path.realpath(fp)
+            except OSError:
+                continue
+            if rk in seen_real:
+                continue
+            seen_real.add(rk)
+            try:
+                rel = os.path.relpath(fp, root).replace("\\", "/")
+            except ValueError:
+                continue
+            if ".." in rel:
+                continue
+            bai = fp + ".bai"
+            index_rel: Optional[str] = None
+            if os.path.isfile(bai):
+                try:
+                    index_rel = os.path.relpath(bai, root).replace("\\", "/")
+                except ValueError:
+                    index_rel = None
+            lab = os.path.basename(fp)
+            rk = _bam_basename_preference_rank(job, lab)
+            out.append(
+                {
+                    "rel_path": rel,
+                    "label": lab,
+                    "has_index": bool(index_rel),
+                    "index_rel_path": index_rel,
+                    "ancillary": rk >= 8,
+                }
+            )
+    try:
+        out.sort(
+            key=lambda t: (
+                1 if t.get("ancillary") else 0,
+                _bam_basename_preference_rank(job, (t.get("label") or "")),
+            )
+        )
+    except Exception:
+        pass
+    return out
+
+
+def _annotate_bam_track_ancillary(job: Job, track: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not track:
+        return None
+    t = dict(track)
+    lab = t.get("label") or ""
+    t["ancillary"] = _bam_basename_preference_rank(job, lab) >= 8
+    return t
+
+
+def _list_order_bam_tracks(job: Job, cap: int = 32) -> List[Dict[str, Any]]:
+    """
+    BAM list for IGV: (1) optional ``params.igv_bam`` or ``params.carrier.igv_bam`` absolute path,
+    (2) BAM in the same folder as indexed mosdepth ``*.per-base.bed.gz`` (matching file stem),
+    (3) recursive scan with filename heuristics (FASTQ stem, markdup, deprioritize SMN/FMR1/paraphase).
+
+    Each entry may include ``ancillary: true`` for paraphase / SMN / FMR1 / … — the portal skips these
+    for auto-IGV when a non-ancillary indexed BAM exists.
+    """
+    primary: Optional[Dict[str, Any]] = None
+    ex = _igv_bam_track_from_explicit_param(job)
+    if ex and ex.get("has_index"):
+        primary = ex
+    else:
+        md = _igv_bam_track_from_mosdepth_sibling(job)
+        if md and md.get("has_index"):
+            primary = md
+    rest = _list_order_bam_tracks_glob(job, cap)
+    if not primary:
+        return rest
+    primary = _annotate_bam_track_ancillary(job, primary)
+    p_full = _resolve_order_artifact_path(job, str(primary.get("rel_path") or ""))
+    try:
+        p_key = os.path.realpath(p_full) if p_full else None
+    except OSError:
+        p_key = None
+    if not p_key:
+        return [primary] + rest[: cap - 1]
+    filtered: List[Dict[str, Any]] = []
+    for t in rest:
+        rel = (t.get("rel_path") or "").strip()
+        if not rel:
+            continue
+        other = _resolve_order_artifact_path(job, rel)
+        try:
+            ok = os.path.realpath(other) if other else None
+        except OSError:
+            ok = None
+        if ok and ok == p_key:
+            continue
+        filtered.append(t)
+    return [primary] + filtered[: cap - 1]
 
 
 @app.get("/order/{order_id}/files")

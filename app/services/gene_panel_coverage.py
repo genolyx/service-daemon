@@ -10,6 +10,7 @@ the HGNC symbol. Optionally scans pipeline output for per-gene depth sidecars.
 from __future__ import annotations
 
 import csv
+import functools
 import glob
 import gzip
 import json
@@ -18,6 +19,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from ..config import settings
 from ..models import Job
 from .wes_panels import get_panel_by_id, interpretation_gene_set_for_job
 
@@ -29,6 +31,9 @@ _GENE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,24}$")
 
 # Depth thresholds for gene ∩ mosdepth (and sidecar column names pct_bases_ge_{n}x)
 _GENE_DEPTH_THRESHOLDS: Tuple[int, ...] = (10, 20, 50, 100)
+
+# Per-exon ≥20× % at or above this → coverage_quality "good"; else "low"
+_EXON_GOOD_MIN_PCT_GE_20: float = 80.0
 
 # mosdepth per-base: chrom, start, end, depth (BED intervals, depth constant on each segment)
 _MOSDEPTH_PER_BASE_PATTERNS = (
@@ -100,6 +105,48 @@ def _find_mosdepth_per_base_bed(roots: List[str]) -> Optional[str]:
     return candidates[0][1]
 
 
+def _interval_mosdepth_ge_counts(
+    tb: Any,
+    chrom: str,
+    g0: int,
+    g1: int,
+    thresholds: Tuple[int, ...],
+) -> Tuple[int, Dict[int, float]]:
+    """
+    Accumulate base counts overlapping [g0,g1) from tabix-open mosdepth per-base BED.
+    Returns (total_assessed_bp, per-threshold bases at depth ≥ t).
+    """
+    ge_counts: Dict[int, float] = {t: 0.0 for t in thresholds}
+    total_bp = 0
+    for ctry in _chrom_name_variants(chrom):
+        try:
+            row_n = 0
+            for row in tb.fetch(ctry, g0, g1):
+                row_n += 1
+                parts = row.strip().split("\t")
+                if len(parts) < 4:
+                    continue
+                try:
+                    s = int(parts[1])
+                    e = int(parts[2])
+                    d = float(parts[3])
+                except (ValueError, TypeError):
+                    continue
+                L = overlap_bp(g0, g1, s, e)
+                if L <= 0:
+                    continue
+                total_bp += L
+                for t in thresholds:
+                    if d >= t:
+                        ge_counts[t] += L
+            if row_n > 0:
+                break
+        except Exception as e:
+            logger.debug("[gene_panel_coverage] tabix fetch %s %s-%s: %s", ctry, g0, g1, e)
+            continue
+    return total_bp, ge_counts
+
+
 def _pct_bases_ge_depths_from_per_base(
     regions: List[Dict[str, Any]],
     per_base_gz: str,
@@ -124,9 +171,8 @@ def _pct_bases_ge_depths_from_per_base(
         logger.debug("[gene_panel_coverage] TabixFile open failed %s: %s", per_base_gz, e)
         return None
 
-    # total bases per threshold (same total for all)
     total_bp = 0
-    ge_counts = {t: 0 for t in thresholds}
+    ge_counts: Dict[int, float] = {t: 0.0 for t in thresholds}
 
     try:
         for reg in regions:
@@ -135,34 +181,10 @@ def _pct_bases_ge_depths_from_per_base(
             if g1 <= g0:
                 continue
             chrom = str(reg.get("chrom") or "").strip()
-            for ctry in _chrom_name_variants(chrom):
-                try:
-                    row_n = 0
-                    for row in tb.fetch(ctry, g0, g1):
-                        row_n += 1
-                        parts = row.strip().split("\t")
-                        if len(parts) < 4:
-                            continue
-                        try:
-                            s = int(parts[1])
-                            e = int(parts[2])
-                            d = float(parts[3])
-                        except (ValueError, TypeError):
-                            continue
-                        L = overlap_bp(g0, g1, s, e)
-                        if L <= 0:
-                            continue
-                        total_bp += L
-                        for t in thresholds:
-                            if d >= t:
-                                ge_counts[t] += L
-                    if row_n > 0:
-                        break
-                except Exception as e:
-                    logger.debug("[gene_panel_coverage] tabix fetch %s %s-%s: %s", ctry, g0, g1, e)
-                    continue
-            else:
-                continue
+            sub_tot, sub_ge = _interval_mosdepth_ge_counts(tb, chrom, g0, g1, thresholds)
+            total_bp += sub_tot
+            for t in thresholds:
+                ge_counts[t] += sub_ge[t]
     finally:
         try:
             if tb is not None:
@@ -181,6 +203,203 @@ def _pct_bases_ge_depths_from_per_base(
     for t in thresholds:
         pct = round(100.0 * float(ge_counts[t]) / float(total_bp), 2)
         out[f"pct_bases_ge_{t}x"] = pct
+    return out
+
+
+def _parse_gff3_attributes(attr_field: str) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    for part in (attr_field or "").strip().split(";"):
+        part = part.strip()
+        if not part or "=" not in part:
+            continue
+        k, v = part.split("=", 1)
+        k, v = k.strip(), v.strip().strip('"')
+        if k:
+            out[k] = v
+    return out
+
+
+def _gff_gene_symbol_matches(attrs: Dict[str, str], gene_upper: str) -> bool:
+    for key in ("Gene", "gene", "gene_name", "GeneName"):
+        v = attrs.get(key)
+        if not v:
+            continue
+        tok = v.split(",")[0].strip().upper()
+        if tok == gene_upper:
+            return True
+    return False
+
+
+def _exons_for_gene_from_gff(gff_path: str, gene: str) -> Tuple[List[Dict[str, Any]], str]:
+    """
+    Parse RefSeq / MANE-style genomic GFF for *gene* exons.
+
+    Groups by ``Parent`` (transcript), picks the transcript with the most exons (tie: largest
+    total exonic span). Coordinates converted to 0-based half-open BED for mosdepth.
+
+    Returns (exon_rows_sorted, chosen_transcript_id). Exon rows have keys:
+    chrom, start, end, length_bp, gff_exon_number (optional str), transcript_id.
+    """
+    g = normalize_gene_symbol(gene)
+    if not g or not os.path.isfile(gff_path):
+        return [], ""
+
+    by_parent: Dict[str, List[Dict[str, Any]]] = {}
+    opener = gzip.open if gff_path.endswith(".gz") else open
+    try:
+        with opener(gff_path, "rt", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) < 9:
+                    continue
+                ftype = (parts[2] or "").strip().lower()
+                if ftype != "exon":
+                    continue
+                attrs = _parse_gff3_attributes(parts[8])
+                if not _gff_gene_symbol_matches(attrs, g):
+                    continue
+                parent = (attrs.get("Parent") or attrs.get("parent") or "").strip()
+                if not parent:
+                    continue
+                chrom = (parts[0] or "").strip()
+                try:
+                    gff_start = int(parts[3])
+                    gff_end = int(parts[4])
+                except (ValueError, TypeError):
+                    continue
+                if gff_end < gff_start:
+                    continue
+                bed_start = gff_start - 1
+                bed_end = gff_end
+                exon_num = attrs.get("exon_number") or attrs.get("ExonNumber") or ""
+                by_parent.setdefault(parent, []).append(
+                    {
+                        "chrom": chrom,
+                        "start": bed_start,
+                        "end": bed_end,
+                        "length_bp": max(0, bed_end - bed_start),
+                        "gff_exon_number": exon_num,
+                        "transcript_id": parent,
+                    }
+                )
+    except OSError as e:
+        logger.warning("[gene_panel_coverage] Cannot read GFF %s: %s", gff_path, e)
+        return [], ""
+
+    if not by_parent:
+        return [], ""
+
+    def transcript_score(pid: str) -> Tuple[int, int]:
+        xs = by_parent[pid]
+        span = sum(int(x["length_bp"]) for x in xs)
+        return (len(xs), span)
+
+    best_tid = max(by_parent.keys(), key=transcript_score)
+    exons = by_parent[best_tid]
+    exons.sort(key=lambda x: (x["chrom"], int(x["start"]), int(x["end"])))
+    return exons, best_tid
+
+
+def _exon_coverage_from_mosdepth(
+    exons: List[Dict[str, Any]],
+    per_base_gz: str,
+    thresholds: Tuple[int, ...] = _GENE_DEPTH_THRESHOLDS,
+) -> List[Dict[str, Any]]:
+    """Per-exon mosdepth stats + coverage_quality from ≥20× %."""
+    if not exons or not per_base_gz or not os.path.isfile(per_base_gz + ".tbi"):
+        return []
+    try:
+        import pysam
+    except ImportError:
+        return []
+
+    try:
+        tb = pysam.TabixFile(per_base_gz)
+    except Exception as e:
+        logger.debug("[gene_panel_coverage] TabixFile open exon pass %s: %s", per_base_gz, e)
+        return []
+
+    out: List[Dict[str, Any]] = []
+    try:
+        for i, ex in enumerate(exons, start=1):
+            g0, g1 = int(ex["start"]), int(ex["end"])
+            chrom = str(ex.get("chrom") or "").strip()
+            if g1 <= g0:
+                continue
+            tot, ge = _interval_mosdepth_ge_counts(tb, chrom, g0, g1, thresholds)
+            row: Dict[str, Any] = {
+                "exon_index": i,
+                "exon_label": (ex.get("gff_exon_number") or "").strip() or str(i),
+                "chrom": chrom,
+                "start": g0,
+                "end": g1,
+                "length_bp": g1 - g0,
+            }
+            if tot <= 0:
+                row["total_bases_assessed"] = 0
+                for t in thresholds:
+                    row[f"pct_bases_ge_{t}x"] = None
+                row["coverage_quality"] = "unknown"
+            else:
+                row["total_bases_assessed"] = int(tot)
+                p20: Optional[float] = None
+                for t in thresholds:
+                    pct = round(100.0 * float(ge[t]) / float(tot), 2)
+                    row[f"pct_bases_ge_{t}x"] = pct
+                    if t == 20:
+                        p20 = pct
+                if p20 is None:
+                    row["coverage_quality"] = "unknown"
+                elif p20 >= _EXON_GOOD_MIN_PCT_GE_20:
+                    row["coverage_quality"] = "good"
+                else:
+                    row["coverage_quality"] = "low"
+            out.append(row)
+    finally:
+        try:
+            tb.close()
+        except Exception:
+            pass
+    return out
+
+
+def _exon_coverage_rows(
+    exons: List[Dict[str, Any]],
+    per_base_gz: Optional[str],
+    thresholds: Tuple[int, ...] = _GENE_DEPTH_THRESHOLDS,
+) -> List[Dict[str, Any]]:
+    """
+    One row per GFF exon: mosdepth stats when per-base+.tbi exists, else coordinates with
+    coverage_quality ``unknown`` and null depth %.
+    """
+    if not exons:
+        return []
+    if per_base_gz and os.path.isfile(per_base_gz + ".tbi"):
+        md_rows = _exon_coverage_from_mosdepth(exons, per_base_gz, thresholds)
+        if md_rows:
+            return md_rows
+    out: List[Dict[str, Any]] = []
+    for i, ex in enumerate(exons, start=1):
+        g0, g1 = int(ex["start"]), int(ex["end"])
+        chrom = str(ex.get("chrom") or "").strip()
+        if g1 <= g0:
+            continue
+        row: Dict[str, Any] = {
+            "exon_index": i,
+            "exon_label": (ex.get("gff_exon_number") or "").strip() or str(i),
+            "chrom": chrom,
+            "start": g0,
+            "end": g1,
+            "length_bp": g1 - g0,
+            "total_bases_assessed": 0,
+            "coverage_quality": "unknown",
+        }
+        for t in thresholds:
+            row[f"pct_bases_ge_{t}x"] = None
+        out.append(row)
     return out
 
 
@@ -326,6 +545,14 @@ def _coverage_search_roots(job: Job) -> List[str]:
             return
         seen.add(r)
         roots.append(os.path.abspath(path))
+
+    try:
+        from .carrier_screening.prior_reuse import prior_reuse_artifact_roots
+
+        for pr in prior_reuse_artifact_roots(job):
+            add(pr)
+    except Exception as e:
+        logger.debug("[gene_panel_coverage] prior_reuse_artifact_roots: %s", e)
 
     if job.service_code in _CARRIER_LIKE:
         try:
@@ -633,11 +860,11 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
     roots = _coverage_search_roots(job)
     per_gene = _scan_per_gene_depth(roots, gene)
 
+    pb = _find_mosdepth_per_base_bed(roots)
+
     gene_depth_thresholds: Optional[Dict[str, Any]] = None
-    if regions:
-        pb = _find_mosdepth_per_base_bed(roots)
-        if pb:
-            gene_depth_thresholds = _pct_bases_ge_depths_from_per_base(regions, pb)
+    if regions and pb:
+        gene_depth_thresholds = _pct_bases_ge_depths_from_per_base(regions, pb)
 
     if gene_depth_thresholds is None and per_gene:
         p10 = per_gene.get("pct_bases_ge_10x")
@@ -657,6 +884,21 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
                 gene_depth_thresholds["pct_bases_ge_50x"] = p50
             if p100 is not None:
                 gene_depth_thresholds["pct_bases_ge_100x"] = p100
+
+    exon_coverage: Optional[Dict[str, Any]] = None
+    if job.service_code in _CARRIER_LIKE:
+        gff_path = (settings.mane_gff or "").strip()
+        if gff_path and os.path.isfile(gff_path):
+            exons_raw, transcript_id = _exons_for_gene_from_gff(gff_path, gene)
+            if transcript_id and exons_raw:
+                exon_rows = _exon_coverage_rows(exons_raw, pb)
+                if exon_rows:
+                    exon_coverage = {
+                        "source_gff": gff_path,
+                        "transcript_id": transcript_id,
+                        "quality_rule_ge_20x_pct_min": _EXON_GOOD_MIN_PCT_GE_20,
+                        "exons": exon_rows,
+                    }
 
     notes: List[str] = []
     if job.service_code in _CARRIER_LIKE:
@@ -684,6 +926,12 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
             "(*mosdepth*.per-base.bed.gz + .tbi) under analysis/output, or a sidecar with pct_bases_10x / 20x / 50x / 100x."
         )
 
+    if exon_coverage:
+        notes.append(
+            "Per-exon rows use **MANE/Reference genomic GFF** (``MANE_GFF``): one transcript per gene chosen as the most exon-rich. "
+            f"**good** / **low** uses % of bases in each exon at ≥20× mosdepth: ≥{_EXON_GOOD_MIN_PCT_GE_20:g}% → good; else low; **unknown** if the exon has no overlapping mosdepth data."
+        )
+
     return {
         "gene": gene,
         "order_id": job.order_id,
@@ -704,5 +952,6 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
         "global_qc_coverage": global_cov,
         "per_gene_depth": per_gene,
         "gene_depth_thresholds": gene_depth_thresholds,
+        "exon_coverage": exon_coverage,
         "notes": notes,
     }

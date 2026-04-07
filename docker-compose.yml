@@ -22,7 +22,9 @@ services:
       - path: .env
         required: false
 
+    # Overrides env_file so ENABLED_SERVICES always matches the portal (health_screening, whole_exome, …).
     environment:
+      ENABLED_SERVICES: carrier_screening,whole_exome,health_screening,sgnipt
       CARRIER_SCREENING_HOST: ${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}
 
     command: /bin/sh -c "uvicorn app.main:app --host 0.0.0.0 --port $${APP_PORT:-8000} --no-access-log"

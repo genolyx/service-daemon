@@ -3,6 +3,7 @@
 import pytest
 
 from app.models import Job
+from app.services import gene_panel_coverage as gpc
 from app.services.gene_panel_coverage import build_gene_panel_coverage_report, overlap_bp
 from app.services.wes_panels import apply_wes_panel_to_job_params
 
@@ -154,6 +155,33 @@ def test_per_gene_depth_sidecar(wes_test_catalog, tmp_path):
     r = build_gene_panel_coverage_report(job, "ATAD3")
     assert r["per_gene_depth"] is not None
     assert r["per_gene_depth"]["mean_coverage"] == pytest.approx(88.5)
+
+
+def test_carrier_sequencing_targets_bed_uses_capture_panel_dir(tmp_path, monkeypatch):
+    """Gene coverage must prefer data/bed/<panel>/targets.bed (run_analysis --backbone-bed), not backbone*.bed."""
+    bed_dir = tmp_path / "data" / "bed" / "twist-exome2"
+    bed_dir.mkdir(parents=True)
+    targets = bed_dir / "targets.bed"
+    targets.write_text("chr12\t1\t100\tPAH\n", encoding="utf-8")
+
+    class FakePl:
+        def _resolve_capture_panel_bed(self, capture_panel_id: str):
+            p = tmp_path / "data" / "bed" / capture_panel_id / "targets.bed"
+            return str(p) if p.is_file() else None
+
+        def _run_analysis_data_dir(self):
+            return str(tmp_path)
+
+    monkeypatch.setattr("app.services.get_plugin", lambda _code: FakePl())
+
+    job = Job(
+        order_id="ord_seq",
+        service_code="carrier_screening",
+        sample_name="sam",
+        work_dir="00",
+        params={"carrier": {"capture_panel_id": "twist-exome2"}},
+    )
+    assert gpc._carrier_sequencing_targets_bed(job) == str(targets.resolve())
 
 
 def test_api_route_exists():

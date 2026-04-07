@@ -678,14 +678,56 @@ def _scan_per_gene_depth(roots: List[str], gene: str) -> Optional[Dict[str, Any]
     return None
 
 
+_TWIST_EXOME2_BUILTIN_BED = (
+    "Twist_Exome2.0_plus_Comprehensive_Exome_Spikein_targets_covered_annotated_hg38.bed"
+)
+
+
+def _carrier_sequencing_targets_bed(job: Job) -> Optional[str]:
+    """
+    Capture / variant-calling targets: ``data/bed/<capture_panel_id>/targets.bed`` — **same** as
+    ``run_analysis.sh --backbone-bed`` (see ``CarrierScreeningPlugin._resolve_capture_panel_bed``).
+
+    This is distinct from ``_resolve_carrier_bed(..., \"backbone\")`` (``backbone*.bed`` + params),
+    which often resolves to **Carrier_ACMG2021.bed** on disk. That file is a **clinical gene list**,
+    not the Twist exome probe footprint — using it for depth ∩ mosdepth yields huge PAH windows
+    and ~few % ≥20× even when exonic sites show 70×+ in the variant table.
+
+    We do **not** re-scan BAMs here; mosdepth already summarized read depth. Wrong BED × correct
+    mosdepth still gives misleading percentages.
+    """
+    if job.service_code not in _CARRIER_LIKE:
+        return None
+    try:
+        from . import get_plugin
+
+        pl = get_plugin(job.service_code)
+        if pl is None:
+            return None
+        carrier = (job.params or {}).get("carrier") or {}
+        capture_panel = (carrier.get("capture_panel_id") or "").strip() or "twist-exome2"
+        resolve_cap = getattr(pl, "_resolve_capture_panel_bed", None)
+        if callable(resolve_cap):
+            path = resolve_cap(capture_panel)
+            if path and os.path.isfile(path):
+                return path
+        run_dd = getattr(pl, "_run_analysis_data_dir", None)
+        if not callable(run_dd):
+            return None
+        bed_dir = os.path.join(run_dd(), "data", "bed")
+        longp = os.path.join(bed_dir, _TWIST_EXOME2_BUILTIN_BED)
+        if os.path.isfile(longp):
+            return longp
+        return None
+    except Exception as e:
+        logger.debug("[gene_panel_coverage] sequencing targets bed: %s", e)
+        return None
+
+
 def _carrier_pipeline_backbone_bed(job: Job) -> Optional[str]:
     """
-    Backbone BED path as used by carrier ``process_results`` / Nextflow: ``job.params`` → settings
-    default → first ``data/bed/backbone*.bed`` under pipeline / layout trees.
-
-    Gene coverage previously skipped that last fallback, so capture targets were missing and
-    depth % was computed over huge clinical disease intervals (often mostly off-kit) — contradicting
-    high per-variant depth in the variant table.
+    Legacy ``backbone*.bed`` + params resolution (``process_results`` BED filter). Used only when
+    ``targets.bed``-style capture panel path is missing.
     """
     if job.service_code not in _CARRIER_LIKE:
         return None
@@ -735,10 +777,16 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
     dis_path, dis_src = _explicit_disease_bed_path(job, panel)
     bb_path, bb_src = _effective_backbone_bed_path(job, panel)
     used_carrier_pipeline_backbone = False
-    pl_bb = _carrier_pipeline_backbone_bed(job)
-    if pl_bb:
-        bb_path, bb_src = pl_bb, "carrier_pipeline.backbone_bed"
-        used_carrier_pipeline_backbone = True
+    used_sequencing_capture_panel = False
+    seq_targets = _carrier_sequencing_targets_bed(job)
+    if seq_targets:
+        bb_path, bb_src = seq_targets, "carrier_sequencing.targets_bed"
+        used_sequencing_capture_panel = True
+    else:
+        pl_bb = _carrier_pipeline_backbone_bed(job)
+        if pl_bb:
+            bb_path, bb_src = pl_bb, "carrier_pipeline.backbone_bed"
+            used_carrier_pipeline_backbone = True
     r_bb = _bed_intervals_for_gene(bb_path or "", gene) if bb_path else []
     r_dis = _bed_intervals_for_gene(dis_path or "", gene) if dis_path else []
 
@@ -842,10 +890,16 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
             "(check chromosome naming chr* vs numeric, or disjoint designs). Depth is still computed on full disease intervals and may look worse than on-target reality."
         )
 
-    if used_carrier_pipeline_backbone:
+    if used_sequencing_capture_panel:
         notes.append(
-            "Capture (backbone) BED was resolved with the **same rules as the carrier pipeline** (job params → settings default → "
-            "data/bed/backbone*.bed under gx-exome / carrier layout). Panel JSON often omits backbone_bed; without this fallback, depth %% was computed on huge clinical disease intervals and could disagree with per-variant depth."
+            "Depth intervals use **sequencing capture targets** (``…/data/bed/<capture_panel_id>/targets.bed``), "
+            "the same class of file as ``run_analysis.sh --backbone-bed`` — not the ACMG clinical disease BED. "
+            "Percentages come from **precomputed mosdepth** segments intersected with those intervals (BAM is not re-read here)."
+        )
+    elif used_carrier_pipeline_backbone:
+        notes.append(
+            "Capture BED fell back to **carrier backbone resolution** (params / settings / data/bed/backbone*.bed). "
+            "Prefer installing ``data/bed/twist-exome2/targets.bed`` (or your panel folder) so stats match the exome kit."
         )
 
     if gene_depth_thresholds and gene_depth_thresholds.get("method") == "mosdepth_per_base_tabix":

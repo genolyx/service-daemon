@@ -40,9 +40,9 @@ services:
       # Host app + portal → pick up Python/UI changes without rebuilding the image.
       - ./app:/app/app:ro
       - ./portal:/app/portal:ro
-      # Carrier PDF Jinja templates (e.g. dark_genes supplement in carrier_EN.html) — without this,
+      # PDF Jinja templates (data/report_templates; e.g. carrier_EN.html, pgx_*, exome_*) — without this,
       # WeasyPrint uses templates baked into the image until the next --build.
-      - ./data/carrier_report:/app/data/carrier_report:ro
+      - ./data/report_templates:/app/data/report_templates:ro
       - ${BASE_DIR:-/data}:/data
       - ${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}:/data/gx-exome
       - ${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}:${CARRIER_SCREENING_HOST:-/home/ken/gx-exome}

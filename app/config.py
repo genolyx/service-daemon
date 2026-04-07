@@ -269,8 +269,9 @@ class Settings(BaseSettings):
         description=(
             "Jinja2 HTML templates for carrier PDF (carrier_EN.html, carrier_couples_EN.html, …). "
             "Highest priority. Relative paths are resolved from the repo root (not process cwd). "
-            "If unset: <CARRIER_SCREENING_REPORT_OUTPUT_ROOT>/carrier_report, then packaged "
-            "data/carrier_report, then REPORT_TEMPLATE_DIR, then pipeline data/templates."
+            "If unset: <CARRIER_SCREENING_REPORT_OUTPUT_ROOT>/report_templates (or legacy "
+            "…/carrier_report), then packaged data/report_templates, then REPORT_TEMPLATE_DIR, "
+            "then pipeline data/templates."
         ),
     )
     carrier_capture_panel_bed_dir: Optional[str] = Field(
@@ -458,7 +459,7 @@ class Settings(BaseSettings):
     report_template_dir: Optional[str] = Field(
         default=None,
         description=(
-            "Legacy: Jinja2 HTML report templates. For carrier PDFs, packaged data/carrier_report "
+            "Legacy: Jinja2 HTML report templates. For PDFs, packaged data/report_templates "
             "is preferred when set; use carrier_screening_report_template_dir to override. "
             "Relative paths are resolved from the repo root."
         ),

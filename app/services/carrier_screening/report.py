@@ -212,8 +212,38 @@ def _merge_dark_genes_from_result_json_for_pdf(
 
 
 # ══════════════════════════════════════════════════════════════
-# Template selection (order params → carrier_{lang}.html vs carrier_couples_{lang}.html)
+# Template selection (order params → carrier_{lang}.html vs carrier_couples_{lang}.html,
+# or pgx_/exome_/proactive_ for solo-only product PDFs — no couples templates for those.)
 # ══════════════════════════════════════════════════════════════
+
+# PDF kinds that always use solo templates (partner section omitted in plugin).
+CARRIER_PDF_SOLO_KINDS = frozenset({"standard", "exome", "proactive", "pgx"})
+
+_REPORT_TYPE_LABEL_FOR_KIND: Dict[str, str] = {
+    "standard": "Carrier Screening Report",
+    "couples": "Carrier Screening Report",
+    "exome": "Whole Exome Sequencing Report",
+    "proactive": "Proactive",
+    "pgx": "Pharmacogenomics Report",
+}
+
+
+def report_type_label_for_pdf_kind(pdf_kind: Optional[str]) -> str:
+    k = (pdf_kind or "standard").strip()
+    return _REPORT_TYPE_LABEL_FOR_KIND.get(k, "Carrier Screening Report")
+
+
+def carrier_pdf_jinja_stem(pdf_kind: Optional[str], is_couple: bool) -> str:
+    """
+    Base name for Jinja files in data/report_templates/: e.g. carrier_EN, pgx_EN, carrier_couples_EN.
+    """
+    k = (pdf_kind or "standard").strip()
+    if k in ("exome", "proactive", "pgx"):
+        return k
+    if k == "couples" or (k == "standard" and is_couple):
+        return "carrier_couples"
+    return "carrier"
+
 
 def _carrier_order_flat(params: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -235,7 +265,10 @@ def carrier_report_template_kind(params: Dict[str, Any]) -> Optional[str]:
     PDF 템플릿 종류.
     - 'standard' → carrier_<lang>.html (Primary: Carrier screening standard)
     - 'couples'  → carrier_couples_<lang>.html (Other + CouplesCarrier)
-    - None       → 위 둘 외 (Exome 등) — PDF 템플릿 미지원
+    - 'exome'    → exome_<lang>.html (WholeExome — solo layout only)
+    - 'proactive'→ proactive_<lang>.html (HealthScreening / Proactive — solo only)
+    - 'pgx'      → pgx_<lang>.html (pharmacogenomics — solo only)
+    - None       → 지원 안 함
     """
     if not params:
         return None
@@ -243,13 +276,17 @@ def carrier_report_template_kind(params: Dict[str, Any]) -> Optional[str]:
     tc = str(params.get("test_category") or "").strip()
     ot = str(params.get("other_test_type") or "").strip()
     pc = str(params.get("package_code") or "").strip()
+    pc_u = pc.upper()
 
+    # Pharmacogenomics (package or portal-style code)
+    if pc in ("PGx", "pgx", "Pharmacogenomics") or pc_u == "PGX":
+        return "pgx"
     # Whole Exome orders (portal: service_code whole_exome, package_code WholeExome)
     if pc == "WholeExome":
-        return "standard"
-    # Health Screening (portal: service_code health_screening, package_code HealthScreening)
-    if pc == "HealthScreening":
-        return "standard"
+        return "exome"
+    # Proactive (health screening product — display name "Proactive")
+    if pc in ("HealthScreening", "Proactive"):
+        return "proactive"
 
     if tc == "standard_carrier":
         return "standard"
@@ -281,7 +318,7 @@ def report_languages_from_order(params: Dict[str, Any]) -> Optional[List[str]]:
 
 
 # ══════════════════════════════════════════════════════════════
-# Jinja template JSON (Carrier_result / data/carrier_report/*.html)
+# Jinja template JSON (data/report_templates/*.html)
 # Templates iterate data.primary_patient.findings (not confirmed_variants).
 # ══════════════════════════════════════════════════════════════
 
@@ -627,6 +664,7 @@ def generate_report_json(
     gemini_api_key: Optional[str] = None,
     gene_knowledge_gemini_model: str = "gemini-2.5-flash",
     extra_result_json_paths: Optional[Sequence[str]] = None,
+    pdf_template_kind: Optional[str] = None,
 ) -> str:
     """
     리뷰어 확정 결과를 바탕으로 report.json을 생성합니다.
@@ -741,6 +779,12 @@ def generate_report_json(
 
     order_flat = _carrier_order_flat(order_params or {})
 
+    pdf_tk = pdf_template_kind
+    if pdf_tk is None and order_params:
+        pdf_tk = carrier_report_template_kind(order_params)
+    if not pdf_tk:
+        pdf_tk = "standard"
+
     # 환자 정보 기본값
     if patient_info is None:
         patient_info = {"name": sample_name}
@@ -795,7 +839,8 @@ def generate_report_json(
         "pipeline_version": "gx-exome-v2.0",
         "report_version": "2.0",
         "is_couple": is_couple,
-        "report_type": "Carrier Screening Report",
+        "pdf_template_kind": pdf_tk,
+        "report_type": report_type_label_for_pdf_kind(pdf_tk),
         "language": (report_language or "EN").strip().upper() or "EN",
         "hospital": order_flat.get("hospital_name")
         or order_flat.get("hospital")
@@ -1044,7 +1089,7 @@ def generate_report_pdf(
     if not template_dir:
         logger.error(
             "Carrier PDF: template_dir is None — output will use built-in HTML, not Jinja. "
-            "Ensure data/carrier_report/carrier_EN.html exists or set template env vars."
+            "Ensure data/report_templates/carrier_EN.html exists or set template env vars."
         )
 
     is_couple = report_data.get("report_metadata", {}).get("is_couple", False)
@@ -1101,10 +1146,10 @@ def _render_html_for_language(
     """
     lang_u = (lang or "EN").strip().upper() or "EN"
 
-    if is_couple:
-        template_name = f"carrier_couples_{lang_u}.html"
-    else:
-        template_name = f"carrier_{lang_u}.html"
+    md = report_data.get("report_metadata") or {}
+    pdf_kind = md.get("pdf_template_kind")
+    stem = carrier_pdf_jinja_stem(pdf_kind if isinstance(pdf_kind, str) else None, is_couple)
+    template_name = f"{stem}_{lang_u}.html"
 
     # Jinja2 템플릿 사용 시도
     if template_dir and os.path.isdir(template_dir):

@@ -6333,8 +6333,9 @@
       const pc = String(flat.package_code || '').trim();
       const rl = String(flat.report_language || '').trim().toUpperCase();
       let kind = null;
-      if (pc === 'WholeExome') kind = 'standard';
-      else if (pc === 'HealthScreening') kind = 'standard';
+      if (pc === 'WholeExome') kind = 'exome';
+      else if (pc === 'HealthScreening' || pc === 'Proactive') kind = 'proactive';
+      else if (pc === 'PGx' || pc === 'pgx' || pc === 'Pharmacogenomics') kind = 'pgx';
       else if (tc === 'standard_carrier') kind = 'standard';
       else if (tc === 'other' && ot === 'CouplesCarrier') kind = 'couples';
       else if (pc === 'CouplesCarrier') kind = 'couples';
@@ -6345,7 +6346,8 @@
       if (!kind) {
         return {
           ok: false,
-          reason: 'PDF is only generated for Carrier screening (standard) or CouplesCarrier (Other test type).',
+          reason:
+            'PDF is only generated for carrier (standard/couples), whole exome, proactive, or PGx orders with a supported package.',
         };
       }
       if (!langOk) {

@@ -663,7 +663,7 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
         notes.append(
             "The **interpretation panel** (gene list you selected) filters which genes are analyzed — it does **not** supply these BED intervals. "
             "Depth % uses **Twist exome** ``data/bed/twist-exome2/targets.bed`` (or the built-in Twist hg38 BED) intersected with **mosdepth** output; carrier disease/ACMG BEDs are not used here. "
-            "Target rows in the table are **merged** (overlapping / adjacent probe intervals on the same chromosome) so you see contiguous blocks and one total length per locus."
+            "Twist probe intervals for this gene are **merged** per chromosome (touching / overlapping half-open ranges) for depth stats; the portal shows **total span in bp** only, not each block."
         )
     if bed_path and not regions:
         notes.append(

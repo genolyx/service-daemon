@@ -8745,12 +8745,6 @@
 
     function renderGeneCoverageHtml(data) {
       if (!data) return '<p class="muted">No data.</p>';
-      const rows = (data.bed_regions || [])
-        .map(
-          r =>
-            `<tr><td style="font-family:monospace;font-size:11px">${escapeHtml(r.chrom)}</td><td style="text-align:right">${r.start}</td><td style="text-align:right">${r.end}</td><td style="text-align:right">${r.length_bp}</td></tr>`
-        )
-        .join('');
       const gqc = data.global_qc_coverage || {};
       const gqcParts = Object.keys(gqc).length
         ? Object.entries(gqc)
@@ -8786,17 +8780,15 @@
           </div>`
           : '';
       const notes = (data.notes || []).map(n => `<li>${escapeHtml(n)}</li>`).join('');
-      const rawProbeRows = Number(data.twist_raw_interval_count) || 0;
-      const mergedBlocks = (data.bed_regions || []).length;
       const totalSpanBp = data.total_target_bp != null ? Number(data.total_target_bp) : null;
-      const mergeSummary =
-        totalSpanBp != null
-          ? `Total Twist on-target span for this gene: <strong>${totalSpanBp.toLocaleString()}</strong> bp (sum of merged intervals).${
-              rawProbeRows > mergedBlocks && rawProbeRows > 0
-                ? ` Merged from <strong>${rawProbeRows}</strong> separate rows in <code>targets.bed</code> → <strong>${mergedBlocks}</strong> contiguous block${mergedBlocks === 1 ? '' : 's'}.`
-                : ''
-            }`
-          : '';
+      const hasGeneLength = totalSpanBp != null && totalSpanBp > 0;
+      const geneLengthBlock = hasGeneLength
+        ? `<div style="margin:12px 0;padding:14px 16px;border-radius:10px;border:1px solid var(--line);background:var(--table-bg)">
+            <div class="muted" style="font-size:11px;margin-bottom:6px">Twist on-target length (this gene)</div>
+            <div style="font-size:22px;font-weight:600;letter-spacing:-0.02em">${totalSpanBp.toLocaleString()}<span style="font-size:14px;font-weight:500;margin-left:4px">bp</span></div>
+            <p class="muted" style="font-size:10px;margin:8px 0 0;line-height:1.4">Total span of merged Twist <code>targets.bed</code> intervals (column 4 matches this gene). Per-chromosome probe rows are merged when they touch or overlap; the table of individual intervals is hidden in this view.</p>
+          </div>`
+        : '';
       return `
         <div style="font-size:12px;line-height:1.5;color:var(--text)">
           <p class="muted" style="font-size:11px;margin:0 0 10px;line-height:1.45">
@@ -8809,6 +8801,7 @@
           <p style="margin:0 0 8px">In interpretation gene set: <strong>${data.in_interpretation_set ? 'yes' : 'no'}</strong>
             ${data.interpretation_gene_count != null ? ` <span class="muted">(${data.interpretation_gene_count} genes)</span>` : ''}</p>
           ${data.disease_bed_path ? `<p class="muted" style="font-size:11px;margin:0 0 8px;word-break:break-all">Twist exome BED (depth intervals): ${escapeHtml(data.disease_bed_path)}</p>` : ''}
+          ${geneLengthBlock}
           ${gtBlock}
           <div style="margin:8px 0"><div class="muted" style="font-size:11px;margin-bottom:4px">Run-wide QC (result.json)</div>${gqcParts}</div>
           ${
@@ -8818,15 +8811,9 @@
           }
           ${notes ? `<ul style="margin:8px 0 0;padding-left:1.2em;font-size:11px;color:var(--muted)">${notes}</ul>` : ''}
           ${
-            rows
-              ? `<div style="margin-top:10px;font-weight:600;font-size:12px">Target regions (this gene)</div>
-            <p class="muted" style="font-size:11px;margin:4px 0 8px;line-height:1.45">
-              Intervals are from the Twist <code>targets.bed</code> (col4 matches HGNC), then <strong>merged</strong> on each chromosome:
-              overlapping or touching half-open ranges <code>[start, end)</code> become one row. Gaps between probes stay separate blocks.
-              ${mergeSummary ? `<span style="display:block;margin-top:6px">${mergeSummary}</span>` : ''}
-            </p>
-            <div style="overflow-x:auto;margin-top:6px"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr><th>Chr</th><th style="text-align:right">Start</th><th style="text-align:right">End</th><th style="text-align:right">bp</th></tr></thead><tbody>${rows}</tbody></table></div>`
-              : '<p class="muted" style="margin-top:10px">No BED intervals with this gene name in column 4.</p>'
+            !hasGeneLength && data.disease_bed_path
+              ? '<p class="muted" style="margin-top:10px">No Twist target intervals name this gene in BED column 4 — gene length not shown.</p>'
+              : ''
           }
         </div>`;
     }

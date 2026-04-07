@@ -8760,13 +8760,22 @@
         : '<span class="muted">—</span>';
       const pg = data.per_gene_depth;
       const gt = data.gene_depth_thresholds;
+      const gtHasPct =
+        gt &&
+        (gt.pct_bases_ge_10x != null ||
+          gt.pct_bases_ge_20x != null ||
+          gt.pct_bases_ge_50x != null ||
+          gt.pct_bases_ge_100x != null);
+      const gtPct = (v) => (v != null ? Number(v).toFixed(1) + '%' : '—');
       const gtBlock =
-        gt && (gt.pct_bases_ge_10x != null || gt.pct_bases_ge_20x != null)
+        gtHasPct
           ? `<div style="margin:10px 0;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--table-bg)">
-            <div class="muted" style="font-size:11px;margin-bottom:6px">Gene target regions (panel BED) — % of bases at depth</div>
+            <div class="muted" style="font-size:11px;margin-bottom:6px">Gene target regions (Twist) — % of bases at depth</div>
             <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:baseline;font-size:13px">
-              <span>≥10×: <strong>${gt.pct_bases_ge_10x != null ? Number(gt.pct_bases_ge_10x).toFixed(1) + '%' : '—'}</strong></span>
-              <span>≥20×: <strong>${gt.pct_bases_ge_20x != null ? Number(gt.pct_bases_ge_20x).toFixed(1) + '%' : '—'}</strong></span>
+              <span>≥10×: <strong>${gtPct(gt.pct_bases_ge_10x)}</strong></span>
+              <span>≥20×: <strong>${gtPct(gt.pct_bases_ge_20x)}</strong></span>
+              <span>≥50×: <strong>${gtPct(gt.pct_bases_ge_50x)}</strong></span>
+              <span>≥100×: <strong>${gtPct(gt.pct_bases_ge_100x)}</strong></span>
               ${
                 gt.total_bases_assessed != null
                   ? `<span class="muted" style="font-size:11px">(${Number(gt.total_bases_assessed).toLocaleString()} bp in BED intervals)</span>`
@@ -8793,7 +8802,7 @@
           <p class="muted" style="font-size:11px;margin:0 0 10px;line-height:1.45">
             Allele / read depth in the variant row is for <strong>that site only</strong>. Below, percentages are
             <strong>mosdepth</strong> ∩ <strong>Twist exome targets</strong> for this gene (not the clinical gene-list BED). The BAM is not rescanned here.
-            They mean “% of bases in those Twist intervals at ≥10× / ≥20×”.
+            They mean “% of bases in those Twist intervals at ≥10× / ≥20× / ≥50× / ≥100×”.
           </p>
           <p style="margin:0 0 8px"><strong>${escapeHtml(data.panel_label || data.wes_panel_id || 'Panel')}</strong>
             ${data.wes_panel_id ? `<span class="muted"> (${escapeHtml(data.wes_panel_id)})</span>` : ''}</p>

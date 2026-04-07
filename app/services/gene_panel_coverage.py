@@ -27,6 +27,9 @@ _CARRIER_LIKE = frozenset({"carrier_screening", "whole_exome", "health_screening
 
 _GENE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,24}$")
 
+# Depth thresholds for gene ∩ mosdepth (and sidecar column names pct_bases_ge_{n}x)
+_GENE_DEPTH_THRESHOLDS: Tuple[int, ...] = (10, 20, 50, 100)
+
 # mosdepth per-base: chrom, start, end, depth (BED intervals, depth constant on each segment)
 _MOSDEPTH_PER_BASE_PATTERNS = (
     "*mosdepth*.per-base.bed.gz",
@@ -100,7 +103,7 @@ def _find_mosdepth_per_base_bed(roots: List[str]) -> Optional[str]:
 def _pct_bases_ge_depths_from_per_base(
     regions: List[Dict[str, Any]],
     per_base_gz: str,
-    thresholds: Tuple[int, ...] = (10, 20),
+    thresholds: Tuple[int, ...] = _GENE_DEPTH_THRESHOLDS,
 ) -> Optional[Dict[str, Any]]:
     """
     Intersect panel BED intervals for the gene with mosdepth per-base segments; compute % of
@@ -443,6 +446,8 @@ def _parse_gene_depth_file(path: str, gene: str) -> Optional[Dict[str, Any]]:
     di = col_idx(depth_keys, header)
     pi10 = _hdr_find_pct_col(header, ("pct_bases_10x", "pct_10x", "bases_ge_10", "ge_10x", ">=_10x"))
     pi20 = _hdr_find_pct_col(header, ("pct_bases_20x", "pct_20x", "bases_ge_20", "ge_20x", ">=_20x"))
+    pi50 = _hdr_find_pct_col(header, ("pct_bases_50x", "pct_50x", "bases_ge_50", "ge_50x", ">=_50x"))
+    pi100 = _hdr_find_pct_col(header, ("pct_bases_100x", "pct_100x", "bases_ge_100", "ge_100x", ">=_100x"))
 
     data_rows = rows[1:] if gi is not None and di is not None else rows
 
@@ -450,7 +455,7 @@ def _parse_gene_depth_file(path: str, gene: str) -> Optional[Dict[str, Any]]:
         if not parts:
             continue
         if gi is not None and di is not None:
-            idx_needed = [gi, di, pi10, pi20]
+            idx_needed = [gi, di, pi10, pi20, pi50, pi100]
             mx = max(i for i in idx_needed if i is not None)
             if len(parts) <= mx:
                 continue
@@ -471,6 +476,14 @@ def _parse_gene_depth_file(path: str, gene: str) -> Optional[Dict[str, Any]]:
                 p = _parse_pct_cell(str(parts[pi20]))
                 if p is not None:
                     out["pct_bases_ge_20x"] = p
+            if pi50 is not None:
+                p = _parse_pct_cell(str(parts[pi50]))
+                if p is not None:
+                    out["pct_bases_ge_50x"] = p
+            if pi100 is not None:
+                p = _parse_pct_cell(str(parts[pi100]))
+                if p is not None:
+                    out["pct_bases_ge_100x"] = p
             return out
         else:
             # Two-column: GENE<TAB>depth
@@ -629,7 +642,9 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
     if gene_depth_thresholds is None and per_gene:
         p10 = per_gene.get("pct_bases_ge_10x")
         p20 = per_gene.get("pct_bases_ge_20x")
-        if p10 is not None or p20 is not None:
+        p50 = per_gene.get("pct_bases_ge_50x")
+        p100 = per_gene.get("pct_bases_ge_100x")
+        if p10 is not None or p20 is not None or p50 is not None or p100 is not None:
             gene_depth_thresholds = {
                 "method": "gene_qc_sidecar",
                 "source_file": per_gene.get("source_file"),
@@ -638,6 +653,10 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
                 gene_depth_thresholds["pct_bases_ge_10x"] = p10
             if p20 is not None:
                 gene_depth_thresholds["pct_bases_ge_20x"] = p20
+            if p50 is not None:
+                gene_depth_thresholds["pct_bases_ge_50x"] = p50
+            if p100 is not None:
+                gene_depth_thresholds["pct_bases_ge_100x"] = p100
 
     notes: List[str] = []
     if job.service_code in _CARRIER_LIKE:
@@ -657,12 +676,12 @@ def build_gene_panel_coverage_report(job: Job, gene_raw: str) -> Dict[str, Any]:
 
     if gene_depth_thresholds and gene_depth_thresholds.get("method") == "mosdepth_per_base_tabix":
         notes.append(
-            "% of bases ≥10× / ≥20× is from mosdepth per-base depth segments intersected with the BED intervals above (half-open coordinates)."
+            "% of bases at ≥10× / ≥20× / ≥50× / ≥100× is from mosdepth per-base segments intersected with the BED intervals above (half-open coordinates)."
         )
     elif regions and not gene_depth_thresholds:
         notes.append(
-            "Gene-level % bases at 10×/20× not computed: publish an indexed mosdepth per-base file "
-            "(*mosdepth*.per-base.bed.gz + .tbi) under analysis/output, or a sidecar with pct_bases_10x / pct_bases_20x."
+            "Gene-level depth % not computed: publish an indexed mosdepth per-base file "
+            "(*mosdepth*.per-base.bed.gz + .tbi) under analysis/output, or a sidecar with pct_bases_10x / 20x / 50x / 100x."
         )
 
     return {

@@ -6284,13 +6284,6 @@
         geneKnowledgeMeta = null;
         autoSelectPathogenicVariantsForReport();
 
-        // sgNIPT: carrier-only 서브탭 숨김
-        const carrierOnlyTabs = ['coverage', 'diseases', 'darkgenes', 'pgx', 'report', 'genedb'];
-        document.querySelectorAll('#reviewSubTabs .sub-tab').forEach(el => {
-          const tab = el.dataset.tab;
-          el.style.display = (isSgNIPT && carrierOnlyTabs.includes(tab)) ? 'none' : '';
-        });
-
         // Populate gene filter dropdown
         populateGeneFilter();
 
@@ -6306,12 +6299,11 @@
         renderVariantsTable();
         renderDiseaseSummary();
         renderGeneDatabase();
-        const validTabs = isSgNIPT
-          ? REVIEW_SUB_TAB_KEYS.filter(t => !carrierOnlyTabs.includes(t))
-          : REVIEW_SUB_TAB_KEYS;
+        const validTabs = applyReviewTabVisibility(reviewData);
         const savedSub = getSavedReviewSubTab();
         const sub = opt.focusTab && validTabs.includes(opt.focusTab) ? opt.focusTab
-          : validTabs.includes(savedSub) ? savedSub : 'variants';
+          : validTabs.includes(savedSub) ? savedSub
+          : (validTabs[0] || 'variants');
         showReviewTab(sub);
         updateReviewResultMeta();
         if (!quietToast) toast(`Loaded ${(reviewData.variants || []).length} variants`);
@@ -6417,6 +6409,82 @@
 
     const REVIEW_SUB_TAB_KEYS = ['variants', 'coverage', 'diseases', 'qc', 'darkgenes', 'pgx', 'stats', 'report', 'genedb'];
 
+    /** Visible tabs for the loaded order; updated by applyReviewTabVisibility */
+    let reviewVisibleTabKeys = REVIEW_SUB_TAB_KEYS.slice();
+
+    function reviewOrderKind(rd) {
+      if (!rd || typeof rd !== 'object') return null;
+      const svc = String(rd._service_code || rd.service_code || '').trim();
+      if (svc === 'sgnipt') return 'sgnipt';
+      const op = rd.order_params;
+      const flat = carrierOrderMetaFlat(op);
+      // Panel-level precedence: reflex workflows may keep legacy package_code (e.g. WholeExome)
+      // while the selected interpretation panel defines the intended review surface.
+      const wid = String(
+        (flat && flat.wes_panel_id != null ? flat.wes_panel_id : '') ||
+          (((op && op.carrier) || {}).wes_panel_id || '')
+      ).trim();
+      const wp = wid ? _wesPanelsById[wid] : null;
+      const cat = String(wp && wp.category != null ? wp.category : '').trim().toLowerCase();
+      if (cat === 'pgx') return 'pgx';
+      if (cat === 'proactive_health') return 'proactive';
+      if (cat === 'carrier_screening') return 'carrier';
+
+      const pc = String(flat && flat.package_code != null ? flat.package_code : '').trim();
+      const tc = String(flat && flat.test_category != null ? flat.test_category : '').trim();
+      const ot = String(flat && flat.other_test_type != null ? flat.other_test_type : '').trim();
+      const pcU = pc.toUpperCase();
+      if (pcU === 'PGX' || pc === 'pgx' || pc === 'Pharmacogenomics') return 'pgx';
+      if (pc === 'WholeExome') return 'exome';
+      if (pc === 'HealthScreening' || pc === 'Proactive') return 'proactive';
+      if (
+        tc === 'standard_carrier' ||
+        (pc === 'CarrierScreening' && tc !== 'other') ||
+        pc === 'CouplesCarrier' ||
+        (tc === 'other' && ot === 'CouplesCarrier') ||
+        pc === 'CarrierScreening'
+      ) {
+        return 'carrier';
+      }
+      if (svc === 'whole_exome') return 'exome';
+      if (svc === 'health_screening') return 'proactive';
+      if (svc === 'carrier_screening') return 'carrier';
+      return null;
+    }
+
+    /**
+     * Which review subtabs to hide based on order kind.
+     * @returns {Set<string>}
+     */
+    function getReviewHiddenTabs(rd) {
+      const hide = new Set();
+      const kind = reviewOrderKind(rd);
+      if (kind === 'sgnipt') {
+        ['coverage', 'diseases', 'darkgenes', 'pgx', 'report', 'genedb'].forEach(t => hide.add(t));
+      } else if (kind === 'pgx') {
+        ['variants', 'coverage', 'diseases', 'darkgenes', 'report', 'genedb'].forEach(t => hide.add(t));
+      } else if (kind === 'proactive') {
+        hide.add('darkgenes');
+      } else if (kind === 'carrier') {
+        hide.add('pgx');
+      } else if (kind == null) {
+        // Conservative default for unknown carrier-like orders.
+        hide.add('pgx');
+      }
+      return hide;
+    }
+
+    function applyReviewTabVisibility(rd) {
+      const hidden = getReviewHiddenTabs(rd);
+      document.querySelectorAll('#reviewSubTabs .sub-tab').forEach(el => {
+        const tab = el.getAttribute('data-tab');
+        if (!tab) return;
+        el.style.display = hidden.has(tab) ? 'none' : '';
+      });
+      reviewVisibleTabKeys = REVIEW_SUB_TAB_KEYS.filter(t => !hidden.has(t));
+      return reviewVisibleTabKeys;
+    }
+
     function getSavedReviewSubTab() {
       try {
         const t = (localStorage.getItem('reviewSubTab') || 'variants').trim();
@@ -6428,7 +6496,9 @@
 
     function showReviewTab(tab) {
       if (!REVIEW_SUB_TAB_KEYS.includes(tab)) tab = 'variants';
-      if (reviewData && reviewData._service_code === 'sgnipt' && tab === 'coverage') tab = 'variants';
+      if (reviewVisibleTabKeys && reviewVisibleTabKeys.length && !reviewVisibleTabKeys.includes(tab)) {
+        tab = reviewVisibleTabKeys[0];
+      }
       try {
         localStorage.setItem('reviewSubTab', tab);
       } catch (e) { /* ignore */ }

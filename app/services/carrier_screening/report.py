@@ -1197,8 +1197,20 @@ def generate_report_pdf(
 
     # Re-write report.json so on-disk JSON matches what WeasyPrint uses (merge is in-memory only above).
     try:
-        with open(report_json_path, "w", encoding="utf-8") as f:
-            json.dump(report_data, f, ensure_ascii=False, indent=2, default=str)
+        import tempfile as _tmpmod
+        text = json.dumps(report_data, ensure_ascii=False, indent=2, default=str)
+        d = os.path.dirname(report_json_path)
+        fd, tmp = _tmpmod.mkstemp(dir=d, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(text)
+            os.replace(tmp, report_json_path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
     except Exception as e:
         logger.warning(
             "[generate_report_pdf] could not rewrite report.json after merge: %s", e
@@ -1274,9 +1286,12 @@ def _render_html_for_language(
     # Jinja2 템플릿 사용 시도
     if template_dir and os.path.isdir(template_dir):
         try:
-            from jinja2 import Environment, FileSystemLoader
+            from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-            env = Environment(loader=FileSystemLoader(template_dir))
+            env = Environment(
+                loader=FileSystemLoader(template_dir),
+                autoescape=select_autoescape(["html", "htm", "xml"]),
+            )
 
             template = env.get_template(template_name)
             out = template.render(data=report_data)

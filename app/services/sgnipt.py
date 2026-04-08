@@ -305,11 +305,14 @@ class SgNIPTPlugin(ServicePlugin):
         found = next((p for p in fixed if p and os.path.isfile(p)), None)
         if found:
             return found
+        fname = f"{sample_id}.variant_report.json"
         for root in filter(None, [analysis_dir, output_dir]):
-            hits = [
-                p for p in glob.glob(os.path.join(root, "**", f"{sample_id}.variant_report.json"), recursive=True)
-                if os.sep + "work" + os.sep not in p
-            ]
+            hits = []
+            for depth_pat in (fname, os.path.join("*", fname), os.path.join("*", "*", fname), os.path.join("*", "*", "*", fname)):
+                hits.extend(
+                    p for p in glob.glob(os.path.join(root, depth_pat))
+                    if os.sep + "work" + os.sep not in p
+                )
             if hits:
                 return sorted(hits)[0]
         return None
@@ -379,7 +382,7 @@ class SgNIPTPlugin(ServicePlugin):
                 f.write(text)
             logger.info("[sgnipt] Merged result.json written to %s", dst)
             return True
-        except OSError as e:
+        except (OSError, json.JSONDecodeError, ValueError, TypeError, KeyError) as e:
             logger.error("[sgnipt] process_results failed: %s", e)
             return False
 

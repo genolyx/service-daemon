@@ -414,7 +414,7 @@ class Settings(BaseSettings):
         ),
     )
     gene_knowledge_db_fallback_path: Optional[str] = Field(
-        default="/home/sam/genetic_reporter_lookup/genetic_knowledge.db",
+        default=None,
         description=(
             "When gene_knowledge_db is empty: if the parent directory of this path exists, use it as "
             "gene_knowledge_db (same file and gene_data schema as genetic_reporter_lookup app2.py)."
@@ -491,7 +491,7 @@ class Settings(BaseSettings):
         description="Google Gemini API key (env GEMINI_API_KEY; if unset, may load from gemini_api_key_env_file)",
     )
     gemini_api_key_env_file: Optional[str] = Field(
-        default="/home/sam/genetic_reporter_lookup/.env",
+        default=None,
         description=(
             "If GEMINI_API_KEY is empty, load it from this .env (same convention as genetic_reporter_lookup). "
             "Override with env GEMINI_API_KEY_ENV_FILE or set to empty to disable."

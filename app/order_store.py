@@ -237,11 +237,18 @@ class OrderStore:
             logger.warning("fetch_job %s: %s", order_id, e)
             return None
 
-    def fetch_all_jobs(self) -> List[Job]:
-        """Load all Job rows from job_json (documents ignored here)."""
+    def fetch_all_jobs(self, *, exclude_statuses: Optional[List[str]] = None) -> List[Job]:
+        """Load Job rows from job_json, optionally excluding certain statuses."""
         with self._lock:
             cur = self._conn.cursor()
-            cur.execute("SELECT job_json FROM orders")
+            if exclude_statuses:
+                placeholders = ",".join("?" for _ in exclude_statuses)
+                cur.execute(
+                    f"SELECT job_json FROM orders WHERE status NOT IN ({placeholders})",
+                    exclude_statuses,
+                )
+            else:
+                cur.execute("SELECT job_json FROM orders")
             rows = cur.fetchall()
         out: List[Job] = []
         for r in rows:

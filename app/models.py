@@ -34,6 +34,8 @@ class ServiceCode(str, Enum):
     NIPT = "nipt"
     CARRIER_SCREENING = "carrier_screening"
     SG_NIPT = "sgnipt"
+    WHOLE_EXOME = "whole_exome"
+    HEALTH_SCREENING = "health_screening"
 
 
 class NotificationStatus(str, Enum):

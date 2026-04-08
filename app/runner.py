@@ -355,7 +355,8 @@ class PipelineRunner:
 
         logger.info(f"[{job.service_code}] Pipeline cwd: {cwd}")
 
-        with open(log_file, "w") as log_f:
+        log_f = open(log_file, "w")
+        try:
             process = await asyncio.create_subprocess_shell(
                 command,
                 stdout=log_f,
@@ -364,26 +365,25 @@ class PipelineRunner:
                 env=_pipeline_subprocess_env(),
             )
 
-        job.pid = process.pid
-        self._active_processes[job.order_id] = process
+            job.pid = process.pid
+            self._active_processes[job.order_id] = process
 
-        logger.info(f"[{job.service_code}] Pipeline PID: {process.pid}")
+            logger.info(f"[{job.service_code}] Pipeline PID: {process.pid}")
 
-        # 진행률 모니터링 태스크
-        monitor_task = asyncio.create_task(
-            self._monitor_progress(job, log_file)
-        )
+            monitor_task = asyncio.create_task(
+                self._monitor_progress(job, log_file)
+            )
 
-        # 프로세스 완료 대기
-        exit_code = await process.wait()
-        job.exit_code = exit_code
+            exit_code = await process.wait()
+            job.exit_code = exit_code
 
-        # 모니터링 태스크 정리
-        monitor_task.cancel()
-        try:
-            await monitor_task
-        except asyncio.CancelledError:
-            pass
+            monitor_task.cancel()
+            try:
+                await monitor_task
+            except asyncio.CancelledError:
+                pass
+        finally:
+            log_f.close()
 
         logger.info(
             f"[{job.service_code}] Pipeline finished with exit code: {exit_code}"
@@ -432,6 +432,7 @@ class PipelineRunner:
     async def _monitor_progress(self, job: Job, log_file: str):
         """
         파이프라인 로그를 모니터링하여 진행률을 업데이트합니다.
+        Incremental read: 매 tick마다 마지막으로 읽은 위치부터만 읽는다.
         """
         plugin = get_plugin(job.service_code)
         if not plugin:
@@ -442,16 +443,19 @@ class PipelineRunner:
             return
 
         last_progress = 10  # 시작 진행률
+        last_offset = 0
 
         try:
             while True:
-                await asyncio.sleep(30)  # 30초마다 체크
+                await asyncio.sleep(30)
 
                 if not os.path.exists(log_file):
                     continue
 
                 try:
-                    current_progress = self._parse_progress(log_file, progress_stages)
+                    current_progress, last_offset = self._parse_progress(
+                        log_file, progress_stages, last_progress, last_offset,
+                    )
                     if current_progress > last_progress:
                         last_progress = current_progress
                         await self._update_status(
@@ -464,18 +468,23 @@ class PipelineRunner:
         except asyncio.CancelledError:
             pass
 
-    def _parse_progress(self, log_file: str, stages: dict) -> int:
-        """로그 파일에서 진행률을 파싱합니다."""
-        progress = 0
+    @staticmethod
+    def _parse_progress(
+        log_file: str, stages: dict, current_max: int, offset: int,
+    ) -> tuple:
+        """로그 파일에서 진행률을 파싱합니다 (incremental read)."""
+        progress = current_max
         try:
             with open(log_file, "r") as f:
+                f.seek(offset)
                 for line in f:
                     for stage_name, stage_pct in stages.items():
                         if stage_name in line and stage_pct > progress:
                             progress = stage_pct
+                new_offset = f.tell()
         except Exception:
-            pass
-        return progress
+            new_offset = offset
+        return progress, new_offset
 
     async def _update_status(
         self, job: Job, status: OrderStatus, progress: int, message: str

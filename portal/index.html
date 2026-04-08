@@ -2437,7 +2437,7 @@
       return isNaN(d) ? '' : d.toLocaleString('en-CA', { timeZone: TZ_KST, year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
     };
 
-    const pill = (text, cls) => `<span class="pill ${cls}">${text}</span>`;
+    const pill = (text, cls) => `<span class="pill ${cls}">${escapeHtml(text)}</span>`;
 
     /** 정규화된 상태 키 문자열 (대문자 + 언더스코어) */
     const statusPill = key => {
@@ -7076,7 +7076,7 @@
         statusClass = 'positive';
         icon = '⚠';
         text = `Carrier Detected - ${carrierGenes.size} gene(s)`;
-        detail = `${pathogenic.length} pathogenic/likely pathogenic variant(s) in: ${[...carrierGenes].join(', ')}`;
+        detail = `${pathogenic.length} pathogenic/likely pathogenic variant(s) in: ${escapeHtml([...carrierGenes].join(', '))}`;
       } else if (vus.length > 0) {
         statusClass = 'uncertain';
         icon = '?';
@@ -7093,8 +7093,8 @@
       banner.innerHTML = `
         <div class="banner-icon">${icon}</div>
         <div>
-          <div class="banner-text">${text}</div>
-          <div class="banner-detail">${detail}</div>
+          <div class="banner-text">${escapeHtml(text)}</div>
+          <div class="banner-detail">${escapeHtml(detail)}</div>
         </div>
         <div style="margin-left:auto;display:flex;gap:8px">
           <span class="pill err">${pathogenic.length} P/LP</span>
@@ -7138,7 +7138,7 @@
       if (pipelineStatus === 'NO_CALL' || pipelineStatus === 'FAILED') {
         statusClass = 'uncertain';
         icon = '!';
-        text = `${pipelineStatus}${flags ? ' — ' + flags : ''}`;
+        text = `${escapeHtml(pipelineStatus)}${flags ? ' — ' + escapeHtml(flags) : ''}`;
         detail = `Insufficient data for variant calling.${total != null ? ' Variants analyzed: ' + total : ''}`;
       } else if (fetal > 0) {
         statusClass = 'positive';
@@ -7155,8 +7155,8 @@
       banner.innerHTML = `
         <div class="banner-icon">${icon}</div>
         <div>
-          <div class="banner-text">${text}</div>
-          <div class="banner-detail">${detail}</div>
+          <div class="banner-text">${escapeHtml(text)}</div>
+          <div class="banner-detail">${escapeHtml(detail)}</div>
         </div>
         <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           ${ff != null ? `<span class="pill inp">FF: ${(ff * 100).toFixed(1)}%</span>` : ''}
@@ -7235,21 +7235,21 @@
           return `
             <div class="disease-card" style="${hasPathogenic ? 'border-color:var(--pill-err-bd)' : ''}">
               <div class="disease-name">
-                ${hasPathogenic ? '<span style="color:var(--err)">●</span> ' : ''}${disease}
+                ${hasPathogenic ? '<span style="color:var(--err)">●</span> ' : ''}${escapeHtml(disease)}
               </div>
               <div class="disease-meta">
                 ${info.inheritance ? pill(info.inheritance, 'new') : ''}
-                ${info.carrier_frequency ? `<span class="muted">Carrier freq: ${info.carrier_frequency}</span>` : ''}
+                ${info.carrier_frequency ? `<span class="muted">Carrier freq: ${escapeHtml(info.carrier_frequency)}</span>` : ''}
                 ${info.severity ? pill(info.severity, info.severity === 'severe' || info.severity === 'lethal' ? 'err' : info.severity === 'moderate-severe' ? 'warn' : 'done') : ''}
-                ${info.category ? `<span class="muted">${info.category}</span>` : ''}
+                ${info.category ? `<span class="muted">${escapeHtml(info.category)}</span>` : ''}
               </div>
               <div style="display:flex;flex-wrap:wrap;gap:4px">
                 ${dvariants.map(v => `
-                  <div class="variant-chip" onclick="showVariantDetail('${v.variant_id}')" style="cursor:pointer">
-                    <span style="font-weight:600">${v.gene || '-'}</span>
-                    <span class="muted">${v.hgvsp || v.hgvsc || v.variant_id}</span>
-                    <span class="${acmgClass(v.acmg_classification)}">${v.acmg_classification || '-'}</span>
-                    <input type="checkbox" ${selectedVariants.has(v.variant_id) ? 'checked' : ''} onclick="event.stopPropagation();toggleVariant('${v.variant_id}', this.checked)" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent);vertical-align:middle;flex-shrink:0" />
+                  <div class="variant-chip" onclick="showVariantDetail('${escapeAttr(v.variant_id)}')" style="cursor:pointer">
+                    <span style="font-weight:600">${escapeHtml(v.gene || '-')}</span>
+                    <span class="muted">${escapeHtml(v.hgvsp || v.hgvsc || v.variant_id)}</span>
+                    <span class="${acmgClass(v.acmg_classification)}">${escapeHtml(v.acmg_classification || '-')}</span>
+                    <input type="checkbox" ${selectedVariants.has(v.variant_id) ? 'checked' : ''} onclick="event.stopPropagation();toggleVariant('${escapeAttr(v.variant_id)}', this.checked)" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent);vertical-align:middle;flex-shrink:0" />
                   </div>
                 `).join('')}
               </div>
@@ -10071,7 +10071,7 @@
         _renderLitTable(data.articles || []);
         _updateLitPager();
       } catch (e) {
-        qs('litTableBody').innerHTML = `<tr><td colspan="6" style="color:var(--err);padding:20px;text-align:center">${e.message}</td></tr>`;
+        qs('litTableBody').innerHTML = `<tr><td colspan="6" style="color:var(--err);padding:20px;text-align:center">${escapeHtml(e.message || 'Error')}</td></tr>`;
       }
     }
 
@@ -10130,7 +10130,7 @@
             <a href="https://pubmed.ncbi.nlm.nih.gov/${pmid}/" target="_blank" class="btn primary">Open in PubMed ↗</a>
           </div>`;
       } catch (e) {
-        qs('litDetailBody').innerHTML = `<span style="color:var(--err)">${e.message}</span>`;
+        qs('litDetailBody').innerHTML = `<span style="color:var(--err)">${escapeHtml(e.message || 'Error')}</span>`;
       }
     }
 

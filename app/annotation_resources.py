@@ -5,6 +5,7 @@ Reference / annotation 파일 존재 여부 요약 (헬스·운영 점검용).
 from __future__ import annotations
 
 import glob
+import itertools
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -72,7 +73,7 @@ def annotation_resource_report() -> Dict[str, Any]:
     if gdir and os.path.isdir(gdir):
         for pat in (settings.gnomad_exomes_glob, settings.gnomad_genomes_glob):
             gnomad_files.extend(
-                glob.glob(os.path.join(gdir, pat))[:5]
+                itertools.islice(glob.iglob(os.path.join(gdir, pat)), 5)
             )
     resources["gnomad_glob_sample_count"] = len(gnomad_files)
 

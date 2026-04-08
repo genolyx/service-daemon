@@ -184,6 +184,23 @@ def carrier_result_json_path(job: Job) -> Optional[str]:
     return None
 
 
+def _atomic_write_text(path: str, text: str, encoding: str = "utf-8") -> None:
+    """Write *text* to *path* atomically via temp file + os.replace."""
+    import tempfile
+    d = os.path.dirname(path)
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding=encoding) as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def write_carrier_result_json_sync(job: Job, data: Dict[str, Any]) -> List[str]:
     """
     Write ``result.json`` under ``carrier_report_output_dir`` and mirror to
@@ -194,8 +211,7 @@ def write_carrier_result_json_sync(job: Job, data: Dict[str, Any]) -> List[str]:
     text = json.dumps(data, ensure_ascii=False, indent=2, default=str)
     os.makedirs(os.path.dirname(primary), exist_ok=True)
     written: List[str] = []
-    with open(primary, "w", encoding="utf-8") as f:
-        f.write(text)
+    _atomic_write_text(primary, text)
     written.append(primary)
     if job.output_dir:
         alt = os.path.join(job.output_dir, "result.json")
@@ -209,8 +225,7 @@ def write_carrier_result_json_sync(job: Job, data: Dict[str, Any]) -> List[str]:
                 pass  # do not mirror into prior order's output tree
             else:
                 os.makedirs(os.path.dirname(alt), exist_ok=True)
-                with open(alt, "w", encoding="utf-8") as f:
-                    f.write(text)
+                _atomic_write_text(alt, text)
                 written.append(alt)
     return written
 
@@ -810,9 +825,9 @@ class CarrierScreeningPlugin(ServicePlugin):
     async def _download_file(self, url: str, dest: str) -> bool:
         """URL에서 파일을 다운로드합니다."""
         try:
-            cmd = f"wget -q -O '{dest}' '{url}'"
-            proc = await asyncio.create_subprocess_shell(
-                cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            proc = await asyncio.create_subprocess_exec(
+                "wget", "-q", "-O", dest, url,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             )
             _, stderr = await proc.communicate()
             if proc.returncode != 0:
@@ -927,12 +942,21 @@ class CarrierScreeningPlugin(ServicePlugin):
             os.makedirs(expected_fastq_dir, exist_ok=True)
             fname = os.path.basename(fq_abs)
             link_path = os.path.join(expected_fastq_dir, fname)
-            if os.path.exists(link_path) or os.path.islink(link_path):
-                continue  # 이미 존재
+            rel_target = os.path.relpath(fq_abs, expected_fastq_dir)
 
-            # 상대 경로 심볼릭 링크 생성 (같은 fastq/ 트리 내이면 docker mount 에서도 유효)
+            if os.path.islink(link_path):
+                existing_target = os.readlink(link_path)
+                if existing_target == rel_target:
+                    continue  # 올바른 링크 — 건너뜀
+                logger.info(
+                    "[carrier_screening] Replacing stale FASTQ symlink: %s (was %s → now %s)",
+                    link_path, existing_target, rel_target,
+                )
+                os.unlink(link_path)
+            elif os.path.exists(link_path):
+                continue  # 실제 파일 — 건드리지 않음
+
             try:
-                rel_target = os.path.relpath(fq_abs, expected_fastq_dir)
                 os.symlink(rel_target, link_path)
                 logger.info(
                     "[carrier_screening] FASTQ symlink created: %s → %s (order=%s)",
@@ -1427,12 +1451,11 @@ class CarrierScreeningPlugin(ServicePlugin):
 
         vcf_files: List[str] = []
         for root in search_roots:
-            vcf_files.extend(
-                glob.glob(os.path.join(root, "**", "*.vcf.gz"), recursive=True)
-            )
-            vcf_files.extend(
-                glob.glob(os.path.join(root, "**", "*.vcf"), recursive=True)
-            )
+            # depth 3 이내에서만 탐색 (output/<work>/<sample>/vcf/ 구조)
+            for depth_pat in ("*.vcf.gz", "*/*.vcf.gz", "*/*/*.vcf.gz", "*/*/*/*.vcf.gz"):
+                vcf_files.extend(glob.glob(os.path.join(root, depth_pat)))
+            for depth_pat in ("*.vcf", "*/*.vcf", "*/*/*.vcf", "*/*/*/*.vcf"):
+                vcf_files.extend(glob.glob(os.path.join(root, depth_pat)))
         vcf_files = list(dict.fromkeys(vcf_files))
 
         if not vcf_files:
@@ -1824,8 +1847,8 @@ class CarrierScreeningPlugin(ServicePlugin):
                                 key, result = await fut
                                 if isinstance(result, dict):
                                     literature_map[key] = result
-                            except Exception:
-                                pass
+                            except Exception as _lit_err:
+                                logger.debug("[carrier_screening] Literature lookup failed: %s", _lit_err)
                         logger.info(
                             f"  Literature search complete: "
                             f"{sum(1 for v in literature_map.values() if v.get('total_found', 0) > 0)} "

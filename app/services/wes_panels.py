@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..config import settings
@@ -120,8 +121,25 @@ def load_wes_panels_raw() -> Dict[str, Any]:
         return {"version": 1, "panels": []}
 
 
-def list_panels() -> List[Dict[str, Any]]:
-    """Merged panels: bundled first, then custom (custom overrides same id)."""
+_panels_cache_list: List[Dict[str, Any]] = []
+_panels_cache_by_id: Dict[str, Dict[str, Any]] = {}
+_panels_cache_mtimes: Tuple[float, float] = (0.0, 0.0)
+
+
+def _file_mtime(path: str) -> float:
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
+
+def _panels_cache_stale() -> bool:
+    current = (_file_mtime(_default_catalog_path()), _file_mtime(_custom_catalog_path()))
+    return current != _panels_cache_mtimes
+
+
+def _rebuild_panels_cache() -> None:
+    global _panels_cache_list, _panels_cache_by_id, _panels_cache_mtimes
     by_id: Dict[str, Dict[str, Any]] = {}
     for p in _load_panels_array(_default_catalog_path()):
         pid = str(p.get("id", "")).strip()
@@ -137,17 +155,25 @@ def list_panels() -> List[Dict[str, Any]]:
         entry = dict(p)
         entry["_source"] = "custom"
         by_id[pid] = entry
-    return list(by_id.values())
+    _panels_cache_list = list(by_id.values())
+    _panels_cache_by_id = by_id
+    _panels_cache_mtimes = (_file_mtime(_default_catalog_path()), _file_mtime(_custom_catalog_path()))
+
+
+def list_panels() -> List[Dict[str, Any]]:
+    """Merged panels: bundled first, then custom (custom overrides same id). Cached with mtime invalidation."""
+    if _panels_cache_stale():
+        _rebuild_panels_cache()
+    return _panels_cache_list
 
 
 def get_panel_by_id(panel_id: Optional[str]) -> Optional[Dict[str, Any]]:
     pid = (panel_id or "").strip()
     if not pid:
         return None
-    for p in list_panels():
-        if str(p.get("id", "")).strip() == pid:
-            return p
-    return None
+    if _panels_cache_stale():
+        _rebuild_panels_cache()
+    return _panels_cache_by_id.get(pid)
 
 
 _GENE_SYMBOL_LIKE = re.compile(r"^[A-Z][A-Z0-9-]{0,62}$")
@@ -276,7 +302,8 @@ def approximate_gene_count_from_bed(abs_path: str) -> Optional[int]:
     genes: set = set()
     lines = 0
     try:
-        with open(abs_path, encoding="utf-8", errors="replace") as f:
+        opener = gzip.open if abs_path.endswith(".gz") else open
+        with opener(abs_path, "rt", encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#") or line.startswith("track"):
@@ -820,9 +847,18 @@ def save_custom_panel(
     others.sort(key=lambda x: str(x.get("id", "")))
 
     payload = {"version": 1, "panels": others}
-    with open(custom_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-        f.write("\n")
+    text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(custom_path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, custom_path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
     logger.info("[wes_panels] Saved custom panel %s → %s", pid, custom_path)
 
@@ -864,8 +900,17 @@ def delete_custom_panel(panel_id: str) -> bool:
             logger.warning("[wes_panels] Could not remove generated BED %s: %s", gen, e)
 
     payload = {"version": 1, "panels": rest}
-    with open(custom_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-        f.write("\n")
+    text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(custom_path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, custom_path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
     logger.info("[wes_panels] Deleted custom panel %s", pid)
     return True

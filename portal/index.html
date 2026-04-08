@@ -1616,6 +1616,7 @@
         <div class="sub-tab" data-tab="diseases" onclick="showReviewTab('diseases')">Disease Summary</div>
         <div class="sub-tab" data-tab="qc" onclick="showReviewTab('qc')">QC Summary</div>
         <div class="sub-tab" data-tab="darkgenes" onclick="showReviewTab('darkgenes')">Dark genes</div>
+        <div class="sub-tab" data-tab="pgx" onclick="showReviewTab('pgx')">PGx</div>
         <div class="sub-tab" data-tab="stats" onclick="showReviewTab('stats')">Statistics</div>
         <div class="sub-tab" data-tab="report" onclick="showReviewTab('report')">Review Case</div>
         <div class="sub-tab" data-tab="genedb" onclick="showReviewTab('genedb')">Gene database</div>
@@ -1719,6 +1720,12 @@
       <div id="reviewDarkGenes" class="hidden">
         <p class="muted" id="darkGenesHint" style="margin:0 0 10px;font-size:12px"></p>
         <div id="darkGenesContent" class="card dark-genes-panel" style="margin:0;padding:14px"></div>
+      </div>
+
+      <!-- PGx (PharmCAT summary under analysis …/pgx/) -->
+      <div id="reviewPgx" class="hidden">
+        <p class="muted" id="pgxReviewHint" style="margin:0 0 10px;font-size:12px"></p>
+        <div id="pgxReviewContent" class="card" style="margin:0;padding:14px"></div>
       </div>
 
       <!-- Statistics Tab -->
@@ -6278,7 +6285,7 @@
         autoSelectPathogenicVariantsForReport();
 
         // sgNIPT: carrier-only 서브탭 숨김
-        const carrierOnlyTabs = ['coverage', 'diseases', 'darkgenes', 'report', 'genedb'];
+        const carrierOnlyTabs = ['coverage', 'diseases', 'darkgenes', 'pgx', 'report', 'genedb'];
         document.querySelectorAll('#reviewSubTabs .sub-tab').forEach(el => {
           const tab = el.dataset.tab;
           el.style.display = (isSgNIPT && carrierOnlyTabs.includes(tab)) ? 'none' : '';
@@ -6294,6 +6301,7 @@
         else renderSgNIPTBanner();
         renderReviewQC();
         renderReviewDarkGenes();
+        renderReviewPgx();
         renderReviewStats();
         renderVariantsTable();
         renderDiseaseSummary();
@@ -6407,7 +6415,7 @@
       });
     }
 
-    const REVIEW_SUB_TAB_KEYS = ['variants', 'coverage', 'diseases', 'qc', 'darkgenes', 'stats', 'report', 'genedb'];
+    const REVIEW_SUB_TAB_KEYS = ['variants', 'coverage', 'diseases', 'qc', 'darkgenes', 'pgx', 'stats', 'report', 'genedb'];
 
     function getSavedReviewSubTab() {
       try {
@@ -6431,6 +6439,7 @@
         diseases: 'reviewDiseases',
         qc: 'reviewQc',
         darkgenes: 'reviewDarkGenes',
+        pgx: 'reviewPgx',
         stats: 'reviewStats',
         report: 'reviewReport',
         genedb: 'reviewGeneDb',
@@ -6457,6 +6466,9 @@
       if (tab === 'darkgenes') {
         refreshDarkGenesFromServer();
       }
+      if (tab === 'pgx') {
+        refreshPgxFromServer();
+      }
       if (tab !== 'variants') qs('variantDetail').classList.add('hidden');
     }
 
@@ -6473,6 +6485,228 @@
         }
       } catch (e) { /* keep cached reviewData.dark_genes */ }
       renderReviewDarkGenes();
+    }
+
+    async function refreshPgxFromServer() {
+      const orderId = (qs('reviewOrderSelect') && qs('reviewOrderSelect').value) || reviewLoadedOrderId || '';
+      if (!orderId || !reviewData) {
+        renderReviewPgx();
+        return;
+      }
+      try {
+        const data = await apiGet(`/order/${encodeURIComponent(orderId)}/result`);
+        if (data && typeof data.pgx === 'object') {
+          reviewData.pgx = data.pgx;
+        }
+      } catch (e) { /* keep cached reviewData.pgx */ }
+      renderReviewPgx();
+    }
+
+    // ── PGx (PharmCAT: pgx/pgx_summary.txt + portal notes) ──
+    function renderReviewPgx() {
+      const hint = qs('pgxReviewHint');
+      const box = qs('pgxReviewContent');
+      if (!hint || !box) return;
+      if (!reviewData) {
+        hint.textContent = '';
+        box.innerHTML = '<p class="muted">Load an order first.</p>';
+        return;
+      }
+      if (isReviewOrderMismatch()) {
+        hint.textContent = '';
+        box.innerHTML = '<p class="muted">Order selection changed — click <strong>Load</strong> to refresh.</p>';
+        return;
+      }
+      const orderId = reviewLoadedOrderId || reviewData.order_id || '';
+      const pgx = reviewData.pgx;
+      if (!pgx || typeof pgx !== 'object') {
+        hint.textContent =
+          'No PGx block in result.json. After the pipeline writes pgx/ under the analysis output, run «Reprocess only» or POST /order/{id}/reprocess-results.';
+        box.innerHTML = '';
+        return;
+      }
+      const pr =
+        pgx.portal_review && typeof pgx.portal_review === 'object' ? pgx.portal_review : {};
+      const hasNotes = !!(pr.reviewer_notes && String(pr.reviewer_notes).trim());
+      const hasPipeline =
+        pgx.status === 'ok' ||
+        pgx.status === 'error' ||
+        ((pgx.summary_text || '').trim().length > 0);
+      if (pgx.status === 'not_found' && !hasPipeline && !pr.reviewed && !hasNotes) {
+        hint.textContent =
+          (pgx.message && String(pgx.message)) ||
+          'No PharmCAT PGx output found. Expect pgx/pgx_summary.txt under the analysis directory (e.g. …/exome_test/pgx/). Reprocess after the pipeline finishes.';
+        box.innerHTML = '';
+        return;
+      }
+
+      const meta = pgx.meta && typeof pgx.meta === 'object' ? pgx.meta : {};
+      const art = pgx.artifacts && typeof pgx.artifacts === 'object' ? pgx.artifacts : {};
+      const links = [];
+      if (art.pgx_summary_txt && orderId) {
+        const u = orderArtifactFileUrl(orderId, art.pgx_summary_txt);
+        if (u) links.push(`<a href="${escapeHtml(u)}" target="_blank" rel="noopener">pgx_summary.txt</a>`);
+      }
+      if (art.reporter_html_basename && orderId) {
+        const rel = `pgx/${art.reporter_html_basename}`;
+        const u = orderArtifactFileUrl(orderId, rel);
+        if (u) links.push(`<a href="${escapeHtml(u)}" target="_blank" rel="noopener">PharmCAT HTML report</a>`);
+      }
+      if (art.pgx_meta_json && orderId) {
+        const u = orderArtifactFileUrl(orderId, art.pgx_meta_json);
+        if (u) links.push(`<a href="${escapeHtml(u)}" target="_blank" rel="noopener">pgx_meta.json</a>`);
+      }
+      if (art.pgx_result_json && orderId) {
+        const rel = `pgx/${art.pgx_result_json}`;
+        const u = orderArtifactFileUrl(orderId, rel);
+        if (u) links.push(`<a href="${escapeHtml(u)}" target="_blank" rel="noopener">pgx_result.json</a>`);
+      }
+      hint.textContent = pgx.pgx_dir
+        ? `PGx directory (pipeline): ${String(pgx.pgx_dir)}`
+        : '';
+
+      const st = escapeHtml(pgx.status || '');
+      let html = `<p style="margin:0 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">`;
+      html += `<span class="badge">${st}</span>`;
+      html += `<span class="muted" style="font-size:11px">PharmCAT / pharmacogenomics</span>`;
+      if (pr.reviewed) {
+        html +=
+          '<span class="badge" style="background:rgba(22,101,52,0.12);color:#166534">Reviewed</span>';
+      }
+      html += '</p>';
+      if (meta.tool_version || meta.genome_build || meta.exit_status != null) {
+        const bits = [];
+        if (meta.tool_version) bits.push(`Tool: ${escapeHtml(String(meta.tool_version))}`);
+        if (meta.genome_build) bits.push(`Genome: ${escapeHtml(String(meta.genome_build))}`);
+        if (meta.exit_status != null) bits.push(`Exit: ${escapeHtml(String(meta.exit_status))}`);
+        html += `<p class="muted" style="font-size:12px;margin:0 0 10px">${bits.join(' · ')}</p>`;
+      }
+      if (links.length) {
+        html += `<p class="muted" style="font-size:12px;margin:0 0 10px">Open files: ${links.join(' · ')}</p>`;
+      }
+      if (pgx.message && pgx.status === 'error') {
+        html += `<p style="color:#b91c1c;font-size:13px;margin:0 0 10px">${escapeHtml(String(pgx.message))}</p>`;
+      }
+
+      const genes = Array.isArray(pgx.gene_results) ? pgx.gene_results : [];
+      html += '<h4 style="font-size:13px;margin:12px 0 8px">Gene-level results (review)</h4>';
+      const panelFiltered = !!pgx.gene_results_interpretation_filter_applied;
+      html += `<p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.45">${
+        panelFiltered
+          ? 'Only genes on <strong>this order’s interpretation panel</strong> (from <code>wes_panel_id</code> in the panel catalog — same gene list as variant review scope). PharmCAT may report more genes; they are not listed here.'
+          : 'Rows from PharmCAT phenotype JSON (CPIC / DPWG). <strong>No panel is scoped on this order</strong> (no <code>wes_panel_id</code>), so all PharmCAT genes are shown. Check <strong>Confirmed</strong> and add comments; values are stored on each <code>gene_results[]</code> row.'
+      }</p>`;
+      if (genes.length) {
+        html += '<div class="table-wrap" style="max-height:55vh;margin-bottom:14px">';
+        html += '<table id="tblPgxGenes" style="font-size:12px">';
+        html += '<thead><tr>';
+        html +=
+          '<th style="width:40px;text-align:center" title="Reviewer confirmed">✓</th>';
+        html += '<th>Gene</th><th>Source</th><th>Diplotype</th><th>Phenotype</th><th>Activity</th>';
+        html += '<th>Allele functions</th><th>Call</th><th>Category</th><th style="min-width:140px">Comment</th>';
+        html += '</tr></thead><tbody id="tblPgxGenesBody">';
+        genes.forEach(row => {
+          const g = (row.gene != null ? String(row.gene) : '').trim();
+          if (!g) return;
+          const fn1 = (row.allele1_function != null ? String(row.allele1_function) : '').trim();
+          const fn2 = (row.allele2_function != null ? String(row.allele2_function) : '').trim();
+          const fn = [fn1, fn2].filter(Boolean).join(' / ') || '—';
+          const cat = (row.category || '').trim();
+          const catBadge =
+            cat === 'actionable'
+              ? '<span class="badge" style="background:rgba(180,83,9,0.15);color:#b45309">actionable</span>'
+              : '<span class="badge" style="opacity:0.85">normal</span>';
+          const conf = !!row.reviewer_confirmed;
+          const com = escapeHtml(row.reviewer_comment != null ? String(row.reviewer_comment) : '');
+          html += `<tr data-pgx-gene="${escapeHtml(g)}">`;
+          html += `<td style="text-align:center"><input type="checkbox" class="pgx-gene-confirmed" ${conf ? 'checked' : ''} /></td>`;
+          html += `<td style="font-weight:600">${escapeHtml(g)}</td>`;
+          html += `<td>${escapeHtml(row.guideline_source != null ? String(row.guideline_source) : '')}</td>`;
+          html += `<td style="font-family:ui-monospace,monospace;font-size:11px">${escapeHtml(row.diplotype != null ? String(row.diplotype) : '')}</td>`;
+          html += `<td>${escapeHtml(row.phenotype != null ? String(row.phenotype) : '')}</td>`;
+          html += `<td>${row.activity_score != null && row.activity_score !== '' ? escapeHtml(String(row.activity_score)) : '—'}</td>`;
+          html += `<td style="font-size:11px;max-width:14rem">${escapeHtml(fn)}</td>`;
+          html += `<td>${escapeHtml(row.call_source != null ? String(row.call_source) : '')}</td>`;
+          html += `<td>${catBadge}</td>`;
+          html += `<td><textarea class="pgx-gene-comment" rows="2" style="width:100%;min-width:120px;font-family:inherit;font-size:11px;padding:6px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">${com}</textarea></td>`;
+          html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+      } else {
+        html +=
+          '<p class="muted" style="margin:0 0 12px;font-size:12px">No gene rows parsed yet. Reprocess results after <code>pgx/pgx_result.json</code> exists (PharmCAT phenotype JSON). Until then, use the raw summary below.</p>';
+      }
+
+      const sum = (pgx.summary_text || '').trim();
+      if (sum) {
+        html +=
+          '<details style="margin:12px 0"><summary class="muted" style="font-size:12px;cursor:pointer">Raw summary text (PDF source)</summary>';
+        html += `<pre style="white-space:pre-wrap;font-size:11px;line-height:1.45;max-height:40vh;overflow:auto;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);margin:8px 0 0">${escapeHtml(sum)}</pre>`;
+        html += '</details>';
+      } else if (hasPipeline && pgx.status !== 'not_found') {
+        html += '<p class="muted" style="font-size:12px">Summary text was empty.</p>';
+      }
+
+      html += '<h4 style="font-size:13px;margin:16px 0 8px">Case review</h4>';
+      html +=
+        '<label class="muted" style="font-size:12px;display:flex;align-items:center;gap:8px;margin-bottom:8px">';
+      html += `<input type="checkbox" id="pgxReviewedChk" ${pr.reviewed ? 'checked' : ''} /> Mark PGx case as reviewed</label>`;
+      html +=
+        '<textarea id="pgxReviewerNotesTa" rows="3" style="width:100%;max-width:52rem;font-family:inherit;font-size:12px;padding:10px;border-radius:12px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)" placeholder="Case-level internal notes (not shown on customer PDF by default)">';
+      html += escapeHtml(pr.reviewer_notes || '');
+      html += '</textarea>';
+      html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
+      html +=
+        '<button type="button" class="btn primary" id="btnSavePgxReview">Save PGx review</button>';
+      html +=
+        '<span class="muted" style="font-size:11px;max-width:40rem;line-height:1.45">Stores <code>pgx.portal_review</code> and per-gene fields on <code>pgx.gene_results</code>. «Reprocess only» preserves review fields when pipeline data is regenerated.</span>';
+      html += '</div>';
+      box.innerHTML = html;
+      const btn = qs('btnSavePgxReview');
+      if (btn) btn.onclick = () => savePgxReview();
+    }
+
+    async function savePgxReview() {
+      const orderId = getActiveReviewOrderId();
+      if (!orderId || !reviewData) {
+        toast('Load an order first', false);
+        return;
+      }
+      const notesEl = qs('pgxReviewerNotesTa');
+      const chk = qs('pgxReviewedChk');
+      const reviewer_notes = notesEl ? String(notesEl.value || '') : '';
+      const reviewed = !!(chk && chk.checked);
+      const gene_reviews = [];
+      document.querySelectorAll('#tblPgxGenesBody tr[data-pgx-gene]').forEach(tr => {
+        const gene = tr.getAttribute('data-pgx-gene');
+        if (!gene) return;
+        const c = tr.querySelector('.pgx-gene-confirmed');
+        const ta = tr.querySelector('.pgx-gene-comment');
+        gene_reviews.push({
+          gene,
+          reviewer_confirmed: !!(c && c.checked),
+          reviewer_comment: ta ? String(ta.value || '').trim() : '',
+        });
+      });
+      try {
+        const res = await apiPost(`/order/${encodeURIComponent(orderId)}/pgx-review`, {
+          reviewer_notes,
+          reviewed,
+          gene_reviews,
+        });
+        if (res && res.pgx && typeof res.pgx === 'object') {
+          reviewData.pgx = res.pgx;
+        }
+        toast('PGx review saved');
+        renderReviewPgx();
+      } catch (e) {
+        const msg = String((e && e.message) || e);
+        const hint404 =
+          msg === 'Not Found' || /\b404\b/.test(msg)
+            ? ' Reload the page; set Daemon URL (gear) to scheme+host+port only.'
+            : '';
+        toast(msg + hint404, false);
+      }
     }
 
     /** Gene database tab: gene_knowledge SQLite rows (Gemini cache) merged with per-gene variant counts */

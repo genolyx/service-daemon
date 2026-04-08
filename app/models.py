@@ -155,6 +155,25 @@ class DarkGenesReviewRequest(BaseModel):
     )
 
 
+class PgxGeneReviewRow(BaseModel):
+    """Per-gene review row aligned with ``pgx.gene_results[].gene`` (PharmCAT phenotype)."""
+
+    gene: str = Field(..., min_length=1, max_length=64)
+    reviewer_confirmed: bool = False
+    reviewer_comment: str = Field(default="", max_length=4000)
+
+
+class PgxReviewRequest(BaseModel):
+    """Persist portal reviewer state into ``result.json`` → ``pgx.portal_review`` + per-gene fields on ``gene_results``."""
+
+    reviewer_notes: str = Field(default="", max_length=16000, description="Internal notes; not in customer PDF by default")
+    reviewed: bool = Field(default=False, description="Reviewer marked PGx section as reviewed")
+    gene_reviews: List[PgxGeneReviewRow] = Field(
+        default_factory=list,
+        description="Updates reviewer_confirmed / reviewer_comment for matching gene symbols in pgx.gene_results",
+    )
+
+
 class WesPanelCustomSave(BaseModel):
     """Portal: create or replace a user-defined WES/exome panel (saved to ``wes_panels_custom_json``)."""
 

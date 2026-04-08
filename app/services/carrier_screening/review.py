@@ -21,6 +21,7 @@ result.json 구조:
     - dark_genes: supplementary unified-pipeline summary (summary/*.txt under analysis_dir);
       optional section_reviews[] (index-aligned with detailed_sections: approved, notes) from Portal;
       customer PDF includes only approved sections
+    - pgx: PharmCAT outputs under pgx/; optional portal_review (notes, reviewed) from Portal — stripped from PDF merge
     - metadata: 파이프라인/annotation DB 버전 정보
 """
 
@@ -30,7 +31,7 @@ import csv
 import json
 import glob
 import logging
-from typing import Dict, Any, List, Optional, Tuple
+from typing import AbstractSet, Dict, Any, List, Optional, Tuple
 
 from ...config import normalize_legacy_carrier_container_path
 from ...datetime_kst import now_kst_iso
@@ -1694,6 +1695,7 @@ def generate_result_json(
     analysis_dir: Optional[str] = None,
     dark_genes_extra_roots: Optional[List[str]] = None,
     review_build_metadata: Optional[Dict[str, Any]] = None,
+    pgx_panel_gene_symbols: Optional[AbstractSet[str]] = None,
 ) -> str:
     """
     Portal 리뷰 페이지용 result.json을 생성합니다.
@@ -1712,6 +1714,9 @@ def generate_result_json(
         analysis_dir: Pipeline analysis root (dark-gene Nextflow outdir); defaults to output_dir
         dark_genes_extra_roots: Extra dirs to scan for summary/*.txt when artifact analysis_dir
             has no pipeline publishDir output (e.g. Nextflow wrote under carrier_screening_layout_base).
+        pgx_panel_gene_symbols: Allowlist from ``wes_panels.pgx_portal_gene_allowlist_for_job``:
+            non-empty ``set`` filters ``gene_results``; empty ``set`` clears rows (scoped order, no genes);
+            ``None`` = unscoped (show all PharmCAT genes).
 
     Returns:
         생성된 result.json 파일 경로
@@ -1801,6 +1806,54 @@ def generate_result_json(
                 dark_genes_block = merge_dark_genes_reviews(dark_genes_block, prev_dg)
     except Exception as e:
         logger.warning("[generate_result_json] dark_genes section_reviews merge skipped: %s", e)
+
+    # PharmCAT PGx (gx-exome pgx/ next to analysis output)
+    pgx_block: Dict[str, Any] = {
+        "status": "not_found",
+        "message": "No pgx directory under searched roots",
+        "searched_roots": search_roots,
+    }
+    try:
+        if search_roots:
+            from .pgx_report import collect_pgx_from_analysis_dir
+
+            for _root in search_roots:
+                pgx_block = collect_pgx_from_analysis_dir(_root, sample_name)
+                if pgx_block.get("status") != "not_found":
+                    break
+            if pgx_block.get("status") == "not_found":
+                pgx_block["searched_roots"] = search_roots
+    except Exception as e:
+        logger.warning("[generate_result_json] pgx collection failed: %s", e)
+        pgx_block = {"status": "error", "message": str(e)}
+
+    try:
+        prev_path = os.path.join(output_dir, "result.json")
+        if os.path.isfile(prev_path):
+            from .pgx_report import merge_pgx_gene_reviews, merge_pgx_portal_review
+
+            with open(prev_path, "r", encoding="utf-8") as rf:
+                prev = json.load(rf)
+            prev_pgx = prev.get("pgx") if isinstance(prev, dict) else None
+            if isinstance(prev_pgx, dict):
+                pgx_block = merge_pgx_portal_review(pgx_block, prev_pgx)
+                gr = pgx_block.get("gene_results")
+                if isinstance(gr, list):
+                    pgx_block["gene_results"] = merge_pgx_gene_reviews(gr, prev_pgx)
+    except Exception as e:
+        logger.warning("[generate_result_json] pgx portal_review merge skipped: %s", e)
+
+    if pgx_panel_gene_symbols is not None and isinstance(pgx_block.get("gene_results"), list):
+        from .pgx_report import filter_pgx_gene_results_by_panel
+
+        if len(pgx_panel_gene_symbols) == 0:
+            pgx_block["gene_results"] = []
+        else:
+            pgx_block["gene_results"] = filter_pgx_gene_results_by_panel(
+                pgx_block["gene_results"],
+                pgx_panel_gene_symbols,
+            )
+        pgx_block["gene_results_interpretation_filter_applied"] = True
 
     # 변이 + ACMG 결합
     variants_for_review = []
@@ -1950,6 +2003,9 @@ def generate_result_json(
 
         # Dark-gene / hard-to-sequence supplementary pipeline (Nextflow summary/)
         "dark_genes": dark_genes_block,
+
+        # PharmCAT PGx (pgx/pgx_summary.txt + pgx_meta.json under analysis dir)
+        "pgx": pgx_block,
 
         # 메타데이터
         "metadata": _carrier_result_metadata_block(review_build_metadata),

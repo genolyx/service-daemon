@@ -294,6 +294,20 @@ def approximate_gene_count_from_bed(abs_path: str) -> Optional[int]:
         return None
 
 
+def _gene_symbol_set_from_param(container: Optional[Dict[str, Any]], key: str) -> Set[str]:
+    """Parse ``key`` as a list of HGNC symbols or a comma-separated string."""
+    if not isinstance(container, dict):
+        return set()
+    raw = container.get(key)
+    if raw is None:
+        return set()
+    if isinstance(raw, list):
+        return {str(x).strip().upper() for x in raw if str(x).strip()}
+    if isinstance(raw, str) and raw.strip():
+        return {g.strip().upper() for g in raw.split(",") if g.strip()}
+    return set()
+
+
 def interpretation_gene_set_for_job(job: Any) -> Set[str]:
     """
     Genes to retain in the interpretation report when post-filtering is active.
@@ -318,6 +332,83 @@ def interpretation_gene_set_for_job(job: Any) -> Set[str]:
     if isinstance(carrier, dict):
         _merge_extra(carrier.get("interpretation_genes_extra"))
     return out
+
+
+def _wes_panel_id_for_job(job: Any) -> str:
+    params = getattr(job, "params", None) or {}
+    if not isinstance(params, dict):
+        return ""
+    w = (params.get("wes_panel_id") or "").strip()
+    if w:
+        return w
+    c = params.get("carrier")
+    if isinstance(c, dict):
+        return (c.get("wes_panel_id") or "").strip()
+    return ""
+
+
+def interpretation_genes_from_wes_panel_catalog(job: Any) -> Set[str]:
+    """
+    Resolve HGNC symbols from the panel catalog for ``wes_panel_id`` (same as ``resolve_panel_interpretation_genes``).
+
+    Used when ``panel_interpretation_genes`` was never copied onto ``job.params`` (e.g. reprocess edge cases)
+    but the order still has a primary panel id.
+    """
+    pid = _wes_panel_id_for_job(job)
+    if not pid:
+        return set()
+    panel = get_panel_by_id(pid)
+    if not panel:
+        logger.warning(
+            "[wes_panels] wes_panel_id=%r not found in panel catalog — cannot resolve interpretation genes",
+            pid,
+        )
+        return set()
+    genes = resolve_panel_interpretation_genes(panel)
+    return {str(g).strip().upper() for g in genes if str(g).strip()}
+
+
+def pgx_portal_gene_allowlist_for_job(job: Any) -> Optional[Set[str]]:
+    """
+    Genes allowed in the portal PGx review table (intersection with PharmCAT rows).
+
+    Priority:
+    1. ``params.pgx_interpretation_genes`` ∪ ``carrier.pgx_interpretation_genes`` — optional PGx-only override.
+    2. Else ``interpretation_gene_set_for_job`` (``panel_interpretation_genes`` + extras on params).
+    3. Else resolve genes from **panel catalog** via ``wes_panel_id`` (same list as portal WES panel definitions).
+    4. If the order has ``wes_panel_id`` but (2)+(3) yield no symbols, return ``set()`` (empty table — do not show all PharmCAT).
+    5. If the order has **no** ``wes_panel_id`` and no symbols from (1)–(3), return ``None`` (unscoped: show all PharmCAT rows).
+    """
+    params = getattr(job, "params", None) or {}
+    carrier = params.get("carrier") if isinstance(params.get("carrier"), dict) else {}
+    explicit = _gene_symbol_set_from_param(params, "pgx_interpretation_genes") | _gene_symbol_set_from_param(
+        carrier, "pgx_interpretation_genes"
+    )
+    if explicit:
+        return explicit
+
+    from_params = interpretation_gene_set_for_job(job)
+    if from_params:
+        return from_params
+
+    from_catalog = interpretation_genes_from_wes_panel_catalog(job)
+    if from_catalog:
+        logger.info(
+            "[wes_panels] PGx allowlist: resolved %d genes from panel catalog (wes_panel_id=%s)",
+            len(from_catalog),
+            _wes_panel_id_for_job(job) or "?",
+        )
+        return from_catalog
+
+    pid = _wes_panel_id_for_job(job)
+    if pid:
+        logger.warning(
+            "[wes_panels] PGx allowlist: wes_panel_id=%r but panel resolved 0 interpretation genes — PGx table will be empty",
+            pid,
+        )
+        return set()
+
+    return None
 
 
 def should_apply_interpretation_post_filter(job: Any) -> bool:

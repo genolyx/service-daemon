@@ -23,7 +23,11 @@ import shutil
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..base import ServicePlugin
-from ..wes_panels import interpretation_gene_set_for_job, should_apply_interpretation_post_filter
+from ..wes_panels import (
+    interpretation_gene_set_for_job,
+    pgx_portal_gene_allowlist_for_job,
+    should_apply_interpretation_post_filter,
+)
 from ...config import normalize_legacy_carrier_container_path, settings
 from ...models import Job, OutputFile
 from .layout_norm import (
@@ -1992,6 +1996,7 @@ class CarrierScreeningPlugin(ServicePlugin):
                 seen_mr.add(rp)
                 metric_image_roots.append(p)
             dark_roots = self._qc_extra_search_dirs(job, analysis_dir)
+            _pgx_allow = pgx_portal_gene_allowlist_for_job(job)
             result_json_path = await asyncio.to_thread(
                 generate_result_json,
                 annotated_variants=annotated_variants,
@@ -2012,6 +2017,7 @@ class CarrierScreeningPlugin(ServicePlugin):
                     "vep_preparsed_keys": len(vep_annotations) if vep_annotations else 0,
                     "vep_annotation_enabled": bool(is_vep_vcf),
                 },
+                pgx_panel_gene_symbols=_pgx_allow,
             )
 
             # ── 13. variants.tsv 생성 ──

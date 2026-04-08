@@ -256,6 +256,12 @@
 {% endfor %}
 {% endif %}
 
+{% if data.pgx and data.pgx.summary_for_pdf_html %}
+<div class="page-break"></div>
+<h2>약물유전체 (PharmCAT)</h2>
+{{ data.pgx.summary_for_pdf_html|safe }}
+{% endif %}
+
 <div class="disclaimer">
     <strong>면책 조항:</strong> 본 보고서는 자격을 갖춘 의료 전문가만을 위한 것입니다.
     변이 분류는 ACMG/AMP 2015 가이드라인(Richards et al., Genet Med 2015)을 따릅니다.

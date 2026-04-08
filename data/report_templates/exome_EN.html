@@ -356,6 +356,13 @@
     </div>
     {% endif %}
 
+    {% if data.pgx and data.pgx.summary_for_pdf_html %}
+    <div class="new-page">
+        <div class="section-title">Pharmacogenomics (PharmCAT)</div>
+        {{ data.pgx.summary_for_pdf_html|safe }}
+    </div>
+    {% endif %}
+
     <div class="new-page">
         <div class="section-title">Genes Evaluated</div>
         <div class="gene-list-grid">

@@ -34,6 +34,7 @@ from .models import (
     VariantKnowledgeSaveRequest,
     UpdateFastqPathsRequest,
     DarkGenesReviewRequest,
+    PgxReviewRequest,
     WesPanelCustomSave,
 )
 from .queue_manager import get_queue_manager
@@ -2040,6 +2041,89 @@ async def patch_dark_genes_review(order_id: str, body: DarkGenesReviewRequest):
 async def post_dark_genes_review(order_id: str, body: DarkGenesReviewRequest):
     """Same as PATCH — POST is supported for proxies that block PATCH."""
     return await _dark_genes_review_impl(order_id, body)
+
+
+async def _pgx_review_impl(order_id: str, body: PgxReviewRequest) -> Dict[str, Any]:
+    """
+    Save ``pgx.portal_review`` (reviewer notes, reviewed flag) into the same ``result.json``
+    as Generate Report (``carrier_report_output_dir``, mirrored to ``job.output_dir``).
+    """
+    queue_manager = get_queue_manager()
+    job = queue_manager.get_job(order_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
+    if job.service_code not in _CARRIER_LIKE:
+        raise HTTPException(
+            status_code=400,
+            detail="pgx-review is only supported for carrier_screening, whole_exome, and health_screening",
+        )
+    from app.services.carrier_screening.plugin import (
+        carrier_result_json_path,
+        write_carrier_result_json_sync,
+    )
+
+    path = carrier_result_json_path(job)
+    if not path:
+        raise HTTPException(
+            status_code=404,
+            detail="result.json not found — run analysis / reprocess first",
+        )
+
+    def _apply() -> Dict[str, Any]:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            data = {}
+        pgx = data.get("pgx")
+        if not isinstance(pgx, dict):
+            pgx = {"status": "not_found", "message": "PGx block was missing; created by portal save"}
+        pgx2 = dict(pgx)
+        pgx2["portal_review"] = {
+            "reviewer_notes": (body.reviewer_notes or "")[:16000],
+            "reviewed": bool(body.reviewed),
+        }
+        grs = pgx2.get("gene_results")
+        if isinstance(grs, list) and body.gene_reviews is not None:
+            by_gene = {x.gene: x for x in body.gene_reviews}
+            new_grs = []
+            for row in grs:
+                if not isinstance(row, dict):
+                    continue
+                r = dict(row)
+                g = r.get("gene")
+                if g in by_gene:
+                    u = by_gene[g]
+                    r["reviewer_confirmed"] = bool(u.reviewer_confirmed)
+                    r["reviewer_comment"] = (u.reviewer_comment or "")[:4000]
+                new_grs.append(r)
+            pgx2["gene_results"] = new_grs
+        data["pgx"] = pgx2
+        write_carrier_result_json_sync(job, data)
+        return data
+
+    data = await asyncio.to_thread(_apply)
+
+    store = queue_manager.store
+    if store and isinstance(data, dict):
+        await asyncio.to_thread(store.set_result_json, order_id, data)
+
+    pgx_out = data.get("pgx") if isinstance(data, dict) else {}
+    return {
+        "status": "ok",
+        "order_id": order_id,
+        "pgx": pgx_out if isinstance(pgx_out, dict) else {},
+    }
+
+
+@app.patch("/order/{order_id}/pgx-review")
+async def patch_pgx_review(order_id: str, body: PgxReviewRequest):
+    return await _pgx_review_impl(order_id, body)
+
+
+@app.post("/order/{order_id}/pgx-review")
+async def post_pgx_review(order_id: str, body: PgxReviewRequest):
+    """Same as PATCH — POST is supported for proxies that block PATCH."""
+    return await _pgx_review_impl(order_id, body)
 
 
 def _load_result_dict_for_gene_knowledge(order_id: str, job) -> Optional[Dict[str, Any]]:

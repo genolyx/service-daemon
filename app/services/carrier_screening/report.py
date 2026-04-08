@@ -18,6 +18,7 @@ report.json 구조:
     - genes_evaluated_count
     - carrier_status, confirmed_variants, disease_groups, qc_summary, reviewer
     - dark_genes (optional): report_detailed_html (+ error-only report_summary) from result.json for PDF (approved detailed sections only; Overview/QC blocks omitted)
+    - pgx (optional): PharmCAT pgx_summary.txt + pgx_meta.json from pipeline ``pgx/`` → summary_for_pdf_html for PDF
 """
 
 import html
@@ -209,6 +210,109 @@ def _merge_dark_genes_from_result_json_for_pdf(
             "[generate_report_pdf] no result.json on disk for dark_genes merge (looked for %s)",
             deduped_all,
         )
+
+
+def _merge_pgx_from_result_json_for_pdf(
+    report_data: Dict[str, Any],
+    report_json_path: str,
+    extra_result_json_paths: Optional[Sequence[str]] = None,
+) -> None:
+    """Merge ``pgx`` from ``result.json`` (newest usable) and add ``summary_for_pdf_html``."""
+    primary = os.path.join(os.path.dirname(os.path.abspath(report_json_path)), "result.json")
+    candidates = _dark_genes_result_json_paths_for_pdf(
+        primary, extra_result_json_paths
+    )
+    from .pgx_report import pgx_for_pdf
+
+    rows: List[Tuple[float, str, Dict[str, Any]]] = []
+    any_file = False
+    for rp in candidates:
+        if not os.path.isfile(rp):
+            continue
+        any_file = True
+        try:
+            with open(rp, "r", encoding="utf-8") as f:
+                rd = json.load(f)
+        except Exception as e:
+            logger.warning("[generate_report_pdf] could not read %s for pgx: %s", rp, e)
+            continue
+        if not isinstance(rd, dict):
+            continue
+        pgx = rd.get("pgx")
+        if not isinstance(pgx, dict):
+            continue
+        if pgx.get("status") == "not_found":
+            continue
+        try:
+            mt = os.path.getmtime(rp)
+        except OSError:
+            mt = 0.0
+        rows.append((mt, rp, pgx))
+
+    if not rows:
+        report_data.pop("pgx", None)
+        if any_file:
+            logger.warning(
+                "[generate_report_pdf] no usable pgx block in result.json candidates: %s",
+                candidates,
+            )
+        return
+
+    rows.sort(key=lambda x: x[0], reverse=True)
+    _mt, src, pgx = rows[0]
+    report_data["pgx"] = pgx_for_pdf(pgx)
+    logger.info("[generate_report_pdf] merged pgx from %s", src)
+
+
+def _merge_pgx_from_result_json_for_report_json(
+    report_data: Dict[str, Any],
+    result_json_path: str,
+    extra_result_json_paths: Optional[Sequence[str]] = None,
+) -> None:
+    """Same as PDF merge but for ``generate_report_json`` (writes report.json)."""
+    candidates = _dark_genes_result_json_paths_for_pdf(
+        result_json_path, extra_result_json_paths
+    )
+    from .pgx_report import pgx_for_pdf
+
+    rows: List[Tuple[float, str, Dict[str, Any]]] = []
+    any_file = False
+    for rp in candidates:
+        if not os.path.isfile(rp):
+            continue
+        any_file = True
+        try:
+            with open(rp, "r", encoding="utf-8") as f:
+                rd = json.load(f)
+        except Exception as e:
+            logger.warning("[generate_report_json] could not read %s for pgx: %s", rp, e)
+            continue
+        if not isinstance(rd, dict):
+            continue
+        pgx = rd.get("pgx")
+        if not isinstance(pgx, dict):
+            continue
+        if pgx.get("status") == "not_found":
+            continue
+        try:
+            mt = os.path.getmtime(rp)
+        except OSError:
+            mt = 0.0
+        rows.append((mt, rp, pgx))
+
+    if not rows:
+        report_data.pop("pgx", None)
+        if any_file:
+            logger.warning(
+                "[generate_report_json] no usable pgx in result.json candidates: %s",
+                candidates,
+            )
+        return
+
+    rows.sort(key=lambda x: x[0], reverse=True)
+    _mt, src, pgx = rows[0]
+    report_data["pgx"] = pgx_for_pdf(pgx)
+    logger.info("[generate_report_json] merged pgx from %s", src)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -907,6 +1011,10 @@ def generate_report_json(
             candidates,
         )
 
+    _merge_pgx_from_result_json_for_report_json(
+        report, result_json_path, extra_result_json_paths
+    )
+
     output_path = os.path.join(output_dir, "report.json")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2, default=str)
@@ -1066,6 +1174,16 @@ def generate_report_pdf(
     except Exception as e:
         logger.warning("[generate_report_pdf] dark_genes PDF sanitize skipped: %s", e)
 
+    _merge_pgx_from_result_json_for_pdf(
+        report_data, report_json_path, extra_result_json_paths=extra_result_json_paths
+    )
+    try:
+        from .pgx_report import sanitize_pgx_payload_for_pdf_render
+
+        sanitize_pgx_payload_for_pdf_render(report_data)
+    except Exception as e:
+        logger.warning("[generate_report_pdf] pgx PDF sanitize skipped: %s", e)
+
     dg = report_data.get("dark_genes")
     if not isinstance(dg, dict) or not (
         (dg.get("report_detailed_html") or "").strip() or dg.get("status") == "error"
@@ -1082,7 +1200,9 @@ def generate_report_pdf(
         with open(report_json_path, "w", encoding="utf-8") as f:
             json.dump(report_data, f, ensure_ascii=False, indent=2, default=str)
     except Exception as e:
-        logger.warning("[generate_report_pdf] could not rewrite report.json after dark_genes merge: %s", e)
+        logger.warning(
+            "[generate_report_pdf] could not rewrite report.json after merge: %s", e
+        )
 
     os.makedirs(output_dir, exist_ok=True)
 

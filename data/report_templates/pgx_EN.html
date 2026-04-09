@@ -36,7 +36,6 @@
 
             #footer-content {
                 position: running(footerContent);
-                /* FIX: Forces the footer line across the whole page */
                 width: 100%;
                 font-size: 8pt;
                 color: #64748b;
@@ -53,7 +52,6 @@
                 padding-bottom: 8px;
                 margin-bottom: 25px;
                 display: block;
-                /* FIX: Forces the header line across the whole page */
                 width: 100%;
                 clear: both;
                 overflow: hidden;
@@ -113,12 +111,12 @@
                 margin-top: 10px;
                 margin-bottom: 40px;
             }
-            .banner-pos { background-color: #fff1f2; color: #be123c; border-left: 4px solid #be123c; }
-            .banner-neg { background-color: #f0fdf4; color: #15803d; border-left: 4px solid #15803d; }
+            .banner-actionable { background-color: #fffbeb; color: #92400e; border-left: 4px solid #d97706; }
+            .banner-normal { background-color: #f0fdf4; color: #15803d; border-left: 4px solid #15803d; }
             .status-text { font-size: 12pt; font-weight: 500; margin: 0; }
             .banner-desc { margin: 4px 0 0 0; font-size: 8.5pt; color: #334155; }
 
-            /* Findings Table */
+            /* PGx Results Table */
             .summary-table {
                 width: 100%;
                 border-collapse: collapse;
@@ -126,33 +124,39 @@
             }
             .summary-table th {
                 text-align: left;
-                font-size: 8pt;
+                font-size: 7pt;
                 color: #64748b;
                 border-bottom: 1.5px solid #cbd5e1;
-                padding: 4px 5px;
+                padding: 4px 4px;
                 text-transform: uppercase;
-                font-weight: 500;  /* <--- This makes the headers Bold */
+                font-weight: 500;
             }
             .summary-table td {
-                padding: 8px 5px;
+                padding: 6px 4px;
                 border-bottom: 1px solid #f1f5f9;
-                font-size: 8pt;
+                font-size: 7.5pt;
                 vertical-align: top;
             }
-            
-            /* Detailed Interpretations - Page 2 Bolder Designation */
-            .condition-heading {
-                /* FIX: Increased size slightly and added display: block for cleaner line */
-                font-size: 11pt;
+
+            .badge-actionable {
+                display: inline-block;
+                background-color: #fef3c7;
+                color: #92400e;
+                font-size: 7pt;
+                font-weight: 600;
+                padding: 1px 6px;
+                border-radius: 3px;
+                text-transform: uppercase;
+            }
+            .badge-normal {
+                display: inline-block;
+                background-color: #f0fdf4;
+                color: #15803d;
+                font-size: 7pt;
                 font-weight: 500;
-                color: #0f172a;
-                margin-bottom: 15px;
-                padding: 4px 0 4px 12px;
-                /* Matches your positive red line from the banner */
-                border-left: 6px solid #be123c;
-                line-height: 1.2;
-                background-color: #f8fafc;
-                display: block;
+                padding: 1px 6px;
+                border-radius: 3px;
+                text-transform: uppercase;
             }
 
             .clinical-statement {
@@ -176,36 +180,67 @@
                 text-transform: uppercase;
             }
 
-            .detail-item {
-                margin-top: 25px;
-                padding: 10px 0;
-                page-break-inside: avoid; /* Keeps the whole interpretation on one page */
-                border-bottom: 1px dashed #e2e8f0; /* Separates multiple findings */
-            }
-            .sub-label {
-                font-size: 8pt;
-                font-weight: 500;
-                color: #64748b;
-                text-transform: uppercase;
-                letter-spacing: 0.02em;
-                margin-top: 10px;
-            }
-            /* text for interpretation */
             .detail-text {
                 font-size: 8pt;
                 color: #334155;
                 margin: 2px 0 0 0;
                 text-align: justify;
-                line-height: 1.3;  /* <--- ADD THIS LINE */
+                line-height: 1.3;
             }
 
-            .gene-list-grid {
+            .pgx-summary-block {
+                white-space: pre-wrap;
+                font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
                 font-size: 8pt;
-                color: #94a3b8;
+                line-height: 1.35;
+                border: 1px solid #cbd5e1;
+                border-radius: 6px;
+                padding: 12px;
+                background: #f8fafc;
                 margin-top: 10px;
-                line-height: 1.8;      /* Increased spacing between lines for readability */
-                text-align: justify;   /* Aligns edges nicely on the page */
-                word-break: break-all; /* Ensures long gene names don't break the layout */
+            }
+
+            /* Drug Recommendations */
+            .drug-rec-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 20px;
+            }
+            .drug-rec-table th {
+                text-align: left;
+                font-size: 7pt;
+                color: #64748b;
+                border-bottom: 1.5px solid #cbd5e1;
+                padding: 4px 4px;
+                text-transform: uppercase;
+                font-weight: 500;
+            }
+            .drug-rec-table td {
+                padding: 6px 4px;
+                border-bottom: 1px solid #f1f5f9;
+                font-size: 7.5pt;
+                vertical-align: top;
+            }
+            .drug-name { font-weight: 600; text-transform: capitalize; }
+            .rec-text { font-size: 7pt; line-height: 1.3; color: #334155; }
+
+            .badge-variant {
+                display: inline-block;
+                background-color: #fef3c7;
+                color: #92400e;
+                font-size: 7pt;
+                font-weight: 600;
+                padding: 1px 6px;
+                border-radius: 3px;
+            }
+            .badge-ref {
+                display: inline-block;
+                background-color: #f1f5f9;
+                color: #64748b;
+                font-size: 7pt;
+                font-weight: 500;
+                padding: 1px 6px;
+                border-radius: 3px;
             }
 
             .director-section {
@@ -224,11 +259,11 @@
 
     <div id="footer-content">
         <strong>Genolyx Diagnostics</strong> | 1400 16th Street, San Francisco, CA 94103<br>
-        clientservices@genolyx.com | 800.436.3037 | © 2025 Genolyx Corporation
+        clientservices@genolyx.com | 800.436.3037 | &copy; 2025 Genolyx Corporation
     </div>
 
     <div class="brand-header">
-        <div class="brand-name">PGx</div>
+        <div class="brand-name">Pharmacogenomics (PGx)</div>
         <div class="logo-placeholder"><span>Logo Placeholder</span></div>
     </div>
 
@@ -255,174 +290,197 @@
         </tr>
     </table>
 
-    {# Change the check to look at the primary patient's findings #}
-        {% if data.primary_patient.findings | length > 0 %}
-        <div class="banner banner-pos">
-            <p class="status-text">+ POSITIVE</p>
-            <p class="banner-desc">Clinically significant genetic change(s) identified. This individual is a carrier for the condition(s) listed below.</p>
-        </div>
-        {% else %}
-        <div class="banner banner-neg">
-            <p class="status-text">- NEGATIVE</p>
-            <p class="banner-desc">No clinically significant genetic changes were identified in the genes evaluated.</p>
-        </div>
-        {% endif %}
+    {% set gene_results = data.pgx.gene_results if data.pgx and data.pgx.gene_results else [] %}
+    {% set actionable = gene_results | selectattr('category', 'equalto', 'actionable') | list %}
 
-        <table class="summary-table">
+    {% if actionable | length > 0 %}
+    <div class="banner banner-actionable">
+        <p class="status-text">ACTIONABLE RESULT(S)</p>
+        <p class="banner-desc">{{ actionable | length }} gene(s) with actionable pharmacogenomic findings identified. Drug selection or dosing adjustments may be indicated.</p>
+    </div>
+    {% else %}
+    <div class="banner banner-normal">
+        <p class="status-text">NO ACTIONABLE FINDINGS</p>
+        <p class="banner-desc">No actionable pharmacogenomic variants were identified. Standard drug selection and dosing apply for the genes evaluated.</p>
+    </div>
+    {% endif %}
+
+    <table class="summary-table">
+        <thead>
+            <tr>
+                <th width="12%">Gene</th>
+                <th width="18%">Diplotype</th>
+                <th width="22%">Phenotype</th>
+                <th width="24%">Allele Functions</th>
+                <th width="11%">Source</th>
+                <th width="13%">Category</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if gene_results | length > 0 %}
+                {% for row in gene_results %}
+                <tr>
+                    <td><span style="font-weight:600;">{{ row.gene }}</span></td>
+                    <td><span style="font-family:ui-monospace,monospace;font-size:7pt;">{{ row.diplotype }}</span></td>
+                    <td>{{ row.phenotype }}</td>
+                    <td style="font-size:7pt;">
+                        {% set fns = [] %}
+                        {% if row.allele1_function %}{% set _ = fns.append(row.allele1_function) %}{% endif %}
+                        {% if row.allele2_function %}{% set _ = fns.append(row.allele2_function) %}{% endif %}
+                        {{ fns | join(' / ') if fns else '&mdash;' }}
+                    </td>
+                    <td>{{ row.guideline_source }}</td>
+                    <td>
+                        {% if row.category == 'actionable' %}
+                            <span class="badge-actionable">Actionable</span>
+                        {% else %}
+                            <span class="badge-normal">Normal</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            {% else %}
+                <tr>
+                    <td colspan="6" style="text-align: center; padding: 30px; color: #64748b; font-style: italic;">
+                        No pharmacogenomic gene results available. PharmCAT analysis may not have completed.
+                    </td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+
+    <div class="clinical-statement">
+        This pharmacogenomics (PGx) test evaluates genetic variants in drug-metabolizing enzymes, transporters, and drug targets
+        to predict individual drug response. Results are derived from PharmCAT analysis using CPIC and DPWG clinical guidelines.
+        Actionable findings indicate that drug selection or dose adjustment may be warranted based on the patient's genotype.
+        These results should be interpreted in the context of the patient's complete clinical picture, including other medications,
+        organ function, and clinical status. Consultation with a clinical pharmacist or pharmacogenomics specialist is recommended
+        for actionable results.
+    </div>
+
+    {% set drug_recs = data.pgx.drug_recommendations if data.pgx and data.pgx.drug_recommendations else [] %}
+    {% if actionable | length > 0 and drug_recs | length > 0 %}
+    <div class="new-page">
+        <div class="section-title">Drug Prescribing Recommendations</div>
+        <p style="font-size:8pt;color:#64748b;margin:6px 0 12px;">Based on CPIC / DPWG clinical guidelines for genes with actionable findings.</p>
+        <table class="drug-rec-table">
             <thead>
                 <tr>
-                    <th width="30%">CONDITION</th>
-                    <th width="15%">GENE</th>
-                    <th width="35%">VARIANT</th>
-                    <th width="20%">CLASSIFICATION</th>
+                    <th width="10%">Gene</th>
+                    <th width="16%">Drug</th>
+                    <th width="8%">Source</th>
+                    <th width="30%">Clinical Implication</th>
+                    <th width="36%">Prescribing Recommendation</th>
                 </tr>
             </thead>
             <tbody>
-                {# Corrected path: looking inside primary_patient.findings from your JSON #}
-                {% if data.primary_patient.findings and data.primary_patient.findings | length > 0 %}
-                    {% for item in data.primary_patient.findings %}
-                    <tr>
-                        <td>
-                            {# <span style="color: #3b82f6; font-size: 7pt; font-weight: bold; display: block; margin-bottom: 2px;">PRIMARY PATIENT</span> #}
-                            <span style="font-weight:500;">{{ item.disorder }}</span><br>
-                            <span style="color:#64748b; font-size:7pt;">{{ item.inheritance }}</span>
-                        </td>
-                        <td><span style="font-weight:500;">{{ item.gene }}</span></td>
-                        <td><span style="font-weight:500;">{{ item.mutation }}</span></td>
-                        <td><span style="color:#be123c; font-weight:500;">{{ item.classification }}</span></td>
-                    </tr>
-                    {% endfor %}
-                {% else %}
-                    <tr>
-                        <td colspan="4" style="text-align: center; padding: 30px; color: #64748b; font-style: italic;">
-                            No clinically significant variants detected in the genes evaluated.
-                        </td>
-                    </tr>
-                {% endif %}
+                {% for rec in drug_recs %}
+                <tr>
+                    <td><span style="font-weight:600;">{{ rec.gene }}</span></td>
+                    <td><span class="drug-name">{{ rec.drug }}</span></td>
+                    <td>{{ rec.source }}</td>
+                    <td><span class="rec-text">{{ rec.implication }}</span></td>
+                    <td><span class="rec-text">{{ rec.recommendation }}</span></td>
+                </tr>
+                {% endfor %}
             </tbody>
         </table>
-
-    <div class="clinical-statement">
-        This carrier test evaluated 302 gene(s) for genetic changes (variants) that are associated with an increased risk of having a child with
-        a genetic condition. Knowledge of carrier status for one of these conditions may provide information that can be used to assist with
-        family planning and/or preparation. Carrier screening is not intended for diagnostic purposes. To identify a potential genetic basis for
-        a condition in the individual being tested, diagnostic testing for the gene(s) of interest is recommended.
     </div>
+    {% endif %}
 
-    {# CHANGE: Point to data.primary_patient.findings #}
-        {% if data.primary_patient.findings %}
-        <div class="new-page">
-            <div class="section-title">Detailed Interpretations</div>
-            
-            {# CHANGE: Point the loop to the correct JSON path #}
-            {% for item in data.primary_patient.findings %}
-            <div class="detail-item">
-                <div class="condition-heading">
-                    {{ item.disorder }}
-                </div>
-                
-                <div style="margin-bottom: 12px;">
-                    <div class="sub-label">Gene Association</div>
-                    <p class="detail-text">
-                        The <strong>{{ item.gene }}</strong> gene is associated with {{ item.disorder }}. {{ item.gene_description }}
-                    </p>
-                </div>
-
-                <div>
-                    <div class="sub-label">Interpretation</div>
-                    <p class="detail-text">
-                        Identification of the <strong>{{ item.mutation }}</strong> variant in the <strong>{{ item.gene }}</strong> gene confirms this individual’s status as a carrier for {{ item.disorder }}. {{ item.variant_summary }} This finding is classified as <strong>{{ item.classification }}</strong>.
-                    </p>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        {% endif %}
-
-    {% if data.dark_genes and (data.dark_genes.report_detailed_html or data.dark_genes.status == 'error') %}
+    {% set custom_results = data.pgx.custom_gene_results if data.pgx and data.pgx.custom_gene_results else [] %}
+    {% set custom_variants = custom_results | selectattr('is_variant') | list if custom_results else [] %}
+    {% if custom_results | length > 0 %}
     <div class="new-page">
-        <div class="section-title">Supplementary analysis (hard-to-sequence regions)</div>
-        {% if data.dark_genes.status == 'error' %}
-        <p class="detail-text" style="white-space:pre-wrap;font-size:8.5pt;">
-            {{ data.dark_genes.report_summary }}
+        <div class="section-title">Extended PGx Panel — Curated Variant Genotyping</div>
+        <p style="font-size:8pt;color:#64748b;margin:6px 0 8px;">
+            Additional pharmacogenomic markers beyond PharmCAT (CPIC/DPWG) analysis.
+            Variants are genotyped from the sequencing data against curated positions from ClinPGx.
+            {% if custom_variants | length > 0 %}{{ custom_variants | length }} variant(s) detected.{% else %}No variants detected; all positions are homozygous reference.{% endif %}
         </p>
-        {% endif %}
-        {% if data.dark_genes.report_detailed_html %}
-        {# report_detailed_html: one card per approved test (condition-heading + Test analysis + Interpretation) #}
-        <div>
-            {{ data.dark_genes.report_detailed_html|safe }}
+        <div style="font-size:7pt;color:#475569;margin:0 0 10px;line-height:1.55;padding:6px 8px;border:0.5pt solid #e2e8f0;border-radius:4px;background:#f8fafc;">
+            <strong>Status:</strong>
+            <span style="background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:3px;font-weight:600;">Variant</span> = patient carries a non-reference allele;
+            <span style="background:#f1f5f9;color:#64748b;padding:1px 5px;border-radius:3px;">Ref</span> = homozygous reference (wild-type).
+            <strong style="margin-left:6px;">Affected Drug(s):</strong> Medications whose efficacy, metabolism, or safety may be altered when a variant is present — prescribing may require dose adjustment, alternative selection, or additional monitoring.
+            <br>
+            <strong>Evidence levels (CPIC/PharmGKB):</strong>
+            <strong>1A</strong> = CPIC guideline / FDA label;
+            <strong>1B</strong> = strong clinical annotation;
+            <strong>2A</strong> = moderate, replicated;
+            <strong>2B</strong> = moderate, limited replication;
+            <strong>3</strong> = low / single study;
+            <strong>4</strong> = preliminary / in-vitro.
         </div>
-        {% endif %}
+        <table class="summary-table">
+            <thead>
+                <tr>
+                    <th width="10%">Gene</th>
+                    <th width="12%">rsID</th>
+                    <th width="12%">Variant</th>
+                    <th width="10%">Genotype</th>
+                    <th width="20%">Significance</th>
+                    <th width="22%">Affected Drug(s)</th>
+                    <th width="7%">Evidence</th>
+                    <th width="7%">Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in custom_results %}
+                <tr>
+                    <td><span style="font-weight:600;">{{ row.gene }}</span></td>
+                    <td style="font-size:7pt;">{{ row.rsid }}</td>
+                    <td style="font-size:7pt;">{{ row.variant_name }}</td>
+                    <td style="font-family:ui-monospace,monospace;font-size:7pt;">{{ row.genotype }}</td>
+                    <td style="font-size:7pt;">{{ row.clinical_significance }}</td>
+                    <td style="font-size:7pt;">{{ row.drugs }}</td>
+                    <td style="font-size:7pt;">{{ row.evidence_level }}</td>
+                    <td>
+                        {% if row.is_variant %}
+                            <span class="badge-variant">Variant</span>
+                        {% else %}
+                            <span class="badge-ref">Ref</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
     {% endif %}
 
-    {% if data.pgx and data.pgx.summary_for_pdf_html %}
-    <div class="new-page">
-        <div class="section-title">Pharmacogenomics (PharmCAT)</div>
-        {{ data.pgx.summary_for_pdf_html|safe }}
-    </div>
-    {% endif %}
-
+    {% set evaluated = data.pgx.genes_evaluated if data.pgx and data.pgx.genes_evaluated else [] %}
+    {% if evaluated | length > 0 %}
     <div class="new-page">
         <div class="section-title">Genes Evaluated</div>
-        <div class="gene-list-grid">
-            ABCA3, ABCC8, ABCD1, ACAD9, ACADM, ACADSB, ACADVL, ACAT1, ADA, ADAMTS2, ADGRG1, AGA, AGL, AGPS, AGXT, AIRE, ALDH3A2, ALDOB, ALG1, ALG12, ALMS1, ALPL, AMT, AP3B1, APTX, ARG1, ARSA, ARSB, ASL, ASNS, ASPA, ASS1, ATIC, ATP6V1B1, ATP7B, ATRX, BBS1, BBS10, BBS12, BCKDHA, BCKDHB, BTD, BTK, CAPN3, CASP8, CBS, CDH23, CEP290, CERKL, CFTR, CHM, CHRNE, CIB2, CLN3, CLN5, CLN6, CLN8, CLRN1, CNGB3, COL4A3, COL4A4, COL4A5, CP, CPT1A, CPT2, CRB1, CTNS, CTSD, CTSK, CYBA, CYBB, CYP11B1, CYP11B2, CYP17A1, CYP19A1, CYP1B1, CYP21A2, CYP27A1, DBT, DCLRE1C, DHCR7, DHDDS, DKC1, DLD, DMD, DNAH5, DNAI1, DNAI2, DPM1, DYSF, EDA, EIF2B1, EIF2B2, EIF2B3, EIF2B4, EIF2B5, EMD, ERCC6, ERCC8, ESCO2, ETFA, ETFB, ETFDH, ETHE1, EVC, EVC2, EXOSC3, F11, F8, F9, FAH, FANCA, FANCC, FANCG, FH, FKRP, FKTN, G6PC, GAA, GALC, GALE, GALK1, GALT, GAMT, GBA, GBE1, GCDH, GCH1, GJB2, GJB6, GLA, GLB1, GLDC, GLE1, GNE, GNPTAB, GNPTG, GNS, GP1BA, GP9, GPHN, GRHPR, GSS, GTC, GUSB, HADHA, HADHB, HBA1, HBA2, HBB, HEXA, HEXB, HFE2, HGSNAT, HJV, HLCS, HMGCL, HOGA1, HPS1, HPS3, HSD17B4, HSD3B2, HYLS1, IDS, IDUA, IKBKAP, IL2RG, IVD, KCNJ11, LAMA2, LAMA3, LAMB3, LAMC2, LCA5, LDLRAD1, LIPPA, LMBRD1, LOXHD1, LRPPRC, LYST, MAN2B1, MCOLN1, MED17, MESP2, MFSD8, MGAT2, MKS1, MLC1, MMAA, MMAB, MMACHC, MMADHC, MPI, MPL, MPV17, MRE11A, MSH2, MTHFR, MTM1, MTR, MTRR, MTTP, MUT, MYO7A, NAGLU, NAGS, NBN, NDRG1, NDUFAF5, NDUFS4, NDUFS6, NDUFS7, NDUFV1, NEB, NPC1, NPC2, NPHP1, NPHS1, NPHS2, NR0B1, NR2E3, NTRK1, OAT, OPA3, OTC, P3H1, PAH, PANK2, PC, PCCA, PCCB, PCDH15, PDHA1, PDHB, PEX1, PEX10, PEX12, PEX13, PEX14, PEX16, PEX19, PEX2, PEX26, PEX3, PEX5, PEX6, PEX7, PFKM, PGK1, PHGDH, PHKG2, PKHD1, PMM2, PNPO, POLG, POMGNT1, POMT1, POMT2, PPT1, PROP1, PSAP, PTB1, PTS, PUD, PYGL, QDPR, RAB23, RAG1, RAG2, RAPSN, RARS2, RDH12, RDX, REEP6, RPE65, RPGRIP1L, RS1, RTEL1, SACS, SAMD9, SAMHD1, SC5D, SCN4A, SCN4B, SCN5A, SCN8A, SCN9A, SDHA, SDHAF2, SDHB, SDHC, SDHD, SEPN1, SERPINA1, SGCA, SGCB, SGCD, SGCG, SGSH, SLC12A3, SLC12A6, SLC17A5, SLC19A2, SLC19A3, SLC22A5, SLC25A13, SLC25A15, SLC25A20, SLC26A2, SLC26A4, SLC35A1, SLC35C1, SLC37A4, SLC3A1, SLC4A11, SLC6A19, SLC6A8, SLC7A7, SMARCB1, SMN1, SMPD1, SPG11, SPG7, STAR, SUMF1, SYNE1, TAT, TAZ, TCTN2, TFR2, TGM1, TH, THCA, TMEM216, TMEM67, TNP1, TPP1, TRMU, TSFM, TTPA, TYMP, TYR, USH1C, USH1G, USH2A, VDR, VHL, VPS13A, VPS13B, VPS33B, VSX2, WAS, WNT10A, WRN, XPA, XPC, ZFYVE26, ZNF469.
+        <p class="detail-text" style="margin-bottom:8px;">
+            This pharmacogenomics panel evaluated {{ evaluated | length }} gene(s) for clinically relevant pharmacogenomic variants.
+            Genes are analyzed via PharmCAT (CPIC/DPWG star-allele calling) and/or curated variant genotyping (ClinPGx).
+        </p>
+        <div style="font-size:8pt;color:#94a3b8;margin-top:10px;line-height:1.8;text-align:justify;">
+            {{ evaluated | join(', ') }}
         </div>
     </div>
+    {% endif %}
 
     <div class="new-page">
         <div class="section-title">Methods and Limitations</div>
         <p class="detail-text">
+        Pharmacogenomic analysis is performed using PharmCAT (Pharmacogenomics Clinical Annotation Tool), which matches variant
+        calls to known pharmacogenomic allele definitions and generates phenotype predictions based on published CPIC (Clinical
+        Pharmacogenetics Implementation Consortium) and DPWG (Dutch Pharmacogenetics Working Group) guidelines.<br><br>
         Genomic DNA obtained from the submitted sample is enriched for targeted regions using a hybridization-based protocol, and sequenced using
-        Illumina technology. Unless otherwise indicated, all targeted regions are sequenced with ≥50x depth or are supplemented with additional analysis.
-        Reads are aligned to a reference sequence (GRCh37), and sequence changes are identified and interpreted in the context of a single clinically
-        relevant transcript, indicated in the Genes analyzed section. Enrichment and analysis focus on the coding sequence of the indicated transcripts,
-        20bp of flanking intronic sequence, and other specific genomic regions demonstrated to be causative of disease at the time of assay design.
-        Promoters, untranslated regions, and other non-coding regions are not otherwise interrogated. Exonic deletions and duplications are called using
-        an in-house algorithm that determines copy number at each target by comparing the read depth for each target in the proband sequence with
-        both mean read-depth and read-depth distribution, obtained from a set of clinical samples. Markers across the X and Y chromosomes are
-        analyzed for quality control purposes and may detect deviations from the expected sex chromosome complement. Such deviations may be
-        included in the report in accordance with internal guidelines. Invitae utilizes a classification methodology to identify next-generation sequencing
-        (NGS)-detected variants that require orthogonal confirmation (Lincoln, et al. J Mol Diagn. 2019 Mar;21(2):318-329.). Confirmation of the presence
-        and location of reportable variants is performed based on stringent criteria established by Invitae (1400 16th Street, San Francisco, CA 94103,
-        #05D2040778), as needed, using one of several validated orthogonal approaches (PubMed ID 30610921). The following analyses are performed if
-        relevant to the requisition. For GBA the reference genome has been modified to mask the sites of polymorphic paralog sequence variants (PSVs)
-        in both the gene and pseudogene. For CYP21A2 and GBA, if one or more reportable variants, gene conversion, or fusion event is identified via our
-        NGS pipeline (see Limitations), these variants are confirmed by PacBio sequencing of an amplicon generated by long-range PCR and subsequent
-        short-range PCR. In some cases, it may not be possible to disambiguate between the gene and pseudogene. For GJB2, the reportable range
-        includes large upstream deletions overlapping GJB6. For HBA1/2, the reference genome has been modified to force some sequencing reads
-        derived from HBA1 to align to HBA2, and variant calling algorithms are modified to support an expectation of 4 alleles in these regions. HBA1/2
-        copy number calling is performed by a custom hypothesis testing algorithm which generates diplotype calls. If sequence data for a sample does
-        not support a unique high confidence match from among hypotheses tested, that sample is flagged for manual review. Copy number variation is
-        only reported for coding sequence of HBA1 and HBA2 and the HS-40 region. This assay does not distinguish among the -ɑ3.7 subtypes, and all
-        -ɑ3.7 variants are called as HBA1 deletions. This assay may not detect overlapping copy gain and copy loss events when the breakpoints of those
-        events are similar. For FMR1, triplet repeats are detected by PCR with fluorescently labeled primers followed by capillary electrophoresis.
-        Reference ranges: Normal: 45 CGG repeats, intermediate: 45-54 CGG repeats, premutation: 55-200 CGG repeats, full mutation: >200 CGG
-        repeats. For alleles with 55-90 triplet repeats, the region surrounding the FMR1 repeat is amplified by PCR. The PCR amplicons are then processed
-        through PacBio SMRTBell library prep and sequenced using PacBio long read technology. The number of AGG interruptions within the 55-90
-        triplet repeat is read directly from the resulting DNA sequences. Technical component of confirmatory sequencing is performed by Invitae
-        Corporation (1400 16th Street, San Francisco, CA 94103, #05D2040778).<br><br>
-        This report only includes variants that have a clinically significant association with the conditions tested as of the report date. Variants of
-        uncertain significance, benign variants, and likely benign variants are not included in this report. However, if additional evidence becomes
-        available to indicate that the clinical significance of a variant has changed, Invitae may update this report and provide notification.
-        A PMID is a unique identifier referring to a published, scientific paper. Search by PMID athttp://www.ncbi.nlm.nih.gov/pubmed.
-        An rsID is a unique identifier referring to a single genomic position, and is used to associate population frequency information with sequence
-        changes at that position. Reported population frequencies are derived from a number of public sites that aggregate data from large-scale
-        population sequencing projects, including ExAC (http://exac.broadinstitute.org), gnomAD (http://gnomad.broadinstitute.org), and dbSNP
-        (http://ncbi.nlm.nih.gov/SNP).<br><br>
-        Based on validation study results, this assay achieves >99% analytical sensitivity and specificity for single nucleotide variants, insertions and
-        deletions 15bp in length, and exon-level deletions and duplications. Invitae's methods also detect insertions and deletions larger than 15bp but
-        smaller than a full exon but sensitivity for these may be marginally reduced. Invitae’s deletion/duplication analysis determines copy number at a
-        single exon resolution at virtually all targeted exons. However, in rare situations, single-exon copy number events may not be analyzed due to
-        inherent sequence properties or isolated reduction in data quality. Certain types of variants, such as structural rearrangements (e.g. inversions,
-        gene conversion events, translocations, etc.) or variants embedded in sequence with complex architecture (e.g. short tandem repeats or
-        segmental duplications), may not be detected. Additionally, it may not be possible to fully resolve certain details about variants, such as
-        mosaicism, phasing, or mapping ambiguity. Unless explicitly guaranteed, sequence changes in the promoter, non-coding exons, and other non-
-        coding regions are not covered by this assay. Please consult the test definition on our website for details regarding regions or types of variants
-        that are covered or excluded for this test. This report reflects the analysis of an extracted genomic DNA sample. While this test is intended to
-        reflect the analysis of extracted genomic DNA from a referred patient, in very rare cases the analyzed DNA may not represent that individual’s
-        constitutional genome, such as in the case of a circulating hematolymphoid neoplasm, bone marrow transplant, blood transfusion, chimerism,
-        culture artifact or maternal cell contamination.
+        Illumina technology. Variants within pharmacogenes are called using standard bioinformatics pipelines and translated into star-allele
+        diplotypes by PharmCAT. Activity scores and predicted phenotypes are assigned according to the relevant CPIC or DPWG gene-specific
+        tables. Drug-gene interaction recommendations follow published clinical guidelines.<br><br>
+        Limitations: This test may not detect all known pharmacogenomic variants. Rare or novel alleles not cataloged in PharmCAT's allele
+        definition files will not be identified. Structural variants, gene deletions, duplications, and hybrid alleles (e.g., CYP2D6 gene
+        conversions) may not be fully resolved by short-read sequencing. Activity scores and phenotype predictions are based on currently
+        available evidence and may be updated as new data emerge. This test does not account for drug-drug interactions, non-genetic factors
+        (age, weight, organ function, concomitant medications), or epigenetic modifications that may influence drug metabolism. Results should
+        be interpreted by a qualified healthcare professional in the context of the patient's complete clinical picture.<br><br>
+        A negative or "normal" result does not guarantee a normal drug response. Pharmacogenomic testing is one component of personalized
+        medicine and should be used alongside standard clinical decision-making.
         </p>
         <div class="director-section">
             <div style="margin-bottom: 5px;">

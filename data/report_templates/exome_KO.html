@@ -141,7 +141,7 @@
 <div class="status-section {{ status }}">
     <div>
         {% if status == 'carrier' %}
-        <span class="status-badge carrier">보인자 검출</span>
+        <span class="status-badge carrier">변이 검출</span>
         {% elif status == 'uncertain' %}
         <span class="status-badge uncertain">임상적 의의 불확실</span>
         {% else %}
@@ -266,10 +266,10 @@
     <strong>면책 조항:</strong> 본 보고서는 자격을 갖춘 의료 전문가만을 위한 것입니다.
     변이 분류는 ACMG/AMP 2015 가이드라인(Richards et al., Genet Med 2015)을 따릅니다.
     모든 결과는 임상 소견, 가족력 및 기타 관련 검사 데이터를 고려하여 해석되어야 합니다.
-    보인자 상태는 검사 대상자가 해당 질환을 가지고 있음을 의미하지 않습니다.
+    변이 분류 결과는 검사 대상자가 해당 질환을 가지고 있음을 의미하지 않을 수 있습니다.
     양성 또는 불확실한 결과에 대해서는 유전 상담을 권장합니다.
     본 검사는 모든 질환 유발 변이를 검출하지 못할 수 있습니다.
-    음성 결과가 보인자 가능성을 완전히 배제하지는 않습니다.
+    음성 결과가 유전적 위험을 완전히 배제하지는 않습니다.
 </div>
 
 <div class="report-footer">
@@ -278,7 +278,7 @@
             <p><strong>검토자:</strong> {{ data.reviewer.name | default('N/A') }}
                 {% if data.reviewer.institution %} ({{ data.reviewer.institution }}){% endif %}
             </p>
-            <p><strong>파이프라인:</strong> {{ data.report_metadata.pipeline_version | default('Carrier Screening Pipeline v2.0') }}</p>
+            <p><strong>파이프라인:</strong> {{ data.report_metadata.pipeline_version | default('Genomics Analysis Pipeline v2.0') }}</p>
         </div>
         <div class="text-right">
             <p>변이 분류는 ACMG/AMP 2015 가이드라인을 따릅니다</p>

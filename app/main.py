@@ -1567,6 +1567,237 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
     )
 
 
+# ─── Report Preview & From-HTML Endpoints ─────────────────
+
+@app.post("/order/{order_id}/report/preview")
+async def preview_report_html(order_id: str, request: ReportGenerateRequest):
+    """
+    Render the report Jinja template as HTML and return it (no PDF, no disk writes).
+    Portal uses this for in-browser preview + manual editing before final generation.
+    """
+    queue_manager = get_queue_manager()
+    job = queue_manager.get_job(order_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
+
+    plugin = get_plugin(job.service_code)
+    if not plugin or not hasattr(plugin, "generate_report"):
+        raise HTTPException(status_code=400, detail="Service does not support report generation")
+
+    if job.service_code not in _CARRIER_LIKE:
+        raise HTTPException(status_code=400, detail="Preview is only supported for carrier-like services")
+
+    from .services.carrier_screening.report import (
+        carrier_report_template_kind,
+        report_languages_from_order,
+        _carrier_order_flat,
+        generate_report_json,
+        generate_report_pdf,
+        _render_html_for_language,
+        carrier_pdf_jinja_stem,
+    )
+    from .services.carrier_screening.plugin import (
+        carrier_report_output_dir,
+        resolve_carrier_pdf_template_dir,
+        _extra_result_json_paths_for_carrier_report,
+    )
+    from .services.carrier_screening.report import CARRIER_PDF_SOLO_KINDS
+
+    p_raw = job.params or {}
+    kind = carrier_report_template_kind(p_raw)
+    if kind is None:
+        raise HTTPException(status_code=400, detail="PDF report is not supported for this order type.")
+    langs_obj = report_languages_from_order(p_raw)
+    if langs_obj is None:
+        raise HTTPException(status_code=400, detail="Report language must be EN, CN, or KO.")
+    languages = langs_obj if isinstance(langs_obj, list) else [langs_obj]
+
+    output_dir = carrier_report_output_dir(job)
+    template_dir = resolve_carrier_pdf_template_dir()
+    params = _carrier_order_flat(p_raw)
+
+    if kind in CARRIER_PDF_SOLO_KINDS:
+        partner_info = None
+    else:
+        partner_info = request.partner_info
+
+    pi = dict(request.patient_info) if request.patient_info else {}
+    if not (pi.get("name") or "").strip():
+        pi["name"] = (params.get("patient_name") or "").strip() or job.sample_name
+
+    confirmed_variants = request.confirmed_variants or []
+    report_json_path = os.path.join(output_dir, "report.json")
+
+    def _render_preview():
+        generate_report_json(
+            order_id=job.order_id,
+            sample_name=job.sample_name,
+            confirmed_variants=confirmed_variants,
+            reviewer_info=request.reviewer_info,
+            qc_summary={},
+            output_dir=output_dir,
+            patient_info=pi,
+            partner_info=partner_info,
+            order_params=p_raw,
+            report_language=(languages[0] if languages else "EN"),
+            disease_gene_json=None,
+            gene_knowledge_db=settings.gene_knowledge_db or None,
+            gene_knowledge_enrich_on_report=False,
+            gene_knowledge_gemini_on_report=False,
+            gemini_api_key=None,
+            gene_knowledge_gemini_model=None,
+            extra_result_json_paths=_extra_result_json_paths_for_carrier_report(job),
+            pdf_template_kind=kind,
+        )
+
+        with open(report_json_path, "r", encoding="utf-8") as f:
+            report_data = json.load(f)
+
+        from .services.carrier_screening.dark_genes import sanitize_dark_genes_payload_for_pdf_render
+        from .services.carrier_screening.pgx_report import sanitize_pgx_payload_for_pdf_render
+        from .services.carrier_screening.report import (
+            _merge_dark_genes_from_result_json_for_pdf,
+            _merge_pgx_from_result_json_for_pdf,
+        )
+        extras = _extra_result_json_paths_for_carrier_report(job)
+        _merge_dark_genes_from_result_json_for_pdf(report_data, report_json_path, extra_result_json_paths=extras)
+        sanitize_dark_genes_payload_for_pdf_render(report_data)
+        _merge_pgx_from_result_json_for_pdf(report_data, report_json_path, extra_result_json_paths=extras)
+        sanitize_pgx_payload_for_pdf_render(report_data)
+
+        is_couple = report_data.get("report_metadata", {}).get("is_couple", False)
+        result = {}
+        for lang in languages:
+            html_content = _render_html_for_language(report_data, lang, template_dir, is_couple)
+            pdf_kind = report_data.get("report_metadata", {}).get("pdf_template_kind")
+            stem = carrier_pdf_jinja_stem(pdf_kind, is_couple)
+            result[lang] = {
+                "html": html_content,
+                "template": f"{stem}_{lang.upper()}.html",
+            }
+        return result
+
+    try:
+        rendered = await asyncio.to_thread(_render_preview)
+    except Exception as e:
+        logger.error(f"Report preview failed for {order_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Preview rendering failed: {e}")
+
+    return JSONResponse({
+        "status": "ok",
+        "order_id": order_id,
+        "languages": rendered,
+    })
+
+
+@app.post("/order/{order_id}/report/from-html")
+async def generate_report_from_html(order_id: str, request: Request):
+    """
+    Accept edited HTML per language, generate PDFs, mark order REPORT_READY,
+    and trigger platform upload — same finalization as POST /order/{id}/report.
+
+    Body: { "languages": { "EN": "<html>...</html>", "CN": "<html>..." } }
+    """
+    queue_manager = get_queue_manager()
+    job = queue_manager.get_job(order_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
+
+    if job.service_code not in _CARRIER_LIKE:
+        raise HTTPException(status_code=400, detail="Only carrier-like services supported")
+
+    body = await request.json()
+    languages_html: dict = body.get("languages") or {}
+    if not languages_html:
+        raise HTTPException(status_code=400, detail="languages dict is required")
+
+    from .services.carrier_screening.plugin import (
+        carrier_report_output_dir,
+        resolve_carrier_pdf_template_dir,
+    )
+
+    output_dir = carrier_report_output_dir(job)
+    template_dir = resolve_carrier_pdf_template_dir()
+    os.makedirs(output_dir, exist_ok=True)
+
+    raw_name = (job.params or {}).get("patient_name") or job.sample_name or "Patient"
+    patient_name = "".join([c if c.isalnum() else "_" for c in raw_name]).replace("__", "_")
+
+    generated_pdfs = []
+
+    def _render_all():
+        from weasyprint import HTML as WeasyprintHTML
+        base_url = template_dir if template_dir else output_dir
+        for lang, html_content in languages_html.items():
+            lang_u = (lang or "EN").strip().upper()
+            html_content = (html_content or "").strip()
+            if not html_content:
+                continue
+            html_filename = f"Report_{order_id}_{patient_name}_{lang_u}.html"
+            pdf_filename = f"Report_{order_id}_{patient_name}_{lang_u}.pdf"
+            html_path = os.path.join(output_dir, html_filename)
+            pdf_path = os.path.join(output_dir, pdf_filename)
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(html_content)
+            WeasyprintHTML(string=html_content, base_url=base_url).write_pdf(pdf_path)
+            generated_pdfs.append(pdf_filename)
+            logger.info(f"Generated PDF from edited HTML for {order_id}: {pdf_filename}")
+
+    try:
+        await asyncio.to_thread(_render_all)
+    except ImportError:
+        raise HTTPException(status_code=500, detail="weasyprint not installed")
+    except Exception as e:
+        logger.error(f"PDF from HTML failed for {order_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
+
+    if not generated_pdfs:
+        raise HTTPException(status_code=400, detail="No PDFs were generated (empty HTML?)")
+
+    await queue_manager.mark_report_ready(order_id, message="Report ready for download")
+
+    store = queue_manager.store
+    if store and output_dir:
+        await asyncio.to_thread(ingest_report_json_from_disk, store, job, output_dir)
+
+    report_files: list = []
+    report_json_path = os.path.join(output_dir, "report.json")
+    if os.path.exists(report_json_path):
+        report_files.append(OutputFile(
+            file_path=report_json_path, file_type="report_json",
+            file_name="report.json", content_type="application/json",
+        ))
+    for pat, ftype, mime in [
+        ("Report_*.pdf", "report_pdf", "application/pdf"),
+        ("Report_*.html", "report_html", "text/html"),
+    ]:
+        for fp in glob.glob(os.path.join(output_dir, pat)):
+            report_files.append(OutputFile(
+                file_path=fp, file_type=ftype,
+                file_name=os.path.basename(fp), content_type=mime,
+            ))
+
+    platform_client = get_platform_client()
+    if report_files and settings.platform_api_enabled:
+        async def _upload_bg():
+            try:
+                results = await platform_client.upload_all_outputs(
+                    order_id, job.service_code, report_files
+                )
+                ok = sum(1 for r in results.values() if r.status.value == "SUCCESS")
+                logger.info(f"Platform upload for {order_id}: {ok}/{len(report_files)}")
+            except Exception as exc:
+                logger.exception(f"Platform upload failed for {order_id}: {exc}")
+        asyncio.create_task(_upload_bg())
+
+    return JSONResponse({
+        "status": "ok",
+        "order_id": order_id,
+        "report_files": generated_pdfs,
+        "message": f"Report generated: {len(generated_pdfs)} PDF(s). Order marked REPORT_READY.",
+    })
+
+
 # ─── Order List & Result Endpoints ────────────────────────
 
 def _job_to_order_summary_dict(j) -> Dict[str, Any]:
@@ -1916,14 +2147,17 @@ async def get_order_coverage_context(order_id: str):
     job = queue_manager.get_job(order_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
-    if job.service_code not in _CARRIER_LIKE:
+    _coverage_ok = _CARRIER_LIKE | {"sgnipt"}
+    if job.service_code not in _coverage_ok:
         raise HTTPException(
             status_code=400,
-            detail="Coverage context is only available for carrier_screening, whole_exome, and health_screening.",
+            detail="Coverage context is only available for carrier_screening, whole_exome, health_screening, and sgnipt.",
         )
-    from app.services.wes_panels import interpretation_gene_set_for_job
-
-    genes = sorted(interpretation_gene_set_for_job(job))
+    if job.service_code == "sgnipt":
+        genes: list = []
+    else:
+        from app.services.wes_panels import interpretation_gene_set_for_job
+        genes = sorted(interpretation_gene_set_for_job(job))
     bams_all = _list_order_bam_tracks(job)
     # Never offer paraphase / SMN / FMR1 / … as auto-IGV tracks — only genome-wide candidates.
     bams_igv = [t for t in bams_all if not t.get("ancillary")]
@@ -2097,6 +2331,19 @@ async def _pgx_review_impl(order_id: str, body: PgxReviewRequest) -> Dict[str, A
                     r["reviewer_comment"] = (u.reviewer_comment or "")[:4000]
                 new_grs.append(r)
             pgx2["gene_results"] = new_grs
+        cgrs = pgx2.get("custom_gene_results")
+        if isinstance(cgrs, list) and body.custom_gene_reviews is not None:
+            by_key = {(x.gene, x.rsid): x for x in body.custom_gene_reviews}
+            new_cgrs = []
+            for row in cgrs:
+                if not isinstance(row, dict):
+                    continue
+                r = dict(row)
+                key = (r.get("gene", ""), r.get("rsid", ""))
+                if key in by_key:
+                    r["reviewer_confirmed"] = bool(by_key[key].reviewer_confirmed)
+                new_cgrs.append(r)
+            pgx2["custom_gene_results"] = new_cgrs
         data["pgx"] = pgx2
         write_carrier_result_json_sync(job, data)
         return data

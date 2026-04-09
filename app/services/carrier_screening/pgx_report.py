@@ -6,21 +6,28 @@ Expected layout (gx-exome):
   pgx/pgx_summary.txt
   pgx/pgx_result.json          (artifact pointers; may be large — not embedded wholesale)
   pgx/<sample>_pgx.report.html (full PharmCAT HTML — not embedded in PDF; use summary + meta)
+  pgx/<sample>_pgx.report.json (PharmCAT reporter JSON — drug recommendations)
 
 The customer PDF uses the plain-text summary (human-readable, WeasyPrint-safe).
 
 Portal also gets ``gene_results``: one row per gene from ``pgx_result.json`` → ``phenotype``
 (PharmCAT ``geneReports``), with ``reviewer_confirmed`` / ``reviewer_comment`` merged on reprocess.
+
+Drug recommendations are extracted from the PharmCAT reporter JSON (``*.report.json``)
+or from the ``pgx_result.json`` bundle (if it contains a ``report`` or ``drugs`` key).
+Only actionable gene/drug pairs are included on the customer PDF.
 """
 
 from __future__ import annotations
 
+import csv
 import glob
 import html
+import io
 import json
 import logging
 import os
-from typing import AbstractSet, Any, Dict, List, Optional
+from typing import AbstractSet, Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -33,71 +40,472 @@ def extract_gene_results_from_phenotype(phenotype: Any) -> List[Dict[str, Any]]:
     """
     Build one row per gene from PharmCAT phenotype JSON (``geneReports`` / recommendation diplotypes).
 
-    Same selection rules as gx-exome ``pgx.nf`` summary script so the portal table matches the text summary.
+    Handles both v2 format (nested ``geneReports.CPIC.<gene>`` / ``geneReports.DPWG.<gene>``)
+    and v3 format (flat ``geneReports.<gene>``).
     """
     if not isinstance(phenotype, dict):
         return []
+    gene_reports = phenotype.get("geneReports")
+    if not isinstance(gene_reports, dict):
+        return []
+
+    # Detect format: v2 has CPIC/DPWG keys mapping to dicts of genes;
+    # v3 has gene names mapping directly to gene data dicts.
+    source_gene_pairs: List[tuple] = []
+    if "CPIC" in gene_reports or "DPWG" in gene_reports:
+        # v2 format
+        for source in ("CPIC", "DPWG"):
+            reports = gene_reports.get(source)
+            if not isinstance(reports, dict):
+                continue
+            for gene_name in sorted(reports.keys()):
+                source_gene_pairs.append((source, gene_name, reports[gene_name]))
+    else:
+        # v3 format — flat dict of gene_name -> gene_data
+        for gene_name in sorted(gene_reports.keys()):
+            gd = gene_reports[gene_name]
+            if isinstance(gd, dict) and gd.get("recommendationDiplotypes"):
+                src = (gd.get("alleleDefinitionSource") or "CPIC").upper()
+                if src == "CLINPGX":
+                    src = "CPIC"
+                source_gene_pairs.append((src, gene_name, gd))
+
     rows: List[Dict[str, Any]] = []
     seen_genes: set = set()
-    for source in ("CPIC", "DPWG"):
-        gene_reports = phenotype.get("geneReports")
-        if not isinstance(gene_reports, dict):
+    for source, gene_name, gene_data in source_gene_pairs:
+        if gene_name in seen_genes:
             continue
-        reports = gene_reports.get(source)
-        if not isinstance(reports, dict):
+        if not isinstance(gene_data, dict):
             continue
-        for gene_name in sorted(reports.keys()):
-            if gene_name in seen_genes:
+        call_src = (gene_data.get("callSource") or "").strip()
+        rec_dips = gene_data.get("recommendationDiplotypes")
+        if not isinstance(rec_dips, list):
+            continue
+        for dip in rec_dips:
+            if not isinstance(dip, dict):
                 continue
-            gene_data = reports.get(gene_name)
-            if not isinstance(gene_data, dict):
+            a1 = dip.get("allele1") if isinstance(dip.get("allele1"), dict) else {}
+            a2 = dip.get("allele2") if isinstance(dip.get("allele2"), dict) else {}
+            n1 = (a1.get("name") or "").strip()
+            n2 = (a2.get("name") or "").strip()
+            fn1 = (a1.get("function") or "").strip()
+            fn2 = (a2.get("function") or "").strip()
+            phenotypes = dip.get("phenotypes")
+            if not isinstance(phenotypes, list):
+                phenotypes = []
+            activity = dip.get("activityScore")
+            diplotype = f"{n1}/{n2}" if n2 else n1
+            phenotype_str = ", ".join(p for p in phenotypes if p) if phenotypes else ""
+            low = phenotype_str.lower()
+            if low in _SKIP_PHENOTYPES:
                 continue
-            call_src = (gene_data.get("callSource") or "").strip()
-            rec_dips = gene_data.get("recommendationDiplotypes")
-            if not isinstance(rec_dips, list):
-                continue
-            for dip in rec_dips:
-                if not isinstance(dip, dict):
-                    continue
-                a1 = dip.get("allele1") if isinstance(dip.get("allele1"), dict) else {}
-                a2 = dip.get("allele2") if isinstance(dip.get("allele2"), dict) else {}
-                n1 = (a1.get("name") or "").strip()
-                n2 = (a2.get("name") or "").strip()
-                fn1 = (a1.get("function") or "").strip()
-                fn2 = (a2.get("function") or "").strip()
-                phenotypes = dip.get("phenotypes")
-                if not isinstance(phenotypes, list):
-                    phenotypes = []
-                activity = dip.get("activityScore")
-                diplotype = f"{n1}/{n2}" if n2 else n1
-                phenotype_str = ", ".join(p for p in phenotypes if p) if phenotypes else ""
-                low = phenotype_str.lower()
-                if low in _SKIP_PHENOTYPES:
-                    continue
-                functions = [f for f in (fn1, fn2) if f]
-                has_risk = any((f or "").lower() in _RISK_FUNCTIONS for f in functions)
-                cat = "actionable" if has_risk else "normal"
-                rows.append(
-                    {
-                        "gene": gene_name,
-                        "guideline_source": source,
-                        "diplotype": diplotype,
-                        "phenotype": phenotype_str,
-                        "activity_score": activity,
-                        "allele1_function": fn1,
-                        "allele2_function": fn2,
-                        "call_source": call_src,
-                        "category": cat,
-                    }
-                )
-                seen_genes.add(gene_name)
-                break
+            functions = [f for f in (fn1, fn2) if f]
+            has_risk = any((f or "").lower() in _RISK_FUNCTIONS for f in functions)
+            cat = "actionable" if has_risk else "normal"
+            rows.append(
+                {
+                    "gene": gene_name,
+                    "guideline_source": source,
+                    "diplotype": diplotype,
+                    "phenotype": phenotype_str,
+                    "activity_score": activity,
+                    "allele1_function": fn1,
+                    "allele2_function": fn2,
+                    "call_source": call_src,
+                    "category": cat,
+                }
+            )
+            seen_genes.add(gene_name)
+            break
     rows.sort(
         key=lambda r: (
             0 if r.get("category") == "actionable" else 1,
             str(r.get("gene") or ""),
         )
     )
+    return rows
+
+
+def extract_drug_recommendations(
+    report_data: Any,
+    actionable_genes: Optional[AbstractSet[str]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Extract drug prescribing recommendations from PharmCAT reporter JSON.
+
+    Handles multiple PharmCAT JSON layouts:
+      - v2/v3 reporter JSON: top-level ``drugs`` array
+      - bundled ``pgx_result.json``: ``report.drugs`` or top-level ``drugs``
+      - v2 phenotype-embedded: ``geneReports.CPIC/DPWG.<gene>.recommendations``
+
+    Returns a list of dicts with: drug, gene, source, classification, phenotype,
+    implication, recommendation.  Sorted actionable-first, then by drug name.
+    """
+    if not isinstance(report_data, dict):
+        return []
+
+    drugs_array: Optional[List] = None
+
+    if isinstance(report_data.get("drugs"), list):
+        drugs_array = report_data["drugs"]
+    elif isinstance(report_data.get("report"), dict):
+        rpt = report_data["report"]
+        if isinstance(rpt.get("drugs"), list):
+            drugs_array = rpt["drugs"]
+    if isinstance(report_data.get("groups"), list):
+        drugs_array = drugs_array or []
+        for grp in report_data["groups"]:
+            if isinstance(grp, dict) and isinstance(grp.get("drugs"), list):
+                for d in grp["drugs"]:
+                    drugs_array.append(d)
+
+    if not drugs_array:
+        phen = report_data.get("phenotype")
+        if isinstance(phen, dict):
+            drugs_array = _drug_recs_from_phenotype_gene_reports(phen)
+
+    if not drugs_array:
+        return []
+
+    actionable_up = (
+        {g.upper() for g in actionable_genes} if actionable_genes else None
+    )
+    rows: List[Dict[str, Any]] = []
+
+    for drug_obj in drugs_array:
+        if not isinstance(drug_obj, dict):
+            continue
+        drug_name = ""
+        if isinstance(drug_obj.get("name"), str):
+            drug_name = drug_obj["name"].strip()
+        elif isinstance(drug_obj.get("drug"), dict):
+            drug_name = (drug_obj["drug"].get("name") or "").strip()
+        elif isinstance(drug_obj.get("drug"), str):
+            drug_name = drug_obj["drug"].strip()
+        if not drug_name:
+            continue
+
+        annotations = drug_obj.get("guidelineAnnotations") or drug_obj.get("guidelines") or []
+        if not isinstance(annotations, list):
+            annotations = [annotations] if isinstance(annotations, dict) else []
+
+        for ann in annotations:
+            if not isinstance(ann, dict):
+                continue
+            source = (ann.get("source") or "").strip()
+            classification = (ann.get("classification") or "").strip()
+            genotype = (ann.get("genotype") or "").strip()
+
+            gene = ""
+            if genotype and ":" in genotype:
+                gene = genotype.split(":")[0].strip()
+            elif isinstance(ann.get("gene"), str):
+                gene = ann["gene"].strip()
+            elif isinstance(drug_obj.get("gene"), str):
+                gene = drug_obj["gene"].strip()
+
+            if actionable_up and gene and gene.upper() not in actionable_up:
+                continue
+
+            phenotype = ""
+            if isinstance(ann.get("phenotype"), str):
+                phenotype = ann["phenotype"].strip()
+            elif isinstance(ann.get("phenotypes"), dict):
+                phenotype = ", ".join(
+                    f"{k}: {v}" for k, v in ann["phenotypes"].items() if v
+                )
+
+            implications_raw = ann.get("implications") or ann.get("implication") or ""
+            if isinstance(implications_raw, dict):
+                implication = "; ".join(str(v) for v in implications_raw.values() if v)
+            elif isinstance(implications_raw, list):
+                implication = "; ".join(str(v) for v in implications_raw if v)
+            else:
+                implication = str(implications_raw).strip()
+
+            rec_raw = (
+                ann.get("recommendation")
+                or ann.get("drugRecommendation")
+                or ann.get("drugRecommendations")
+                or ""
+            )
+            if isinstance(rec_raw, list):
+                recommendation = " ".join(
+                    (r.get("text") if isinstance(r, dict) else str(r))
+                    for r in rec_raw if r
+                ).strip()
+            elif isinstance(rec_raw, dict):
+                recommendation = (rec_raw.get("text") or "").strip()
+            else:
+                recommendation = str(rec_raw).strip()
+
+            if not recommendation and not implication:
+                continue
+
+            rows.append({
+                "drug": drug_name,
+                "gene": gene,
+                "source": source,
+                "classification": classification,
+                "genotype": genotype,
+                "phenotype": phenotype,
+                "implication": implication,
+                "recommendation": recommendation,
+            })
+
+    rows.sort(key=lambda r: (r.get("drug") or "", r.get("gene") or ""))
+    return rows
+
+
+def _drug_recs_from_phenotype_gene_reports(phenotype: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Fallback: build pseudo-drug objects from phenotype geneReports recommendations."""
+    drugs: List[Dict[str, Any]] = []
+    gene_reports = phenotype.get("geneReports")
+    if not isinstance(gene_reports, dict):
+        return drugs
+
+    # Build (source, gene_name, gene_data) tuples — v2 vs v3 format detection
+    source_gene_pairs: List[tuple] = []
+    if "CPIC" in gene_reports or "DPWG" in gene_reports:
+        for source in ("CPIC", "DPWG"):
+            reports = gene_reports.get(source)
+            if isinstance(reports, dict):
+                for gn, gd in reports.items():
+                    source_gene_pairs.append((source, gn, gd))
+    else:
+        for gn, gd in gene_reports.items():
+            if isinstance(gd, dict):
+                src = (gd.get("alleleDefinitionSource") or "CPIC").upper()
+                if src == "CLINPGX":
+                    src = "CPIC"
+                source_gene_pairs.append((src, gn, gd))
+
+    for source, gene_name, gene_data in source_gene_pairs:
+        if not isinstance(gene_data, dict):
+            continue
+        recs = gene_data.get("recommendations")
+        if not isinstance(recs, list):
+            continue
+        for rec in recs:
+            if not isinstance(rec, dict):
+                continue
+            drug_info = rec.get("drug")
+            dname = ""
+            if isinstance(drug_info, dict):
+                dname = (drug_info.get("name") or "").strip()
+            elif isinstance(drug_info, str):
+                dname = drug_info.strip()
+            if not dname:
+                continue
+            drugs.append({
+                "name": dname,
+                "gene": gene_name,
+                "guidelineAnnotations": [{
+                    "source": source,
+                    "gene": gene_name,
+                    "classification": (rec.get("classification") or "").strip(),
+                    "phenotype": rec.get("phenotype") or "",
+                    "implications": rec.get("implications") or "",
+                    "recommendation": rec.get("drugRecommendation") or rec.get("recommendation") or "",
+                }],
+            })
+    return drugs
+
+
+def _collect_drug_recommendations_from_pgx_dir(
+    pgx_dir: str,
+    actionable_genes: Optional[AbstractSet[str]] = None,
+) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """
+    Scan ``pgx/`` for PharmCAT reporter JSON (``*.report.json``) and extract drug recs.
+
+    Also checks ``pgx_result.json`` bundle for embedded report/drug data.
+    Returns (drug_recommendations, source_file_basename).
+    """
+    recs: List[Dict[str, Any]] = []
+    src: Optional[str] = None
+
+    report_jsons = sorted(glob.glob(os.path.join(pgx_dir, "*.report.json")))
+    for rj_path in report_jsons:
+        try:
+            with open(rj_path, "r", encoding="utf-8") as f:
+                rj = json.load(f)
+            extracted = extract_drug_recommendations(rj, actionable_genes)
+            if extracted:
+                recs = extracted
+                src = os.path.basename(rj_path)
+                break
+        except Exception as e:
+            logger.warning("[pgx] could not parse drug recs from %s: %s", rj_path, e)
+
+    if not recs:
+        bundle_path = os.path.join(pgx_dir, "pgx_result.json")
+        if os.path.isfile(bundle_path):
+            try:
+                with open(bundle_path, "r", encoding="utf-8") as f:
+                    bundle = json.load(f)
+                extracted = extract_drug_recommendations(bundle, actionable_genes)
+                if extracted:
+                    recs = extracted
+                    src = "pgx_result.json"
+            except Exception as e:
+                logger.warning("[pgx] could not parse drug recs from bundle: %s", e)
+
+    return recs, src
+
+
+_CPIC_DRUG_RECS: Dict[str, List[Dict[str, str]]] = {
+    "CYP2C9": [
+        {"drug": "Warfarin", "source": "CPIC", "implication": "Reduced warfarin metabolism; lower dose requirements.", "recommendation": "Consider reduced initial dose. Use validated dosing algorithms incorporating CYP2C9 genotype."},
+        {"drug": "Celecoxib", "source": "CPIC", "implication": "Reduced celecoxib metabolism; increased exposure.", "recommendation": "Consider starting with 25–50% of the lowest recommended dose."},
+        {"drug": "Phenytoin / Fosphenytoin", "source": "CPIC", "implication": "Reduced phenytoin clearance.", "recommendation": "Consider 25% reduction of starting dose; monitor drug levels closely."},
+        {"drug": "NSAIDs (Flurbiprofen, Ibuprofen, Meloxicam, Piroxicam)", "source": "CPIC", "implication": "Reduced NSAID metabolism; increased risk of GI bleeding.", "recommendation": "Use lowest effective dose and shortest duration; consider alternative analgesics."},
+    ],
+    "CYP2D6": [
+        {"drug": "Codeine", "source": "CPIC", "implication": "Reduced conversion of codeine to morphine; diminished analgesic effect.", "recommendation": "Consider alternative analgesic not metabolized by CYP2D6 (e.g. morphine, non-opioid)."},
+        {"drug": "Tramadol", "source": "CPIC", "implication": "Reduced formation of active metabolite; diminished analgesic effect.", "recommendation": "Consider alternative analgesic; monitor for inadequate pain control."},
+        {"drug": "Tamoxifen", "source": "CPIC", "implication": "Reduced formation of active metabolite endoxifen.", "recommendation": "Consider alternative endocrine therapy (e.g. aromatase inhibitor) or higher tamoxifen dose with monitoring."},
+        {"drug": "Amitriptyline / Nortriptyline", "source": "CPIC", "implication": "Altered tricyclic antidepressant metabolism.", "recommendation": "Consider 25% dose reduction or alternative antidepressant; monitor drug levels."},
+        {"drug": "Ondansetron / Tropisetron", "source": "CPIC", "implication": "Reduced conversion to active metabolite.", "recommendation": "Consider alternative antiemetic (e.g. granisetron)."},
+    ],
+    "CYP3A5": [
+        {"drug": "Tacrolimus", "source": "CPIC", "implication": "CYP3A5 non-expresser; standard tacrolimus metabolism.", "recommendation": "Initiate at standard recommended dose (0.3 mg/kg/day). Adjust based on therapeutic drug monitoring."},
+    ],
+    "SLCO1B1": [
+        {"drug": "Simvastatin", "source": "CPIC", "implication": "Increased simvastatin acid exposure; elevated myopathy risk.", "recommendation": "Prescribe ≤20 mg/day simvastatin or consider alternative statin (rosuvastatin, pravastatin, fluvastatin)."},
+        {"drug": "Atorvastatin", "source": "CPIC", "implication": "Moderately increased atorvastatin exposure.", "recommendation": "Prescribe ≤40 mg/day; monitor for myopathy symptoms."},
+        {"drug": "Rosuvastatin", "source": "CPIC", "implication": "Moderately increased rosuvastatin exposure.", "recommendation": "Prescribe ≤20 mg/day; monitor for muscle-related adverse effects."},
+    ],
+    "UGT1A1": [
+        {"drug": "Irinotecan", "source": "CPIC", "implication": "Reduced UGT1A1 activity; increased SN-38 exposure and toxicity risk.", "recommendation": "Reduce starting dose by ≥ one level; monitor closely for neutropenia and diarrhea."},
+        {"drug": "Atazanavir", "source": "CPIC", "implication": "Increased risk of hyperbilirubinemia (jaundice).", "recommendation": "Consider alternative antiretroviral if jaundice develops."},
+    ],
+    "CYP2C19": [
+        {"drug": "Clopidogrel", "source": "CPIC", "implication": "Reduced formation of active metabolite; diminished antiplatelet effect.", "recommendation": "Consider alternative antiplatelet agent (e.g. prasugrel, ticagrelor)."},
+        {"drug": "Voriconazole", "source": "CPIC", "implication": "Altered voriconazole exposure.", "recommendation": "Adjust dose per CPIC guidelines; consider therapeutic drug monitoring."},
+        {"drug": "Escitalopram / Citalopram", "source": "CPIC", "implication": "Altered SSRI metabolism.", "recommendation": "Dose adjustment or alternative SSRI per CPIC guidelines."},
+        {"drug": "Proton Pump Inhibitors (Omeprazole, Lansoprazole)", "source": "CPIC", "implication": "Altered PPI metabolism.", "recommendation": "Adjust dose per CPIC guidelines; consider therapeutic drug monitoring."},
+    ],
+    "DPYD": [
+        {"drug": "Fluoropyrimidines (5-FU, Capecitabine)", "source": "CPIC", "implication": "Reduced DPD activity; increased risk of severe/fatal toxicity.", "recommendation": "Reduce dose by 50% for intermediate metabolizers; fluoropyrimidines are contraindicated for poor metabolizers."},
+    ],
+    "TPMT": [
+        {"drug": "Thiopurines (Azathioprine, Mercaptopurine, Thioguanine)", "source": "CPIC", "implication": "Altered thiopurine metabolism; risk of myelosuppression.", "recommendation": "Reduce starting dose per CPIC guidelines; monitor blood counts closely."},
+    ],
+    "NUDT15": [
+        {"drug": "Thiopurines (Azathioprine, Mercaptopurine, Thioguanine)", "source": "CPIC", "implication": "Increased risk of thiopurine-induced leukopenia.", "recommendation": "Reduce starting dose per CPIC guidelines; monitor blood counts closely."},
+    ],
+    "CYP2B6": [
+        {"drug": "Efavirenz", "source": "CPIC", "implication": "Altered efavirenz metabolism.", "recommendation": "Dose adjustment per CPIC guidelines; consider alternative antiretroviral."},
+    ],
+    "VKORC1": [
+        {"drug": "Warfarin", "source": "DPWG", "implication": "Altered warfarin sensitivity based on VKORC1 genotype.", "recommendation": "Use pharmacogenomics-based dosing algorithm incorporating VKORC1 genotype."},
+    ],
+}
+
+
+def generate_cpic_drug_recommendations(
+    gene_results: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """
+    Generate drug recommendations from built-in CPIC reference data based on gene results.
+
+    Used as fallback when PharmCAT reporter JSON (with full drug annotations) is unavailable.
+    Only generates recommendations for actionable genes.
+    """
+    recs: List[Dict[str, Any]] = []
+    for row in gene_results:
+        if not isinstance(row, dict):
+            continue
+        if row.get("category") != "actionable":
+            continue
+        gene = (row.get("gene") or "").strip()
+        phenotype = (row.get("phenotype") or "").strip()
+        if not gene:
+            continue
+        cpic_entries = _CPIC_DRUG_RECS.get(gene, [])
+        for entry in cpic_entries:
+            recs.append({
+                "drug": entry["drug"],
+                "gene": gene,
+                "source": entry["source"],
+                "classification": "CPIC Guideline",
+                "phenotype": phenotype,
+                "implication": entry["implication"],
+                "recommendation": entry["recommendation"],
+            })
+    recs.sort(key=lambda r: (r.get("gene") or "", r.get("drug") or ""))
+    return recs
+
+
+def _collect_custom_pgx_results(pgx_dir: str) -> List[Dict[str, Any]]:
+    """Read ``pgx_custom_result.json`` from the analysis pgx/ directory."""
+    path = os.path.join(pgx_dir, "pgx_custom_result.json")
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        logger.warning("[pgx] could not read custom result: %s", e)
+        return []
+    if not isinstance(data, dict) or data.get("error"):
+        return []
+    genes = data.get("genes")
+    if not isinstance(genes, dict):
+        return []
+    rows: List[Dict[str, Any]] = []
+    for gene_name in sorted(genes.keys()):
+        for v in genes[gene_name]:
+            if not isinstance(v, dict):
+                continue
+            zyg = (v.get("zygosity") or "").strip()
+            is_variant = v.get("status") == "variant_found" and zyg != "homozygous_ref"
+            rows.append({
+                "gene": v.get("gene", gene_name),
+                "rsid": v.get("rsid", ""),
+                "variant_name": v.get("variant_name", ""),
+                "genotype": v.get("genotype", ""),
+                "zygosity": zyg,
+                "clinical_significance": v.get("clinical_significance", ""),
+                "drugs": v.get("drugs", ""),
+                "evidence_level": v.get("evidence_level", ""),
+                "is_variant": is_variant,
+                "source": "Extended Panel",
+            })
+    return rows
+
+
+def load_pgx_custom_variants_reference() -> List[Dict[str, str]]:
+    """Load the built-in pgx_custom_variants.tsv reference file."""
+    ref_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..", "..", "..", "data", "db", "pgx_custom_variants.tsv",
+    )
+    ref_path = os.path.normpath(ref_path)
+    if not os.path.isfile(ref_path):
+        return []
+    rows: List[Dict[str, str]] = []
+    try:
+        with open(ref_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                cols = line.split("\t")
+                if len(cols) < 8:
+                    continue
+                rows.append({
+                    "gene": cols[0],
+                    "rsid": cols[1],
+                    "variant_name": cols[6],
+                    "clinical_significance": cols[7],
+                    "drugs": cols[8] if len(cols) > 8 else "",
+                    "evidence_level": cols[9] if len(cols) > 9 else "",
+                    "clinpgx_url": cols[10] if len(cols) > 10 else "",
+                })
+    except Exception as e:
+        logger.warning("[pgx] could not load pgx_custom_variants.tsv: %s", e)
     return rows
 
 
@@ -254,8 +662,37 @@ def collect_pgx_from_analysis_dir(root: str, sample_name: str) -> Dict[str, Any]
             phen = bundle.get("phenotype") if isinstance(bundle, dict) else None
             if isinstance(phen, dict):
                 out["gene_results"] = extract_gene_results_from_phenotype(phen)
+                gr = phen.get("geneReports")
+                if isinstance(gr, dict):
+                    if "CPIC" in gr or "DPWG" in gr:
+                        pharmcat_all = set()
+                        for src in ("CPIC", "DPWG"):
+                            rr = gr.get(src)
+                            if isinstance(rr, dict):
+                                pharmcat_all |= set(rr.keys())
+                    else:
+                        pharmcat_all = {k for k, v in gr.items() if isinstance(v, dict)}
+                    out["all_pharmcat_genes"] = sorted(pharmcat_all)
         except Exception as e:
             logger.warning("[pgx] could not parse gene rows from %s: %s", rp_full, e)
+
+    actionable_genes: set = {
+        r["gene"] for r in out.get("gene_results", [])
+        if isinstance(r, dict) and r.get("category") == "actionable" and r.get("gene")
+    }
+    if actionable_genes:
+        drug_recs, drug_src = _collect_drug_recommendations_from_pgx_dir(
+            pgx_dir, actionable_genes
+        )
+        out["drug_recommendations"] = drug_recs
+        if drug_src:
+            out["artifacts"]["drug_recommendations_source"] = drug_src
+    else:
+        out["drug_recommendations"] = []
+
+    custom = _collect_custom_pgx_results(pgx_dir)
+    if custom:
+        out["custom_gene_results"] = custom
 
     return out
 
@@ -310,7 +747,47 @@ def pgx_for_pdf(pgx: Dict[str, Any]) -> Dict[str, Any]:
     out["summary_for_pdf_html"] = block
     out["tool_version_line"] = tool_v
     out.pop("portal_review", None)
-    out.pop("gene_results", None)
+
+    # Build the full gene list from ALL sources BEFORE reviewer_confirmed filtering
+    all_gene_names: set = set()
+    all_genes = out.get("gene_results") if isinstance(out.get("gene_results"), list) else []
+    for r in all_genes:
+        if isinstance(r, dict) and r.get("gene"):
+            all_gene_names.add(str(r["gene"]).strip())
+    pharmcat_all = pgx.get("all_pharmcat_genes")
+    if isinstance(pharmcat_all, list):
+        for g in pharmcat_all:
+            if g:
+                all_gene_names.add(str(g).strip())
+    custom = pgx.get("custom_gene_results")
+    if isinstance(custom, list):
+        for r in custom:
+            if isinstance(r, dict) and r.get("gene"):
+                all_gene_names.add(str(r["gene"]).strip())
+    _EXCLUDE_FROM_GENE_LIST = {"MT-RNR1", "CFTR", "HLA-A", "HLA-B", "CES1", "IFNL3"}
+    out["genes_evaluated"] = sorted(all_gene_names - _EXCLUDE_FROM_GENE_LIST)
+
+    confirmed = [r for r in all_genes if isinstance(r, dict) and r.get("reviewer_confirmed")]
+    out["gene_results"] = confirmed if confirmed else all_genes
+
+    drug_recs = pgx.get("drug_recommendations")
+    if isinstance(drug_recs, list) and drug_recs:
+        confirmed_gene_names = {r["gene"] for r in out["gene_results"] if r.get("gene")}
+        out["drug_recommendations"] = [
+            r for r in drug_recs
+            if not confirmed_gene_names or r.get("gene") in confirmed_gene_names
+        ]
+    else:
+        out["drug_recommendations"] = generate_cpic_drug_recommendations(out["gene_results"])
+
+    if isinstance(custom, list) and custom:
+        pharmcat_genes = {r["gene"] for r in out["gene_results"] if r.get("gene")}
+        non_pharmcat = [r for r in custom if r.get("gene") not in pharmcat_genes]
+        confirmed_custom = [r for r in non_pharmcat if r.get("reviewer_confirmed")]
+        out["custom_gene_results"] = confirmed_custom if confirmed_custom else []
+    else:
+        out["custom_gene_results"] = []
+
     return out
 
 
@@ -325,5 +802,4 @@ def sanitize_pgx_payload_for_pdf_render(report_data: Dict[str, Any]) -> None:
     if merged:
         combined = {**pgx, **merged}
         combined.pop("portal_review", None)
-        combined.pop("gene_results", None)
         report_data["pgx"] = combined

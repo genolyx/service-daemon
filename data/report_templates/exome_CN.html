@@ -252,12 +252,11 @@
             <td><span class="label">報告狀態:</span> <span class="value" style="color:#64748b;">最終報告</span></td>
         </tr>
     </table>
-    {# 检查主要受检者的结果 - Check primary patient findings #}
-    {% if data.primary_patient.findings | length > 0 %}
+        {% if data.primary_patient.findings | length > 0 %}
     <div class="banner banner-pos">
         <p class="status-text">+ 检测结果：阳性</p>
         <p class="banner-desc">
-            检出具有临床意义的基因变异。受检者为下列疾病的致病变异携带者。
+            检出具有临床意义的基因变异。详见下列所报告的疾病条目。
         </p>
     </div>
     {% else %}
@@ -279,13 +278,11 @@
             </tr>
         </thead>
         <tbody>
-            {# 确保指向 JSON 中的 primary_patient.findings #}
-            {% if data.primary_patient.findings and data.primary_patient.findings | length > 0 %}
+                        {% if data.primary_patient.findings and data.primary_patient.findings | length > 0 %}
                 {% for item in data.primary_patient.findings %}
                 <tr>
                     <td>
-                        {# <span style="color: #3b82f6; font-size: 7pt; font-weight: bold; display: block; margin-bottom: 2px;">主要受检者 (PRIMARY)</span> #}
-                        <span style="font-weight:500;">{{ item.disorder }}</span><br>
+                            <span style="font-weight:500;">{{ item.disorder }}</span><br>
                         <span style="color:#64748b; font-size:7pt;">
                             {# 遗传方式翻译 #}
                             {% if item.inheritance == 'Autosomal recessive' %}常染色體隱性遺傳
@@ -307,7 +304,6 @@
                 {% endfor %}
             {% else %}
                 <tr>
-                    {# 这里的 Fallback Row 已更新为中文优先 #}
                     <td colspan="4" style="text-align: center; padding: 20px; color: #64748b; font-style: italic;">
                         未检测到具有临床意义的变异。
                     </td>
@@ -317,15 +313,13 @@
     </table>
 
     <div class="clinical-statement">
-        本次帶因者篩查評估了 302 個基因的遺傳學改變（變異），這些變異與生育患有遺傳病子女的風險增加相關。瞭解受檢者是否為這些疾病的帶因者，可為家庭規劃及／或產前準備提供參考資訊。帶因者篩查不適用於臨床診斷目的。如需確定受檢者自身是否存在某種疾病的遺傳基礎，建議對目標基因進行針對性的診斷性檢測。
+        本次全外顯子組測序評估了基因組蛋白質編碼區域中與遺傳性疾病相關的基因變異。所識別的變異依據 ACMG/AMP 指南進行分類，具有臨床意義的變異予以報告。本檢測旨在為受檢者提供潛在遺傳病因的分子依據。建議進行遺傳諮詢以討論結果及後續檢測方案。
     </div>
 
-    {# CHANGE: Point to data.primary_patient.findings #}
-        {% if data.primary_patient.findings %}
+            {% if data.primary_patient.findings %}
         <div class="new-page">
             <div class="section-title">詳細解讀</div>
             
-            {# CHANGE: Point the loop to the correct JSON path #}
             {% for item in data.primary_patient.findings %}
             <div class="detail-item">
                 <div class="condition-heading">
@@ -342,7 +336,7 @@
                 <div>
                     <div class="sub-label">Interpretation</div>
                     <p class="detail-text">
-                        Identification of the <strong>{{ item.mutation }}</strong> variant in the <strong>{{ item.gene }}</strong> gene confirms this individual’s status as a carrier for {{ item.disorder }}. {{ item.variant_summary }} This finding is classified as <strong>{{ item.classification }}</strong>.
+                        The <strong>{{ item.mutation }}</strong> variant was identified in the <strong>{{ item.gene }}</strong> gene and is associated with {{ item.disorder }}. {{ item.variant_summary }} This finding is classified as <strong>{{ item.classification }}</strong>.
                     </p>
                 </div>
             </div>

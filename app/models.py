@@ -165,6 +165,14 @@ class PgxGeneReviewRow(BaseModel):
     reviewer_comment: str = Field(default="", max_length=4000)
 
 
+class PgxCustomGeneReviewRow(BaseModel):
+    """Per-variant review row for extended panel ``pgx.custom_gene_results[]``."""
+
+    gene: str = Field(..., min_length=1, max_length=64)
+    rsid: str = Field(..., min_length=1, max_length=32)
+    reviewer_confirmed: bool = False
+
+
 class PgxReviewRequest(BaseModel):
     """Persist portal reviewer state into ``result.json`` → ``pgx.portal_review`` + per-gene fields on ``gene_results``."""
 
@@ -173,6 +181,10 @@ class PgxReviewRequest(BaseModel):
     gene_reviews: List[PgxGeneReviewRow] = Field(
         default_factory=list,
         description="Updates reviewer_confirmed / reviewer_comment for matching gene symbols in pgx.gene_results",
+    )
+    custom_gene_reviews: List[PgxCustomGeneReviewRow] = Field(
+        default_factory=list,
+        description="Updates reviewer_confirmed for matching gene+rsid in pgx.custom_gene_results",
     )
 
 

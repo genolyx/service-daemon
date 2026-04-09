@@ -264,7 +264,8 @@ class OrderStore:
 def ingest_result_json_from_disk(store: OrderStore, job: Job) -> None:
     """If result.json exists for this order (carrier: canonical review path), store in DB."""
     path = None
-    if getattr(job, "service_code", None) == "carrier_screening":
+    _CARRIER_LIKE = {"carrier_screening", "whole_exome", "health_screening"}
+    if getattr(job, "service_code", None) in _CARRIER_LIKE:
         from app.services.carrier_screening.plugin import carrier_result_json_path
 
         path = carrier_result_json_path(job)

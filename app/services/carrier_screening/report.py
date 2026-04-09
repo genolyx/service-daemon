@@ -364,6 +364,25 @@ def _carrier_order_flat(params: Dict[str, Any]) -> Dict[str, Any]:
     return dict(params)
 
 
+def _wes_panel_category_from_params(params: Dict[str, Any]) -> str:
+    """Resolve WES panel category from order params (top-level or nested carrier)."""
+    flat = _carrier_order_flat(params)
+    wid = str(flat.get("wes_panel_id") or "").strip()
+    if not wid:
+        wid = str(((params.get("carrier") or {}).get("wes_panel_id")) or "").strip()
+    if not wid:
+        return ""
+    try:
+        from ..wes_panels import get_panel_by_id
+
+        panel = get_panel_by_id(wid)
+        if panel:
+            return str(panel.get("category") or "").strip().lower()
+    except Exception:
+        pass
+    return ""
+
+
 def carrier_report_template_kind(params: Dict[str, Any]) -> Optional[str]:
     """
     PDF 템플릿 종류.
@@ -376,11 +395,18 @@ def carrier_report_template_kind(params: Dict[str, Any]) -> Optional[str]:
     """
     if not params:
         return None
-    params = _carrier_order_flat(params)
-    tc = str(params.get("test_category") or "").strip()
-    ot = str(params.get("other_test_type") or "").strip()
-    pc = str(params.get("package_code") or "").strip()
+    flat = _carrier_order_flat(params)
+    tc = str(flat.get("test_category") or "").strip()
+    ot = str(flat.get("other_test_type") or "").strip()
+    pc = str(flat.get("package_code") or "").strip()
     pc_u = pc.upper()
+
+    # WES panel category takes precedence (reflex workflows may keep legacy package_code)
+    panel_cat = _wes_panel_category_from_params(params)
+    if panel_cat == "pgx":
+        return "pgx"
+    if panel_cat == "proactive_health":
+        return "proactive"
 
     # Pharmacogenomics (package or portal-style code)
     if pc in ("PGx", "pgx", "Pharmacogenomics") or pc_u == "PGX":

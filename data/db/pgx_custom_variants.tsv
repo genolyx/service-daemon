@@ -1,0 +1,41 @@
+#gene	rsid	chr	pos	ref	alt	variant_name	clinical_significance	drugs	evidence_level	clinpgx_url
+ABCB1	rs1045642	chr7	87509329	A	G	C3435T	P-glycoprotein expression; drug efflux transporter	tacrolimus, digoxin, cyclosporine, fexofenadine	Level 3	https://www.clinpgx.org/hgnc/ABCB1
+ABCB1	rs1128503	chr7	87550285	A	G	C1236T	P-glycoprotein expression	tacrolimus, methotrexate	Level 3	https://www.clinpgx.org/hgnc/ABCB1
+ABCB1	rs2032582	chr7	87531302	A	C	G2677T/A	P-glycoprotein substrate transport	tacrolimus, modafinil, irinotecan	Level 3	https://www.clinpgx.org/hgnc/ABCB1
+ACE	rs4343	chr17	63488529	G	A	intron16_proxy	ACE activity; ACE-inhibitor response	enalapril, captopril, lisinopril, ramipril	Level 3	https://www.clinpgx.org/hgnc/ACE
+ANKK1	rs1800497	chr11	113400106	G	A	Taq1A	DRD2 receptor density; antipsychotic response	haloperidol, naltrexone, aripiprazole, bromocriptine	Level 3	https://www.clinpgx.org/hgnc/ANKK1
+APOE	rs429358	chr19	44908684	T	C	APOE_e4_det	APOE epsilon-4 determinant; lipid metabolism	statins (atorvastatin, simvastatin), donepezil, tacrine	Level 2A	https://www.clinpgx.org/hgnc/APOE
+APOE	rs7412	chr19	44908822	C	T	APOE_e2_det	APOE epsilon-2 determinant; lipid metabolism	statins (atorvastatin, simvastatin), donepezil	Level 2A	https://www.clinpgx.org/hgnc/APOE
+ATM	rs1801516	chr11	108289623	G	A	D1853N	DNA damage response; platinum drug sensitivity	cisplatin, carboplatin, radiotherapy	Level 3	https://www.clinpgx.org/hgnc/ATM
+BCHE	rs1799807	chr3	165548529	A	G	A539T_atypical	Butyrylcholinesterase deficiency; succinylcholine sensitivity	succinylcholine, mivacurium	Level 1A	https://www.clinpgx.org/hgnc/BCHE
+BCHE	rs1803274	chr3	165557542	A	G	D70G_K_variant	Reduced butyrylcholinesterase activity	succinylcholine	Level 2A	https://www.clinpgx.org/hgnc/BCHE
+CES1	rs71647871	chr16	55836816	C	T	G143E	Impaired carboxylesterase; clopidogrel/methylphenidate metabolism	clopidogrel, methylphenidate, dabigatran, oseltamivir	Level 3	https://www.clinpgx.org/hgnc/CES1
+COMT	rs4680	chr22	19963748	G	A	Val158Met	Catecholamine metabolism; pain sensitivity; psychiatric drug response	morphine, opioids, amphetamine, levodopa	Level 3	https://www.clinpgx.org/hgnc/COMT
+CYP2C8	rs10509681	chr10	96798749	A	G	*3_K399R	Reduced CYP2C8 metabolism; paclitaxel/amodiaquine	paclitaxel, amodiaquine, repaglinide, rosiglitazone	Level 1B	https://www.clinpgx.org/hgnc/CYP2C8
+CYP2C8	rs11572103	chr10	96818119	A	G	*4_I264M	Reduced CYP2C8 metabolism	paclitaxel, repaglinide	Level 2A	https://www.clinpgx.org/hgnc/CYP2C8
+CYP2C18	rs1326830	chr10	96405856	C	T	promoter	CYP2C18 expression level	limited clinical data	Level 4	https://www.clinpgx.org/hgnc/CYP2C18
+CYP3A4	rs35599367	chr7	99768693	C	T	*22_intron6	Reduced CYP3A4 expression; tacrolimus/statins	tacrolimus, atorvastatin, simvastatin, cyclosporine	Level 1B	https://www.clinpgx.org/hgnc/CYP3A4
+CYP3A4	rs2740574	chr7	99784473	C	T	*1B_promoter	Altered CYP3A4 expression	tacrolimus, cyclophosphamide	Level 2B	https://www.clinpgx.org/hgnc/CYP3A4
+DRD2	rs6277	chr11	113412737	C	T	C957T	Dopamine D2 receptor expression; antipsychotic response	risperidone, haloperidol, aripiprazole	Level 3	https://www.clinpgx.org/hgnc/DRD2
+ERCC1	rs11615	chr19	45421647	C	T	N118N	DNA repair capacity; platinum-based chemotherapy response	cisplatin, oxaliplatin, carboplatin	Level 3	https://www.clinpgx.org/hgnc/ERCC1
+F2	rs1799963	chr11	46739505	G	A	G20210A	Prothrombin thrombophilia; VTE risk	warfarin, hormonal contraceptives, HRT	Level 1A	https://www.clinpgx.org/hgnc/F2
+F5	rs6025	chr1	169549811	C	T	R506Q_Leiden	Factor V Leiden; thrombophilia; VTE risk	warfarin, hormonal contraceptives, HRT	Level 1A	https://www.clinpgx.org/hgnc/F5
+GGCX	rs11676382	chr2	85545523	C	G	intronic	Warfarin dose sensitivity	warfarin	Level 2A	https://www.clinpgx.org/hgnc/GGCX
+GRIK4	rs1954787	chr11	120622053	C	T	intronic	SSRI antidepressant response	citalopram	Level 3	https://www.clinpgx.org/hgnc/GRIK4
+GSTP1	rs1695	chr11	67585218	A	G	I105V_*B	Glutathione conjugation; platinum drug metabolism	cisplatin, oxaliplatin, cyclophosphamide, doxorubicin	Level 2B	https://www.clinpgx.org/hgnc/GSTP1
+HTR1A	rs6295	chr5	63962433	C	G	C-1019G	Serotonin 1A receptor; SSRI/antidepressant response	paroxetine, fluvoxamine, SSRIs	Level 3	https://www.clinpgx.org/hgnc/HTR1A
+HTR2A	rs7997012	chr13	47014085	G	A	intron2	Serotonin 2A receptor; SSRI response	citalopram, paroxetine, SSRIs	Level 2B	https://www.clinpgx.org/hgnc/HTR2A
+HTR2C	rs3813929	chrX	114584497	C	T	-759C/T_promoter	Antipsychotic-induced weight gain risk	olanzapine, clozapine, risperidone	Level 3	https://www.clinpgx.org/hgnc/HTR2C
+IFNL4	rs368234815	chr19	39248147	C	T	ss469415590_dG	Interferon-lambda 4; HCV treatment response	peginterferon alfa-2a, peginterferon alfa-2b, ribavirin	Level 1A	https://www.clinpgx.org/hgnc/IFNL4
+ITPA	rs1127354	chr20	3213196	C	A	P32T	Inosine triphosphatase; ribavirin-related anemia	ribavirin, azathioprine, mercaptopurine	Level 1B	https://www.clinpgx.org/hgnc/ITPA
+KIF6	rs20455	chr6	39318892	T	C	Trp719Arg	Statin response (evidence disputed)	pravastatin, atorvastatin (disputed)	Level 3	https://www.clinpgx.org/hgnc/KIF6
+MTHFR	rs1801133	chr1	11796321	G	A	C677T	Folate metabolism; methotrexate toxicity	methotrexate, fluorouracil, capecitabine, folic acid	Level 2A	https://www.clinpgx.org/hgnc/MTHFR
+MTHFR	rs1801131	chr1	11794419	T	G	A1298C	Folate metabolism	methotrexate	Level 3	https://www.clinpgx.org/hgnc/MTHFR
+NAT2	rs1801280	chr8	18258103	T	C	*5_I114T	NAT2 acetylator status; isoniazid/hydralazine	isoniazid, hydralazine, sulfasalazine, procainamide	Level 1A	https://www.clinpgx.org/hgnc/NAT2
+NAT2	rs1799930	chr8	18257854	G	A	*6_R197Q	NAT2 acetylator status	isoniazid, hydralazine, sulfasalazine	Level 1A	https://www.clinpgx.org/hgnc/NAT2
+NAT2	rs1799931	chr8	18257611	G	A	*7_G286E	NAT2 acetylator status	isoniazid, hydralazine	Level 1A	https://www.clinpgx.org/hgnc/NAT2
+NAT2	rs1041983	chr8	18258162	C	T	*11_Y94Y	NAT2 acetylator tagging SNP	isoniazid	Level 2A	https://www.clinpgx.org/hgnc/NAT2
+NQO1	rs1800566	chr16	69710627	C	T	*2_P187S	NAD(P)H:quinone oxidoreductase; benzene toxicity	mitomycin C, benzene	Level 3	https://www.clinpgx.org/hgnc/NQO1
+OPRM1	rs1799971	chr6	154360797	A	G	A118G	Mu-opioid receptor; opioid analgesic response	morphine, codeine, fentanyl, naltrexone (modest effect)	Level 3	https://www.clinpgx.org/hgnc/OPRM1
+UGT1A4	rs2011425	chr2	233760233	C	CAT	P24T	Lamotrigine/olanzapine glucuronidation	lamotrigine, olanzapine	Level 3	https://www.clinpgx.org/hgnc/UGT1A4
+XRCC1	rs25487	chr19	43551574	G	A	R399Q	DNA repair; platinum chemotherapy response	cisplatin, oxaliplatin, carboplatin	Level 3	https://www.clinpgx.org/hgnc/XRCC1

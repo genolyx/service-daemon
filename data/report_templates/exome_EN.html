@@ -255,16 +255,15 @@
         </tr>
     </table>
 
-    {# Change the check to look at the primary patient's findings #}
-        {% if data.primary_patient.findings | length > 0 %}
+    {% if data.primary_patient.findings | length > 0 %}
         <div class="banner banner-pos">
             <p class="status-text">+ POSITIVE</p>
-            <p class="banner-desc">Clinically significant genetic change(s) identified. This individual is a carrier for the condition(s) listed below.</p>
+            <p class="banner-desc">Clinically significant genetic variant(s) identified. See details for the condition(s) listed below.</p>
         </div>
         {% else %}
         <div class="banner banner-neg">
             <p class="status-text">- NEGATIVE</p>
-            <p class="banner-desc">No clinically significant genetic changes were identified in the genes evaluated.</p>
+            <p class="banner-desc">No clinically significant genetic variants were identified in the genes evaluated.</p>
         </div>
         {% endif %}
 
@@ -278,12 +277,11 @@
                 </tr>
             </thead>
             <tbody>
-                {# Corrected path: looking inside primary_patient.findings from your JSON #}
+                
                 {% if data.primary_patient.findings and data.primary_patient.findings | length > 0 %}
                     {% for item in data.primary_patient.findings %}
                     <tr>
                         <td>
-                            {# <span style="color: #3b82f6; font-size: 7pt; font-weight: bold; display: block; margin-bottom: 2px;">PRIMARY PATIENT</span> #}
                             <span style="font-weight:500;">{{ item.disorder }}</span><br>
                             <span style="color:#64748b; font-size:7pt;">{{ item.inheritance }}</span>
                         </td>
@@ -303,18 +301,16 @@
         </table>
 
     <div class="clinical-statement">
-        This carrier test evaluated 302 gene(s) for genetic changes (variants) that are associated with an increased risk of having a child with
-        a genetic condition. Knowledge of carrier status for one of these conditions may provide information that can be used to assist with
-        family planning and/or preparation. Carrier screening is not intended for diagnostic purposes. To identify a potential genetic basis for
-        a condition in the individual being tested, diagnostic testing for the gene(s) of interest is recommended.
+        This whole exome sequencing test evaluated the protein-coding regions of the genome for genetic variants associated with inherited
+        conditions. Variants identified are classified according to ACMG/AMP guidelines and reported when clinically significant. This test
+        is intended to identify a potential genetic basis for a condition in the individual being tested. Genetic counseling is recommended
+        to discuss the implications of these results and any appropriate follow-up testing.
     </div>
 
-    {# CHANGE: Point to data.primary_patient.findings #}
-        {% if data.primary_patient.findings %}
+    {% if data.primary_patient.findings %}
         <div class="new-page">
             <div class="section-title">Detailed Interpretations</div>
-            
-            {# CHANGE: Point the loop to the correct JSON path #}
+
             {% for item in data.primary_patient.findings %}
             <div class="detail-item">
                 <div class="condition-heading">
@@ -331,7 +327,7 @@
                 <div>
                     <div class="sub-label">Interpretation</div>
                     <p class="detail-text">
-                        Identification of the <strong>{{ item.mutation }}</strong> variant in the <strong>{{ item.gene }}</strong> gene confirms this individual’s status as a carrier for {{ item.disorder }}. {{ item.variant_summary }} This finding is classified as <strong>{{ item.classification }}</strong>.
+                        The <strong>{{ item.mutation }}</strong> variant was identified in the <strong>{{ item.gene }}</strong> gene and is associated with {{ item.disorder }}. {{ item.variant_summary }} This finding is classified as <strong>{{ item.classification }}</strong>.
                     </p>
                 </div>
             </div>

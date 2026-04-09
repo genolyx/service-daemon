@@ -63,6 +63,22 @@
     .btn.disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
     /* Report tab: blocked state must still receive clicks so onclick can show a toast */
     .btn.primary.report-gen-blocked{opacity:.55;cursor:not-allowed;filter:saturate(0.75)}
+    .btn.secondary{background:var(--btn-bg);border:1px solid var(--brand);color:var(--brand)}
+    .btn.secondary:hover{background:rgba(106,163,255,.12);border-color:var(--brand-2);color:var(--brand-2)}
+
+    /* Report Preview Modal */
+    .rpt-preview-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;display:none;align-items:stretch;justify-content:center;padding:20px}
+    .rpt-preview-overlay.open{display:flex}
+    .rpt-preview-panel{background:var(--bg);border-radius:14px;border:1px solid var(--line);display:flex;flex-direction:column;width:100%;max-width:1100px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+    .rpt-preview-toolbar{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--card);flex-shrink:0;flex-wrap:wrap}
+    .rpt-preview-toolbar .rpt-title{font-weight:700;font-size:14px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .rpt-preview-toolbar select{width:auto;min-width:80px;padding:6px 10px;font-size:12px;border-radius:8px}
+    .rpt-preview-iframe-wrap{flex:1;overflow:auto;background:#fff;position:relative}
+    .rpt-preview-iframe-wrap iframe{width:100%;height:100%;border:none;min-height:600px}
+    .rpt-preview-edit-wrap{flex:1;overflow:auto;position:relative}
+    .rpt-preview-edit-wrap textarea{width:100%;height:100%;min-height:600px;border:none;border-radius:0;background:#1e1e2e;color:#cdd6f4;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:12px;line-height:1.5;padding:12px;resize:none}
+    body.light .rpt-preview-edit-wrap textarea{background:#fafafa;color:#1e293b}
+    .rpt-preview-statusbar{display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--line);background:var(--card);flex-shrink:0;font-size:12px;color:var(--muted)}
     .btn.loading{pointer-events:none;opacity:.7;position:relative}
     .btn.loading::after{content:'';position:absolute;right:10px;top:50%;width:14px;height:14px;border:2px solid rgba(255,255,255,.7);border-top-color:transparent;border-radius:50%;transform:translateY(-50%);animation:spin .8s linear infinite}
     @keyframes spin{to{transform:translateY(-50%) rotate(360deg)}}
@@ -1803,6 +1819,7 @@
                   </div>
                 </div>
                 <div class="col-12" style="display:flex;align-items:flex-end;gap:10px;margin-top:12px;flex-wrap:wrap">
+                  <button type="button" class="btn secondary" id="btnPreviewReport" onclick="previewReport()">Preview HTML</button>
                   <button type="button" class="btn primary" id="btnGenReport" onclick="generateReport()">Generate Report</button>
                   <span id="reportMsg" class="muted"></span>
                 </div>
@@ -6228,9 +6245,10 @@
             return first.split('_')[0] || '';
           };
           // clinical_findings → variants 정규화 (공통 review 렌더링 호환)
-          reviewData.variants = (reviewData.clinical_findings || []).map(v => {
+          reviewData.variants = (reviewData.clinical_findings || []).map((v, idx) => {
             const gene = v.gene || geneFromTarget(v.target_name);
             return {
+              variant_id: v.variant_id || `NIPT_${String(idx + 1).padStart(4, '0')}`,
               gene,
               chrom: v.chrom || '',
               pos: v.pos != null ? String(v.pos) : '',
@@ -6249,6 +6267,7 @@
               in_zero_probe_region: !!v.in_zero_probe_region,
               details: v.details || '',
               acmg_class: v.pathogenic_variant ? '5' : '',
+              acmg_classification: v.pathogenic_variant ? 'Pathogenic' : '',
               hgvsc: '', hgvsp: '', effect: '', gnomad_af: '',
             };
           });
@@ -6332,10 +6351,22 @@
       const ot = String(flat.other_test_type || '').trim();
       const pc = String(flat.package_code || '').trim();
       const rl = String(flat.report_language || '').trim().toUpperCase();
+
+      // WES panel category takes precedence (same logic as reviewOrderKind)
+      const wid = String(
+        flat.wes_panel_id != null ? flat.wes_panel_id
+          : (((orderParams && orderParams.carrier) || {}).wes_panel_id || '')
+      ).trim();
+      const wp = wid ? _wesPanelsById[wid] : null;
+      const panelCat = String(wp && wp.category != null ? wp.category : '').trim().toLowerCase();
+
       let kind = null;
-      if (pc === 'WholeExome') kind = 'exome';
-      else if (pc === 'HealthScreening' || pc === 'Proactive') kind = 'proactive';
+      if (panelCat === 'pgx') kind = 'pgx';
+      else if (panelCat === 'proactive_health') kind = 'proactive';
       else if (pc === 'PGx' || pc === 'pgx' || pc === 'Pharmacogenomics') kind = 'pgx';
+      else if (pc === 'WholeExome' && panelCat !== 'carrier_screening') kind = 'exome';
+      else if (pc === 'WholeExome') kind = 'exome';
+      else if (pc === 'HealthScreening' || pc === 'Proactive') kind = 'proactive';
       else if (tc === 'standard_carrier') kind = 'standard';
       else if (tc === 'other' && ot === 'CouplesCarrier') kind = 'couples';
       else if (pc === 'CouplesCarrier') kind = 'couples';
@@ -6361,6 +6392,7 @@
 
     function updateReportGenerateUi() {
       const btn = qs('btnGenReport');
+      const previewBtn = qs('btnPreviewReport');
       const msg = qs('reportPdfDisabledMsg');
       const langDisp = qs('reportOrderLangDisplay');
       if (!btn || !langDisp) return;
@@ -6370,6 +6402,7 @@
           msg.textContent = 'Load the selected order before generating a report.';
         }
         btn.classList.add('report-gen-blocked');
+        if (previewBtn) previewBtn.classList.add('report-gen-blocked');
         langDisp.textContent = '—';
         return;
       }
@@ -6381,8 +6414,11 @@
         msg.textContent = el.ok ? '' : el.reason;
       }
       btn.classList.toggle('report-gen-blocked', !el.ok);
+      if (previewBtn) previewBtn.classList.toggle('report-gen-blocked', !el.ok);
       if (el.ok) {
-        langDisp.textContent = `${el.reportLang} (from order) — template: ${el.kind === 'couples' ? 'carrier_couples' : 'carrier'}_${el.reportLang.toLowerCase()}.html`;
+        const stemMap = { standard: 'carrier', couples: 'carrier_couples', exome: 'exome', proactive: 'proactive', pgx: 'pgx' };
+        const stem = stemMap[el.kind] || el.kind;
+        langDisp.textContent = `${el.reportLang} (from order) — template: ${stem}_${el.reportLang.toLowerCase()}.html`;
       } else {
         const rlRaw = flat && flat.report_language != null && String(flat.report_language).trim() !== ''
           ? String(flat.report_language).trim()
@@ -6460,9 +6496,9 @@
       const hide = new Set();
       const kind = reviewOrderKind(rd);
       if (kind === 'sgnipt') {
-        ['coverage', 'diseases', 'darkgenes', 'pgx', 'report', 'genedb'].forEach(t => hide.add(t));
+        ['diseases', 'darkgenes', 'pgx'].forEach(t => hide.add(t));
       } else if (kind === 'pgx') {
-        ['variants', 'coverage', 'diseases', 'darkgenes', 'report', 'genedb'].forEach(t => hide.add(t));
+        ['variants', 'coverage', 'diseases', 'darkgenes', 'genedb'].forEach(t => hide.add(t));
       } else if (kind === 'proactive') {
         hide.add('darkgenes');
       } else if (kind === 'carrier') {
@@ -6659,21 +6695,41 @@
       }
 
       const genes = Array.isArray(pgx.gene_results) ? pgx.gene_results : [];
-      html += '<h4 style="font-size:13px;margin:12px 0 8px">Gene-level results (review)</h4>';
+      html += '<h4 style="font-size:13px;margin:12px 0 8px">PharmCAT Gene Results</h4>';
       const panelFiltered = !!pgx.gene_results_interpretation_filter_applied;
-      html += `<p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.45">${
-        panelFiltered
-          ? 'Only genes on <strong>this order’s interpretation panel</strong> (from <code>wes_panel_id</code> in the panel catalog — same gene list as variant review scope). PharmCAT may report more genes; they are not listed here.'
-          : 'Rows from PharmCAT phenotype JSON (CPIC / DPWG). <strong>No panel is scoped on this order</strong> (no <code>wes_panel_id</code>), so all PharmCAT genes are shown. Check <strong>Confirmed</strong> and add comments; values are stored on each <code>gene_results[]</code> row.'
-      }</p>`;
+      const confirmedPharmcat = genes.filter(r => r.reviewer_confirmed);
+      html += `<p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.45">` +
+        `${genes.length} gene(s) from PharmCAT (CPIC/DPWG).` +
+        (panelFiltered ? ' Filtered to interpretation panel genes.' : '') +
+        `</p>`;
+
+      html += '<div style="margin:0 0 12px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:11px;line-height:1.6">';
+      html += '<strong style="font-size:12px">Column guide</strong><br>';
+      html += '<b>Category</b> \u2014 <span class="badge" style="background:rgba(180,83,9,0.15);color:#b45309;font-size:10px">Actionable</span> = non-normal phenotype that may affect drug prescribing; ';
+      html += '<span class="badge" style="opacity:0.6;font-size:10px">Normal</span> = normal metabolizer / no clinical action needed.<br>';
+      html += '<b>Source</b> \u2014 Guideline source (e.g. CPIC, DPWG).<br>';
+      html += '<b>Allele Functions</b> \u2014 Predicted functional impact of each allele.';
+      html += '</div>';
+
+      html += `<p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.45">` +
+        `Check <strong>\u2713 Include</strong> to add a gene to the PDF report. ` +
+        (confirmedPharmcat.length
+          ? `<strong>${confirmedPharmcat.length}</strong> selected for report.`
+          : 'None selected yet \u2014 only checked genes will appear on the PDF.') +
+        `</p>`;
       if (genes.length) {
+        html += '<div style="display:flex;gap:8px;align-items:center;margin:0 0 8px">';
+        html += '<input id="pgxGenesFilter" type="text" placeholder="Filter by gene, phenotype, diplotype\u2026" ' +
+          'style="flex:1;max-width:360px;padding:6px 10px;font-size:12px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)" />';
+        html += '<label style="font-size:11px;white-space:nowrap;cursor:pointer"><input type="checkbox" id="pgxGenesFilterActionable" style="margin-right:4px" />Actionable only</label>';
+        html += '</div>';
         html += '<div class="table-wrap" style="max-height:55vh;margin-bottom:14px">';
         html += '<table id="tblPgxGenes" style="font-size:12px">';
         html += '<thead><tr>';
         html +=
-          '<th style="width:40px;text-align:center" title="Reviewer confirmed">✓</th>';
-        html += '<th>Gene</th><th>Source</th><th>Diplotype</th><th>Phenotype</th><th>Activity</th>';
-        html += '<th>Allele functions</th><th>Call</th><th>Category</th><th style="min-width:140px">Comment</th>';
+          '<th style="width:50px;text-align:center" title="Include on PDF report">\u2713</th>';
+        html += '<th>Gene</th><th>Source</th><th>Diplotype</th><th>Phenotype</th>';
+        html += '<th>Allele Functions</th><th>Category</th>';
         html += '</tr></thead><tbody id="tblPgxGenesBody">';
         genes.forEach(row => {
           const g = (row.gene != null ? String(row.gene) : '').trim();
@@ -6684,27 +6740,95 @@
           const cat = (row.category || '').trim();
           const catBadge =
             cat === 'actionable'
-              ? '<span class="badge" style="background:rgba(180,83,9,0.15);color:#b45309">actionable</span>'
-              : '<span class="badge" style="opacity:0.85">normal</span>';
+              ? '<span class="badge" style="background:rgba(180,83,9,0.15);color:#b45309">Actionable</span>'
+              : '<span class="badge" style="opacity:0.6">Normal</span>';
           const conf = !!row.reviewer_confirmed;
-          const com = escapeHtml(row.reviewer_comment != null ? String(row.reviewer_comment) : '');
-          html += `<tr data-pgx-gene="${escapeHtml(g)}">`;
+          html += `<tr data-pgx-gene="${escapeHtml(g)}"` +
+            (cat === 'actionable' ? ' style="background:rgba(180,83,9,0.04)"' : '') + '>';
           html += `<td style="text-align:center"><input type="checkbox" class="pgx-gene-confirmed" ${conf ? 'checked' : ''} /></td>`;
           html += `<td style="font-weight:600">${escapeHtml(g)}</td>`;
           html += `<td>${escapeHtml(row.guideline_source != null ? String(row.guideline_source) : '')}</td>`;
           html += `<td style="font-family:ui-monospace,monospace;font-size:11px">${escapeHtml(row.diplotype != null ? String(row.diplotype) : '')}</td>`;
           html += `<td>${escapeHtml(row.phenotype != null ? String(row.phenotype) : '')}</td>`;
-          html += `<td>${row.activity_score != null && row.activity_score !== '' ? escapeHtml(String(row.activity_score)) : '—'}</td>`;
           html += `<td style="font-size:11px;max-width:14rem">${escapeHtml(fn)}</td>`;
-          html += `<td>${escapeHtml(row.call_source != null ? String(row.call_source) : '')}</td>`;
           html += `<td>${catBadge}</td>`;
-          html += `<td><textarea class="pgx-gene-comment" rows="2" style="width:100%;min-width:120px;font-family:inherit;font-size:11px;padding:6px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">${com}</textarea></td>`;
           html += '</tr>';
         });
         html += '</tbody></table></div>';
       } else {
         html +=
           '<p class="muted" style="margin:0 0 12px;font-size:12px">No gene rows parsed yet. Reprocess results after <code>pgx/pgx_result.json</code> exists (PharmCAT phenotype JSON). Until then, use the raw summary below.</p>';
+      }
+
+      // ── Extended PGx Panel (custom non-PharmCAT genes) ──
+      const customGenes = Array.isArray(pgx.custom_gene_results) ? pgx.custom_gene_results : [];
+      if (customGenes.length) {
+        const customVariants = customGenes.filter(r => r.is_variant || (r.zygosity && r.zygosity !== 'homozygous_ref'));
+        html += '<h4 style="font-size:13px;margin:18px 0 8px">Extended PGx Panel — Curated Variant Genotyping</h4>';
+        html += `<p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.45">` +
+          `${customGenes.length} positions across non-PharmCAT pharmacogenes queried from the VCF. ` +
+          `<strong>${customVariants.length}</strong> variant(s) detected. Source: ClinPGx curated annotations.</p>`;
+
+        html += '<div style="margin:0 0 12px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:11px;line-height:1.6">';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 24px">';
+        html += '<div>';
+        html += '<strong style="font-size:12px">Column guide</strong><br>';
+        html += '<b>Status</b> — <span class="badge" style="background:rgba(180,83,9,0.15);color:#b45309;font-size:10px">Variant</span> = patient carries a non-reference allele; ';
+        html += '<span class="badge" style="opacity:0.6;font-size:10px">Ref</span> = homozygous reference (wild-type, no variant).<br>';
+        html += '<b>Affected Drug(s)</b> — Medications whose efficacy, metabolism, or safety may be altered by this variant. ';
+        html += 'When a variant is present, prescribing of these drugs may require <em>dose adjustment, alternative selection, or additional monitoring</em>.<br>';
+        html += '<b>Significance</b> — Pharmacogenomic effect of the variant (e.g. altered enzyme activity, drug transport, receptor expression).';
+        html += '</div><div>';
+        html += '<strong style="font-size:12px">Evidence levels (CPIC/PharmGKB)</strong><br>';
+        html += '<b>Level 1A</b> — CPIC guideline or FDA PGx label (strongest evidence)<br>';
+        html += '<b>Level 1B</b> — Strong evidence; clinical annotation with prescribing action<br>';
+        html += '<b>Level 2A</b> — Moderate evidence; consistent replicated studies<br>';
+        html += '<b>Level 2B</b> — Moderate evidence; limited replication<br>';
+        html += '<b>Level 3</b> — Low evidence; single study or small sample<br>';
+        html += '<b>Level 4</b> — Preliminary; case reports or in-vitro only';
+        html += '</div></div></div>';
+
+        const confirmedCustom = customGenes.filter(r => r.reviewer_confirmed);
+        html += `<p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.45">` +
+          `Check <strong>\u2713 Include</strong> to add a variant to the PDF report. ` +
+          (confirmedCustom.length
+            ? `<strong>${confirmedCustom.length}</strong> selected for report.`
+            : 'None selected yet \u2014 only checked variants will appear on the PDF.') +
+          `</p>`;
+        html += '<div style="display:flex;gap:8px;align-items:center;margin:0 0 8px">';
+        html += '<input id="pgxCustomFilter" type="text" placeholder="Filter by gene, rsID, drug, significance\u2026" ' +
+          'style="flex:1;max-width:360px;padding:6px 10px;font-size:12px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)" />';
+        html += '<label style="font-size:11px;white-space:nowrap;cursor:pointer"><input type="checkbox" id="pgxCustomFilterVariant" style="margin-right:4px" />Variants only</label>';
+        html += '</div>';
+        html += '<div class="table-wrap" style="max-height:50vh;margin-bottom:14px">';
+        html += '<table id="tblPgxCustomGenes" style="font-size:12px">';
+        html += '<thead><tr>';
+        html += '<th style="width:50px;text-align:center" title="Include on PDF report">✓</th>';
+        html += '<th>Gene</th><th>rsID</th><th>Variant</th><th>Genotype</th>';
+        html += '<th>Zygosity</th><th>Significance</th><th>Affected Drug(s)</th><th>Evidence</th><th>Status</th>';
+        html += '</tr></thead><tbody id="tblPgxCustomGenesBody">';
+        customGenes.forEach(row => {
+          const isVar = row.is_variant || (row.zygosity && row.zygosity !== 'homozygous_ref');
+          const conf = !!row.reviewer_confirmed;
+          const statusBadge = isVar
+            ? '<span class="badge" style="background:rgba(180,83,9,0.15);color:#b45309">Variant</span>'
+            : '<span class="badge" style="opacity:0.6">Ref</span>';
+          const zyg = (row.zygosity || '').replace(/_/g, ' ');
+          html += `<tr data-pgx-custom-gene="${escapeHtml(row.gene || '')}" data-pgx-custom-rsid="${escapeHtml(row.rsid || '')}"` +
+            (isVar ? ' style="background:rgba(180,83,9,0.04)"' : '') + '>';
+          html += `<td style="text-align:center"><input type="checkbox" class="pgx-custom-confirmed" ${conf ? 'checked' : ''} /></td>`;
+          html += `<td style="font-weight:600">${escapeHtml(row.gene || '')}</td>`;
+          html += `<td style="font-size:11px">${escapeHtml(row.rsid || '')}</td>`;
+          html += `<td style="font-size:11px">${escapeHtml(row.variant_name || '')}</td>`;
+          html += `<td style="font-family:ui-monospace,monospace;font-size:11px">${escapeHtml(row.genotype || '')}</td>`;
+          html += `<td style="font-size:11px">${escapeHtml(zyg)}</td>`;
+          html += `<td style="font-size:11px">${escapeHtml(row.clinical_significance || '')}</td>`;
+          html += `<td style="font-size:11px;max-width:14rem">${escapeHtml(row.drugs || '')}</td>`;
+          html += `<td style="font-size:11px">${escapeHtml(row.evidence_level || '')}</td>`;
+          html += `<td>${statusBadge}</td>`;
+          html += '</tr>';
+        });
+        html += '</tbody></table></div>';
       }
 
       const sum = (pgx.summary_text || '').trim();
@@ -6734,6 +6858,42 @@
       box.innerHTML = html;
       const btn = qs('btnSavePgxReview');
       if (btn) btn.onclick = () => savePgxReview();
+
+      // ── PharmCAT table filter ──
+      const gfInput = document.getElementById('pgxGenesFilter');
+      const gfAction = document.getElementById('pgxGenesFilterActionable');
+      if (gfInput) {
+        const applyGeneFilter = () => {
+          const q = gfInput.value.trim().toLowerCase();
+          const actionOnly = gfAction && gfAction.checked;
+          document.querySelectorAll('#tblPgxGenesBody tr[data-pgx-gene]').forEach(tr => {
+            const text = tr.textContent.toLowerCase();
+            const matchesQ = !q || text.includes(q);
+            const matchesAction = !actionOnly || text.includes('actionable');
+            tr.style.display = (matchesQ && matchesAction) ? '' : 'none';
+          });
+        };
+        gfInput.addEventListener('input', applyGeneFilter);
+        if (gfAction) gfAction.addEventListener('change', applyGeneFilter);
+      }
+
+      // ── Extended PGx table filter ──
+      const cfInput = document.getElementById('pgxCustomFilter');
+      const cfVariant = document.getElementById('pgxCustomFilterVariant');
+      if (cfInput) {
+        const applyCustomFilter = () => {
+          const q = cfInput.value.trim().toLowerCase();
+          const varOnly = cfVariant && cfVariant.checked;
+          document.querySelectorAll('#tblPgxCustomGenesBody tr[data-pgx-custom-gene]').forEach(tr => {
+            const text = tr.textContent.toLowerCase();
+            const matchesQ = !q || text.includes(q);
+            const matchesVar = !varOnly || text.includes('variant');
+            tr.style.display = (matchesQ && matchesVar) ? '' : 'none';
+          });
+        };
+        cfInput.addEventListener('input', applyCustomFilter);
+        if (cfVariant) cfVariant.addEventListener('change', applyCustomFilter);
+      }
     }
 
     async function savePgxReview() {
@@ -6751,11 +6911,22 @@
         const gene = tr.getAttribute('data-pgx-gene');
         if (!gene) return;
         const c = tr.querySelector('.pgx-gene-confirmed');
-        const ta = tr.querySelector('.pgx-gene-comment');
         gene_reviews.push({
           gene,
           reviewer_confirmed: !!(c && c.checked),
-          reviewer_comment: ta ? String(ta.value || '').trim() : '',
+          reviewer_comment: '',
+        });
+      });
+      const custom_gene_reviews = [];
+      document.querySelectorAll('#tblPgxCustomGenesBody tr[data-pgx-custom-gene]').forEach(tr => {
+        const gene = tr.getAttribute('data-pgx-custom-gene');
+        const rsid = tr.getAttribute('data-pgx-custom-rsid');
+        if (!gene || !rsid) return;
+        const c = tr.querySelector('.pgx-custom-confirmed');
+        custom_gene_reviews.push({
+          gene,
+          rsid,
+          reviewer_confirmed: !!(c && c.checked),
         });
       });
       try {
@@ -6763,6 +6934,7 @@
           reviewer_notes,
           reviewed,
           gene_reviews,
+          custom_gene_reviews,
         });
         if (res && res.pgx && typeof res.pgx === 'object') {
           reviewData.pgx = res.pgx;
@@ -8847,7 +9019,7 @@
       // Replace thead with sgNIPT-specific columns
       const thead = tbl.querySelector('thead tr');
       if (thead) thead.innerHTML = `
-        <th style="width:44px;text-align:center"></th>
+        <th style="width:36px;text-align:center"><input type="checkbox" id="chkAllNipt" title="Select/deselect all" /></th>
         <th class="sortable" data-key="gene">Gene</th>
         <th>Position</th>
         <th>Ref → Alt</th>
@@ -8873,7 +9045,7 @@
       const geneFilter = qs('variantGeneFilter').value;
       if (geneFilter) variants = variants.filter(v => v.gene === geneFilter);
 
-      qs('variantCount').textContent = `${variants.length} variant(s)`;
+      qs('variantCount').textContent = `${variants.length} variant(s)${selectedVariants.size ? ', ' + selectedVariants.size + ' selected' : ''}`;
       const tb = qs('tblVariantsBody');
       tb.innerHTML = '';
 
@@ -8891,7 +9063,9 @@
       variants.forEach(v => {
         const isFetal = v.origin === 'fetal_specific' || v.origin === 'fetal';
         const isPathogenic = v.pathogenic_variant;
+        const isSelected = selectedVariants.has(v.variant_id);
         const tr = document.createElement('tr');
+        tr.className = 'variant-row' + (isSelected ? ' selected' : '');
         if (isFetal) tr.style.background = 'rgba(239,68,68,.07)';
         const posStr = `${v.chrom || ''}:${v.pos || ''}`;
         const origLabel = originLabel[v.origin] || (v.origin || '-');
@@ -8899,13 +9073,13 @@
         const origClass = isFetal ? 'err' : isMat ? 'warn' : 'new';
         const conf = (v.confidence || '').toLowerCase();
         const confClass = confPill[conf] || 'inp';
-        // target_name에서 유전자명만 추출 (첫 번째 파이프 이전, 첫 언더스코어 이전)
         const firstGene = (v.target_name || '').split('|')[0].split('_')[0];
         const diseaseCell = v.disease
           ? `<span title="${escapeHtml(v.target_name || '')}">${escapeHtml(v.disease)}</span>`
           : (firstGene ? `<span title="${escapeHtml(v.target_name)}">${escapeHtml(firstGene)}</span>` : '-');
+        const starHtml = isPathogenic ? ' <span style="color:var(--err);font-size:11px" title="Pathogenic">★</span>' : '';
         tr.innerHTML = `
-          <td style="text-align:center">${isPathogenic ? '<span style="color:var(--err);font-size:13px">★</span>' : ''}</td>
+          <td style="text-align:center"><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleVariant('${escapeHtml(v.variant_id)}', this.checked)" />${starHtml}</td>
           <td style="font-weight:600">${escapeHtml(v.gene || '-')}</td>
           <td class="muted" style="font-size:11px">${escapeHtml(posStr)}</td>
           <td style="font-size:11px">${escapeHtml(v.ref || '')} → ${escapeHtml(v.alt || '')}</td>
@@ -8918,6 +9092,20 @@
         `;
         tb.appendChild(tr);
       });
+
+      // Wire "select all" checkbox
+      const chkAllNipt = document.getElementById('chkAllNipt');
+      if (chkAllNipt) {
+        chkAllNipt.checked = variants.length > 0 && variants.every(v => selectedVariants.has(v.variant_id));
+        chkAllNipt.onchange = () => {
+          variants.forEach(v => {
+            if (chkAllNipt.checked) selectedVariants.add(v.variant_id);
+            else selectedVariants.delete(v.variant_id);
+          });
+          renderSgNIPTVariantsTable();
+          onVariantSelectionChanged();
+        };
+      }
     }
 
     function renderVariantsTable() {
@@ -9864,6 +10052,19 @@
 
     function updateSelectedVariantsList() {
       const list = qs('selectedVariantsList');
+
+      // PGx orders: gene results come from PharmCAT, not from the Variants tab
+      const elig = carrierReportEligible(reviewData?.order_params);
+      if (elig.ok && elig.kind === 'pgx') {
+        const pgx = reviewData?.pgx || {};
+        const genes = pgx.gene_results || [];
+        const confirmed = genes.filter(g => g.reviewer_confirmed);
+        list.innerHTML = `<div class="muted" style="padding:8px">PGx report — ${genes.length} gene(s) from PharmCAT analysis` +
+          (confirmed.length ? `, ${confirmed.length} confirmed on the <strong>PGx</strong> tab` : '') +
+          `. No variant selection needed; the report includes all gene results. Use <strong>Preview HTML</strong> or <strong>Generate Report</strong> below.</div>`;
+        return;
+      }
+
       if (selectedVariants.size === 0) {
         list.innerHTML = '<div class="muted" style="padding:8px">No variants selected for the report. Use the <strong>Variants</strong> tab to check rows (pathogenic / likely pathogenic are auto-checked on <strong>Load</strong> when present). Narrative boxes appear only for checked variants.</div>';
         return;
@@ -9933,7 +10134,7 @@
       if (!elig.ok) {
         return toast(elig.reason || 'Report PDF is not available for this order type or report language.', false);
       }
-      if (selectedVariants.size === 0) return toast('Select at least one variant', false);
+      if (elig.kind !== 'pgx' && selectedVariants.size === 0) return toast('Select at least one variant', false);
 
       const revName = qs('rRevName').value.trim();
       if (!revName) return toast('Reviewer name is required', false);
@@ -10274,6 +10475,289 @@
         qs('connStatus').innerHTML = `<span class="conn-dot err"></span>Disconnected`;
       }
     })();
+  </script>
+
+  <!-- Report Preview Modal -->
+  <div class="rpt-preview-overlay" id="rptPreviewOverlay">
+    <div class="rpt-preview-panel">
+      <div class="rpt-preview-toolbar">
+        <span class="rpt-title" id="rptPreviewTitle">Report Preview</span>
+        <select id="rptPreviewLang" onchange="switchPreviewLang(this.value)"></select>
+        <button type="button" class="btn" id="btnToggleEdit" onclick="togglePreviewEdit()" style="font-size:12px;padding:5px 12px">Edit</button>
+        <button type="button" class="btn" id="btnViewSource" onclick="toggleSourceView()" style="font-size:12px;padding:5px 12px">View Source</button>
+        <button type="button" class="btn primary" id="btnSavePdf" onclick="savePreviewAsPdf()" style="font-size:12px;padding:5px 12px">Generate Report</button>
+        <button type="button" class="btn danger-btn" onclick="closePreview()" style="font-size:12px;padding:5px 12px">Close</button>
+      </div>
+      <div class="rpt-preview-iframe-wrap" id="rptPreviewIframeWrap">
+        <iframe id="rptPreviewIframe"></iframe>
+      </div>
+      <div class="rpt-preview-edit-wrap" id="rptPreviewEditWrap" style="display:none">
+        <textarea id="rptPreviewEditor" spellcheck="false"></textarea>
+      </div>
+      <div class="rpt-preview-statusbar">
+        <span id="rptPreviewStatus">Ready</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ══════════════════════════════════════════════════
+       Report Preview — visual edit + source view + PDF
+       ══════════════════════════════════════════════════ */
+    let _previewData = {};
+    let _previewCurrentLang = '';
+    let _previewEditing = false;   // visual edit (designMode) active
+    let _previewSourceView = false; // raw HTML source view active
+
+    function _loadIframe(html, editable) {
+      const iframe = qs('rptPreviewIframe');
+      const doc = iframe.contentDocument || iframe.contentWindow.document;
+      doc.open();
+      doc.write(html);
+      doc.close();
+      doc.designMode = editable ? 'on' : 'off';
+    }
+
+    function _captureIframeHtml() {
+      try {
+        const doc = qs('rptPreviewIframe').contentDocument;
+        if (doc && doc.documentElement) return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+      } catch (e) { /* not loaded */ }
+      return null;
+    }
+
+    function _setDesignMode(on) {
+      try {
+        const doc = qs('rptPreviewIframe').contentDocument;
+        if (!doc) return;
+        doc.designMode = on ? 'on' : 'off';
+      } catch (e) { /* restriction */ }
+    }
+
+    function _syncStatus() {
+      const entry = _previewData[_previewCurrentLang];
+      const tpl = entry ? (entry.template || '?') : '?';
+      let parts = [`Template: ${tpl}`, `Language: ${_previewCurrentLang}`];
+      if (entry && entry._editedHtml) parts.push('EDITED');
+      if (_previewEditing) parts.push('VISUAL EDITING');
+      if (_previewSourceView) parts.push('SOURCE VIEW');
+      qs('rptPreviewStatus').textContent = parts.join(' | ');
+    }
+
+    function _commitVisualEdits() {
+      if (!_previewEditing) return;
+      const entry = _previewData[_previewCurrentLang];
+      if (!entry) return;
+      const captured = _captureIframeHtml();
+      if (captured && captured !== entry.html) entry._editedHtml = captured;
+    }
+
+    function _commitSourceEdits() {
+      if (!_previewSourceView) return;
+      const entry = _previewData[_previewCurrentLang];
+      if (!entry) return;
+      const edited = qs('rptPreviewEditor').value;
+      if (edited && edited !== entry.html) entry._editedHtml = edited;
+    }
+
+    async function previewReport() {
+      const orderId = getActiveReviewOrderId();
+      if (!orderId) return toast('Load an order first.', false);
+      const elig = carrierReportEligible(reviewData?.order_params);
+      if (!elig.ok) return toast(elig.reason || 'Report is not available for this order type.', false);
+      if (elig.kind !== 'pgx' && selectedVariants.size === 0) return toast('Select at least one variant', false);
+
+      const revName = qs('rRevName').value.trim();
+      if (!revName) return toast('Reviewer name is required', false);
+
+      (reviewData?.variants || [])
+        .filter(v => selectedVariants.has(v.variant_id))
+        .forEach(ensureVariantReportTexts);
+
+      const confirmed = (reviewData?.variants || [])
+        .filter(v => selectedVariants.has(v.variant_id))
+        .map(v => {
+          const comment = variantComments[v.variant_id] || {};
+          const rt = variantReportTexts[v.variant_id] || {};
+          return {
+            ...v,
+            reviewer_confirmed: true,
+            reviewer_classification: comment.classification || v.acmg_classification,
+            reviewer_comment: comment.comment || '',
+            include_in_report: true,
+            report_gene_description: rt.gene_description != null ? String(rt.gene_description) : '',
+            report_variant_summary: rt.variant_summary != null ? String(rt.variant_summary) : '',
+          };
+        });
+
+      const body = {
+        confirmed_variants: confirmed,
+        reviewer_info: {
+          name: revName,
+          id: qs('rRevId').value.trim() || undefined,
+          institution: qs('rRevInst').value.trim() || undefined,
+        },
+        patient_info: {
+          name: qs('rPatName').value.trim() || undefined,
+          dob: qs('rPatDob').value || undefined,
+          gender: qs('rPatGender').value || undefined,
+        },
+        partner_info: qs('rPartnerName').value.trim() ? { name: qs('rPartnerName').value.trim() } : undefined,
+      };
+
+      const btn = qs('btnPreviewReport');
+      try {
+        btn.classList.add('loading'); btn.textContent = 'Rendering...';
+        const res = await apiPost(`/order/${orderId}/report/preview`, body);
+        _previewData = res.languages || {};
+
+        const langs = Object.keys(_previewData);
+        if (!langs.length) { toast('No preview content returned', false); return; }
+
+        const sel = qs('rptPreviewLang');
+        sel.innerHTML = langs.map(l => `<option value="${l}">${l}</option>`).join('');
+
+        const stemMap = { standard: 'carrier', couples: 'carrier_couples', exome: 'exome', proactive: 'proactive', pgx: 'pgx' };
+        const stem = stemMap[elig.kind] || elig.kind;
+        qs('rptPreviewTitle').textContent = `Report Preview — ${orderId} (${stem})`;
+
+        _previewEditing = false;
+        _previewSourceView = false;
+        qs('rptPreviewEditWrap').style.display = 'none';
+        qs('rptPreviewIframeWrap').style.display = '';
+        qs('btnToggleEdit').textContent = 'Edit';
+        qs('btnViewSource').textContent = 'View Source';
+
+        switchPreviewLang(langs[0]);
+        qs('rptPreviewOverlay').classList.add('open');
+
+      } catch (e) {
+        toast('Preview failed: ' + (e.message || e), false);
+      } finally {
+        btn.classList.remove('loading'); btn.textContent = 'Preview HTML';
+      }
+    }
+
+    function switchPreviewLang(lang) {
+      _commitVisualEdits();
+      _commitSourceEdits();
+      _previewCurrentLang = lang;
+      const entry = _previewData[lang];
+      if (!entry) return;
+
+      if (_previewSourceView) {
+        qs('rptPreviewEditor').value = entry._editedHtml || entry.html;
+      } else {
+        _loadIframe(entry._editedHtml || entry.html, _previewEditing);
+      }
+      _syncStatus();
+    }
+
+    function togglePreviewEdit() {
+      const entry = _previewData[_previewCurrentLang];
+      if (!entry) return;
+
+      if (_previewSourceView) {
+        _commitSourceEdits();
+        _previewSourceView = false;
+        qs('rptPreviewEditWrap').style.display = 'none';
+        qs('rptPreviewIframeWrap').style.display = '';
+        qs('btnViewSource').textContent = 'View Source';
+      }
+
+      _previewEditing = !_previewEditing;
+
+      if (_previewEditing) {
+        _loadIframe(entry._editedHtml || entry.html, true);
+        qs('btnToggleEdit').textContent = 'Stop Editing';
+        qs('rptPreviewIframeWrap').style.outline = '2px solid var(--brand)';
+        qs('rptPreviewIframeWrap').style.outlineOffset = '-2px';
+      } else {
+        _commitVisualEdits();
+        _loadIframe(entry._editedHtml || entry.html, false);
+        qs('btnToggleEdit').textContent = 'Edit';
+        qs('rptPreviewIframeWrap').style.outline = '';
+        qs('rptPreviewIframeWrap').style.outlineOffset = '';
+      }
+      _syncStatus();
+    }
+
+    function toggleSourceView() {
+      const entry = _previewData[_previewCurrentLang];
+      if (!entry) return;
+
+      if (_previewEditing) {
+        _commitVisualEdits();
+        _previewEditing = false;
+        _setDesignMode(false);
+        qs('btnToggleEdit').textContent = 'Edit';
+        qs('rptPreviewIframeWrap').style.outline = '';
+        qs('rptPreviewIframeWrap').style.outlineOffset = '';
+      }
+
+      _previewSourceView = !_previewSourceView;
+
+      if (_previewSourceView) {
+        qs('rptPreviewIframeWrap').style.display = 'none';
+        qs('rptPreviewEditWrap').style.display = '';
+        qs('rptPreviewEditor').value = entry._editedHtml || entry.html;
+        qs('btnViewSource').textContent = 'Close Source';
+      } else {
+        _commitSourceEdits();
+        qs('rptPreviewEditWrap').style.display = 'none';
+        qs('rptPreviewIframeWrap').style.display = '';
+        _loadIframe(entry._editedHtml || entry.html, false);
+        qs('btnViewSource').textContent = 'View Source';
+      }
+      _syncStatus();
+    }
+
+    async function savePreviewAsPdf() {
+      const orderId = getActiveReviewOrderId();
+      if (!orderId) return;
+
+      _commitVisualEdits();
+      _commitSourceEdits();
+
+      const languages = {};
+      for (const [lang, entry] of Object.entries(_previewData)) {
+        languages[lang] = entry._editedHtml || entry.html;
+      }
+
+      const btn = qs('btnSavePdf');
+      btn.classList.add('loading'); btn.textContent = 'Generating...';
+      qs('rptPreviewStatus').textContent = 'Generating report PDFs...';
+
+      try {
+        const res = await apiPost(`/order/${orderId}/report/from-html`, { languages });
+        const files = res.report_files || [];
+        toast(`Report generated: ${files.join(', ')}`);
+        qs('rptPreviewStatus').textContent = `Report generated: ${files.join(', ')}`;
+        qs('reportMsg').innerHTML = `Generated files: ${files.join(', ')}`;
+        loadOrders();
+      } catch (e) {
+        toast('Report generation failed: ' + (e.message || e), false);
+        qs('rptPreviewStatus').textContent = 'Report generation failed';
+      } finally {
+        btn.classList.remove('loading'); btn.textContent = 'Generate Report';
+      }
+    }
+
+    function closePreview() {
+      _commitVisualEdits();
+      _commitSourceEdits();
+      _previewEditing = false;
+      _previewSourceView = false;
+      qs('rptPreviewOverlay').classList.remove('open');
+      qs('rptPreviewIframeWrap').style.outline = '';
+      qs('rptPreviewIframeWrap').style.outlineOffset = '';
+      _previewData = {};
+      _previewCurrentLang = '';
+    }
+
+    qs('rptPreviewOverlay').addEventListener('click', e => {
+      if (e.target === qs('rptPreviewOverlay')) closePreview();
+    });
   </script>
 </body>
 </html>

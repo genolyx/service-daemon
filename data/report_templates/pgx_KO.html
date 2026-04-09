@@ -208,7 +208,7 @@
         {% for row in gene_results %}
         <tr>
             <td><strong>{{ row.gene }}</strong></td>
-            <td style="font-family:'D2Coding',ui-monospace,monospace;font-size:7.5pt;">{{ row.diplotype }}</td>
+            <td style="font-size:7.5pt;">{{ row.diplotype }}</td>
             <td>{{ row.phenotype }}</td>
             <td style="font-size:7.5pt;">
                 {% set fns = [] %}
@@ -312,7 +312,7 @@
             <td><strong>{{ row.gene }}</strong></td>
             <td style="font-size:7.5pt;">{{ row.rsid }}</td>
             <td style="font-size:7.5pt;">{{ row.variant_name }}</td>
-            <td style="font-family:'D2Coding',ui-monospace,monospace;font-size:7.5pt;">{{ row.genotype }}</td>
+            <td style="font-size:7.5pt;">{{ row.genotype }}</td>
             <td style="font-size:7.5pt;">{{ row.clinical_significance }}</td>
             <td style="font-size:7.5pt;">{{ row.drugs }}</td>
             <td style="font-size:7.5pt;">{{ row.evidence_level }}</td>

@@ -164,6 +164,36 @@ class SgNIPTPlugin(ServicePlugin):
         except ValueError:
             return False
 
+    def _resolve_input_bam_csv_path(self, path: str) -> str:
+        """
+        Portal often stores paths under sgnipt_layout_root (/home/ken/sgNIPT) while the
+        daemon process (or bind mounts) only see sgnipt_work_root (/data/sgnipt_work).
+        Map layout → work when the same relative path exists there.
+        """
+        p = os.path.abspath(path.strip())
+        if os.path.isfile(p):
+            return p
+        layout = (settings.sgnipt_layout_root or "").strip()
+        work = (settings.sgnipt_work_root or "").strip()
+        mapped = ""
+        if layout and work:
+            la = os.path.abspath(layout)
+            wa = os.path.abspath(work)
+            if p.startswith(la + os.sep):
+                mapped = wa + p[len(la) :]
+                if os.path.isfile(mapped):
+                    logger.info(
+                        "[sgnipt] Resolved BAM CSV (layout→work root): %s → %s",
+                        p,
+                        mapped,
+                    )
+                    return mapped
+        extra = f"\n  Tried layout→work: {mapped!r}" if mapped else ""
+        raise RuntimeError(
+            "sgnipt: BAM samplesheet CSV not found at path visible to daemon: "
+            f"{path}\n  Resolved as: {p}{extra}"
+        )
+
     def _run_sgnipt_fastq_rel_paths(self, job: Job) -> Tuple[Optional[str], Optional[str]]:
         """
         run_sgnipt / inner Docker 가 기대하는 FASTQ 경로: HOST_FASTQ_DIR 기준 상대 경로.
@@ -198,11 +228,12 @@ class SgNIPTPlugin(ServicePlugin):
 
         input_bam_csv = (job.params or {}).get("input_bam_csv", "").strip()
         if input_bam_csv:
-            if not os.path.isfile(input_bam_csv):
-                raise RuntimeError(
-                    f"sgnipt: BAM samplesheet CSV not found at path visible to daemon: {input_bam_csv}"
-                )
-            logger.info("[sgnipt] BAM simulation mode — using CSV: %s", input_bam_csv)
+            resolved = self._resolve_input_bam_csv_path(input_bam_csv)
+            p = dict(job.params or {})
+            if resolved != input_bam_csv:
+                p["input_bam_csv"] = resolved
+                job.params = p
+            logger.info("[sgnipt] BAM simulation mode — using CSV: %s", resolved)
         else:
             r1 = (job.fastq_r1_path or "").strip()
             r2 = (job.fastq_r2_path or "").strip()

@@ -1115,6 +1115,12 @@
                 <option value="">— Select panel (required before Submit) —</option>
               </select>
               <p id="cr_wes_panel_hint" class="muted" style="font-size:11px;margin:6px 0 0;line-height:1.45">Optional at save. Required before submitting — this panel narrows the clinical variant list after pipeline analysis.</p>
+              <div id="cr_proactive_apoe_wrap" class="hidden" style="margin-top:12px;padding:10px 12px;border-radius:10px;border:1px solid rgba(130,200,160,.35);background:rgba(130,200,160,.07)">
+                <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px;line-height:1.45;margin:0">
+                  <input type="checkbox" id="cr_include_apoe_pgx" style="margin-top:3px;width:16px;height:16px;flex-shrink:0" />
+                  <span><strong>Include APOE PGx</strong> — genotype rs429358 &amp; rs7412 (ε2 / ε3 / ε4 tag SNPs) in the extended PGx panel. Your gx-exome pipeline should read <code>params.include_apoe_pgx</code> and emit <code>pgx/pgx_custom_result.json</code>. Exome phasing may be ambiguous when both loci are heterozygous; the Review → PGx tab will warn when applicable.</span>
+                </label>
+              </div>
             </div>
             <input type="hidden" id="cr_interpretation_genes_extra" value="" />
           </div>
@@ -3463,6 +3469,7 @@
         if (po) po.value = '';
       }
       if (isCarrierFlow) refreshCarrierConditionalUi();
+      refreshProactiveApoeOption();
     }
 
     const CARRIER_TYPES_NEED_P2 = ['ExomeDuo', 'CouplesCarrier', 'ExomeMaxDuo', 'ExomeTrio', 'ExomeMaxTrio'];
@@ -3535,6 +3542,7 @@
         if (fu !== 'carrier_screening') pw.classList.add('hidden');
         else pw.classList.toggle('hidden', !couples || couples.value !== 'couples');
       }
+      refreshProactiveApoeOption();
     }
 
     function setFormInput(id, v) {
@@ -3714,6 +3722,9 @@
         updateWesPanelHintOnly();
       }
       setFormInput('cr_interpretation_genes_extra', p.interpretation_genes_extra || c.interpretation_genes_extra || '');
+      if (qs('cr_include_apoe_pgx')) {
+        qs('cr_include_apoe_pgx').checked = !!(p.include_apoe_pgx === true || p.include_apoe_pgx === 'true');
+      }
       setFormInput('fMaxAf', p.max_af != null ? p.max_af : '');
       setFormInput('fHpoTerms', p.hpo_terms);
       setFormInput('fGeneFilter', p.gene_filter);
@@ -3721,6 +3732,7 @@
       updateBamCsvClearBtn();
       refreshCarrierConditionalUi();
       refreshWesPanelPrimaryLabel();
+      refreshProactiveApoeOption();
     }
 
     function populateSgniptFormFromOrder(o) {
@@ -3968,13 +3980,31 @@
       const id = sel && sel.value;
       if (!id) {
         updateWesPanelHintOnly();
+        refreshProactiveApoeOption();
         return;
       }
       const p = _wesPanelsById[id];
-      if (!p) return;
+      if (!p) {
+        refreshProactiveApoeOption();
+        return;
+      }
       // Do not auto-fill disease/backbone BED from the panel: those narrow parse-time VCF filtering.
       // Interpretation scope is applied after annotation via panel_interpretation_genes (see wes_panels).
       updateWesPanelHintOnly();
+      refreshProactiveApoeOption();
+    }
+
+    /** Show APOE opt-in when Health screening service or proactive_health interpretation panel is selected. */
+    function refreshProactiveApoeOption() {
+      const wrap = qs('cr_proactive_apoe_wrap');
+      if (!wrap) return;
+      const fu = getFServiceValue();
+      const sel = qs('cr_wes_panel');
+      const wid = sel && sel.value ? String(sel.value).trim() : '';
+      const wp = wid ? _wesPanelsById[wid] : null;
+      const cat = wp && wp.category != null ? String(wp.category).trim().toLowerCase() : '';
+      const show = fu === 'health_screening' || cat === 'proactive_health';
+      wrap.classList.toggle('hidden', !show);
     }
 
     function renderWesPanelsManagerTable(panels) {
@@ -4073,6 +4103,7 @@
         sel.appendChild(og);
       }
       sel.onchange = onWesPanelSelectChange;
+      refreshProactiveApoeOption();
     }
 
     function refreshPfInterpretationBedVisibility() {
@@ -4717,6 +4748,16 @@
         if (gf) body.params.gene_filter = gf;
         body.params.interpretation_genes_extra =
           (qs('cr_interpretation_genes_extra') && qs('cr_interpretation_genes_extra').value.trim()) || '';
+        const apoeCb = qs('cr_include_apoe_pgx');
+        const apoeEligible = (() => {
+          const fu = getFServiceValue();
+          const sel = qs('cr_wes_panel');
+          const wid = sel && sel.value ? String(sel.value).trim() : '';
+          const wp = wid ? _wesPanelsById[wid] : null;
+          const cat = wp && wp.category != null ? String(wp.category).trim().toLowerCase() : '';
+          return fu === 'health_screening' || cat === 'proactive_health';
+        })();
+        body.params.include_apoe_pgx = !!(apoeEligible && apoeCb && apoeCb.checked);
       } else {
         sanitizeOrderIdInput(qs('sgOrderId'));
         sanitizeOrderIdInput(qs('sg_prev_order'));

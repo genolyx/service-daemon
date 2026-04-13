@@ -1991,6 +1991,7 @@ class CarrierScreeningPlugin(ServicePlugin):
                 "interpretation_post_filter_applied": _post_applied,
                 "prior_order_id": str(_prior_oid).strip() if _prior_oid else None,
                 "prior_pipeline_reuse": bool(job.params.get("_prior_reuse")),
+                "include_apoe_pgx_requested": bool((job.params or {}).get("include_apoe_pgx")),
             }
 
             if _job_stop_requested(job.order_id):

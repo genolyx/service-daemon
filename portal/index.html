@@ -3994,16 +3994,15 @@
       refreshProactiveApoeOption();
     }
 
-    /** Show APOE opt-in when Health screening service or proactive_health interpretation panel is selected. */
+    /** Show APOE opt-in only when the selected interpretation panel category is proactive_health. */
     function refreshProactiveApoeOption() {
       const wrap = qs('cr_proactive_apoe_wrap');
       if (!wrap) return;
-      const fu = getFServiceValue();
       const sel = qs('cr_wes_panel');
       const wid = sel && sel.value ? String(sel.value).trim() : '';
       const wp = wid ? _wesPanelsById[wid] : null;
       const cat = wp && wp.category != null ? String(wp.category).trim().toLowerCase() : '';
-      const show = fu === 'health_screening' || cat === 'proactive_health';
+      const show = cat === 'proactive_health';
       wrap.classList.toggle('hidden', !show);
     }
 
@@ -4750,12 +4749,11 @@
           (qs('cr_interpretation_genes_extra') && qs('cr_interpretation_genes_extra').value.trim()) || '';
         const apoeCb = qs('cr_include_apoe_pgx');
         const apoeEligible = (() => {
-          const fu = getFServiceValue();
           const sel = qs('cr_wes_panel');
           const wid = sel && sel.value ? String(sel.value).trim() : '';
           const wp = wid ? _wesPanelsById[wid] : null;
           const cat = wp && wp.category != null ? String(wp.category).trim().toLowerCase() : '';
-          return fu === 'health_screening' || cat === 'proactive_health';
+          return cat === 'proactive_health';
         })();
         body.params.include_apoe_pgx = !!(apoeEligible && apoeCb && apoeCb.checked);
       } else {

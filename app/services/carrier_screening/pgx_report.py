@@ -928,13 +928,15 @@ def pgx_for_pdf(pgx: Dict[str, Any]) -> Dict[str, Any]:
         sw = html.escape(str(apoe_ph.get("short_warning") or "").strip())
         det = html.escape(str(apoe_ph.get("detail") or "").strip())
         if sw or det:
+            br_sw = f"<br />{sw}" if sw else ""
+            br_det = (
+                f'<br /><span style="font-size:8pt;opacity:.95">{det}</span>' if det else ""
+            )
             apoe_html = (
                 f'<div class="pgx-apoe-phase" style="margin:0 0 12px;padding:10px 12px;border-radius:8px;'
                 f"border:1px solid #f59e0b;background:#fffbeb;font-size:8.5pt;line-height:1.45;color:#92400e\">"
                 f"<strong>APOE phasing</strong>"
-                f'{f"<br />{sw}" if sw else ""}'
-                f'{f"<br /><span style=\"font-size:8pt;opacity:.95\">{det}</span>" if det else ""}'
-                f"</div>"
+                f"{br_sw}{br_det}</div>"
             )
     block = (
         f"{apoe_html}"

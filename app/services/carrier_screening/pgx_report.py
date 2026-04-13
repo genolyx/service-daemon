@@ -438,19 +438,22 @@ def generate_cpic_drug_recommendations(
     return recs
 
 
-def _collect_custom_pgx_results(pgx_dir: str) -> List[Dict[str, Any]]:
-    """Read ``pgx_custom_result.json`` from the analysis pgx/ directory."""
+def _read_pgx_custom_json(pgx_dir: str) -> Optional[Dict[str, Any]]:
+    """Read ``pgx_custom_result.json`` if present (extended PGx / APOE tag SNPs)."""
     path = os.path.join(pgx_dir, "pgx_custom_result.json")
     if not os.path.isfile(path):
-        return []
+        return None
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except Exception as e:
         logger.warning("[pgx] could not read custom result: %s", e)
-        return []
-    if not isinstance(data, dict) or data.get("error"):
-        return []
+        return None
+    return data if isinstance(data, dict) and not data.get("error") else None
+
+
+def _custom_gene_rows_from_pgx_dict(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Flatten ``genes`` from pgx_custom_result.json into portal rows."""
     genes = data.get("genes")
     if not isinstance(genes, dict):
         return []
@@ -474,6 +477,151 @@ def _collect_custom_pgx_results(pgx_dir: str) -> List[Dict[str, Any]]:
                 "source": "Extended Panel",
             })
     return rows
+
+
+def _collect_custom_pgx_results(pgx_dir: str) -> List[Dict[str, Any]]:
+    """Read ``pgx_custom_result.json`` from the analysis pgx/ directory."""
+    data = _read_pgx_custom_json(pgx_dir)
+    if not data:
+        return []
+    return _custom_gene_rows_from_pgx_dict(data)
+
+
+APOE_TAG_RSIDS = frozenset({"rs429358", "rs7412"})
+
+
+def _zygosity_is_heterozygous(row: Dict[str, Any]) -> Optional[bool]:
+    """Return True if het, False if homozygous (ref or alt), None if unknown."""
+    z = (row.get("zygosity") or "").strip().lower()
+    if z in ("heterozygous", "het"):
+        return True
+    if z in ("homozygous_ref", "homozygous_alt", "hom_ref", "hom_alt"):
+        return False
+    gt = (row.get("genotype") or "").strip().upper()
+    if not gt:
+        return None
+    for sep in ("/", "|"):
+        if sep in gt:
+            parts = [p.strip() for p in gt.split(sep) if p.strip()]
+            if len(parts) >= 2:
+                return parts[0] != parts[1]
+    return None
+
+
+def _pipeline_claims_phased_apoe(raw: Optional[Dict[str, Any]]) -> Tuple[bool, str]:
+    """True if upstream JSON explicitly reports phased APOE / haplotype (read-backed, trio, etc.)."""
+    if not isinstance(raw, dict):
+        return False, ""
+    block = raw.get("apoe_phasing")
+    if isinstance(block, dict):
+        if block.get("phase_resolved") is True or block.get("phased") is True:
+            hap = block.get("haplotype") or block.get("diplotype") or block.get("method")
+            return True, str(hap or "pipeline")
+    genes = raw.get("genes")
+    if isinstance(genes, dict):
+        for v in genes.get("APOE") or []:
+            if isinstance(v, dict) and (v.get("phased") is True or v.get("phase_resolved") is True):
+                return True, str(v.get("haplotype") or v.get("note") or "per-row")
+    return False, ""
+
+
+def apoe_phasing_assessment(
+    custom_rows: List[Dict[str, Any]],
+    raw_custom_json: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    APOE ε2/ε3/ε4 tag SNPs (rs429358, rs7412) — cis/trans cannot be resolved from **unphased**
+    short-read exome when **both** loci are heterozygous. Set ``show_alert`` so UI/PDF can warn.
+
+    If ``pgx_custom_result.json`` includes ``apoe_phasing`` with ``phased`` / ``phase_resolved``,
+    or per-row ``phased`` on APOE variants, we treat phase as supplied by the pipeline.
+    """
+    apoe_rows = [
+        r
+        for r in custom_rows
+        if isinstance(r, dict)
+        and str(r.get("gene") or "").strip().upper() == "APOE"
+        and str(r.get("rsid") or "").strip() in APOE_TAG_RSIDS
+    ]
+    by_rs = {str(r.get("rsid") or "").strip(): r for r in apoe_rows}
+
+    phased, src = _pipeline_claims_phased_apoe(raw_custom_json)
+    if phased:
+        return {
+            "status": "pipeline_resolved",
+            "short_warning": "",
+            "detail": (
+                f"APOE phasing is marked as resolved by the pipeline ({src}). "
+                "Confirm methodology in pgx_custom_result.json / lab SOP."
+            ),
+            "show_alert": False,
+            "pipeline_phased": True,
+        }
+
+    if not apoe_rows:
+        return {
+            "status": "not_applicable",
+            "short_warning": "",
+            "detail": "",
+            "show_alert": False,
+        }
+
+    r358 = by_rs.get("rs429358")
+    r412 = by_rs.get("rs7412")
+    if not r358 or not r412:
+        return {
+            "status": "incomplete",
+            "short_warning": (
+                "APOE: only one of the two tag SNPs (rs429358, rs7412) is present in extended PGx output."
+            ),
+            "detail": (
+                "Full ε2/ε3/ε4 context usually requires both loci in pgx_custom_result.json. "
+                "Verify the pipeline emitted both rows."
+            ),
+            "show_alert": True,
+        }
+
+    h358 = _zygosity_is_heterozygous(r358)
+    h412 = _zygosity_is_heterozygous(r412)
+    if h358 is True and h412 is True:
+        return {
+            "status": "ambiguous",
+            "short_warning": (
+                "APOE: rs429358 and rs7412 are both heterozygous — ε2/ε3/ε4 haplotype phase "
+                "(cis vs trans) cannot be determined from unphased exome reads alone."
+            ),
+            "detail": (
+                "Short-read whole-exome data does not resolve which alleles sit on the same chromosome "
+                "when both tag SNPs are heterozygous. Do not report a definitive ε2/ε3/ε4 diplotype from "
+                "this pattern alone without read-backed phasing, trio/family data, or orthogonal typing. "
+                "Follow your laboratory’s policy for pharmacogenomic vs neurodegenerative risk reporting."
+            ),
+            "show_alert": True,
+            "rs429358_heterozygous": True,
+            "rs7412_heterozygous": True,
+        }
+
+    if h358 is None or h412 is None:
+        return {
+            "status": "unknown_zygosity",
+            "short_warning": (
+                "APOE: zygosity could not be determined for rs429358 and/or rs7412; phase assessment is limited."
+            ),
+            "detail": "Expected zygosity or genotype (e.g. 0/1, C/T) in pgx_custom_result.json.",
+            "show_alert": True,
+        }
+
+    return {
+        "status": "likely_unambiguous",
+        "short_warning": "",
+        "detail": (
+            "At least one tag SNP is homozygous (or zygosity is not heterozygous at both loci), so "
+            "ε2/ε3/ε4 diplotype is often inferable without cross-SNP phasing; still confirm per clinical standards."
+        ),
+        "show_alert": False,
+        "rs429358_heterozygous": h358,
+        "rs7412_heterozygous": h412,
+    }
 
 
 def load_pgx_custom_variants_reference() -> List[Dict[str, str]]:
@@ -562,6 +710,37 @@ def merge_pgx_gene_reviews(
     return out
 
 
+def merge_pgx_custom_gene_reviews(
+    fresh_rows: List[Dict[str, Any]],
+    previous_pgx: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """After reprocess, keep ``reviewer_confirmed`` / ``reviewer_comment`` per ``gene`` + ``rsid`` (extended panel / APOE)."""
+    prev_by_key: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    if isinstance(previous_pgx, dict):
+        for row in previous_pgx.get("custom_gene_results") or []:
+            if isinstance(row, dict):
+                g = str(row.get("gene") or "").strip()
+                rs = str(row.get("rsid") or "").strip()
+                if g and rs:
+                    prev_by_key[(g, rs)] = row
+    out: List[Dict[str, Any]] = []
+    for row in fresh_rows:
+        if not isinstance(row, dict):
+            continue
+        g = str(row.get("gene") or "").strip()
+        rs = str(row.get("rsid") or "").strip()
+        merged = dict(row)
+        pr = prev_by_key.get((g, rs)) if g and rs else None
+        if pr:
+            merged["reviewer_confirmed"] = bool(pr.get("reviewer_confirmed", False))
+            merged["reviewer_comment"] = (pr.get("reviewer_comment") or "")[:4000]
+        else:
+            merged.setdefault("reviewer_confirmed", False)
+            merged.setdefault("reviewer_comment", "")
+        out.append(merged)
+    return out
+
+
 def merge_pgx_portal_review(
     fresh: Dict[str, Any],
     previous: Optional[Dict[str, Any]],
@@ -576,6 +755,9 @@ def merge_pgx_portal_review(
     pr = previous.get("portal_review")
     if isinstance(pr, dict) and pr:
         out["portal_review"] = dict(pr)
+    ap = previous.get("apoe_phasing")
+    if isinstance(ap, dict) and not out.get("apoe_phasing"):
+        out["apoe_phasing"] = dict(ap)
     return out
 
 
@@ -690,9 +872,11 @@ def collect_pgx_from_analysis_dir(root: str, sample_name: str) -> Dict[str, Any]
     else:
         out["drug_recommendations"] = []
 
-    custom = _collect_custom_pgx_results(pgx_dir)
+    raw_custom = _read_pgx_custom_json(pgx_dir)
+    custom = _custom_gene_rows_from_pgx_dict(raw_custom) if raw_custom else []
     if custom:
         out["custom_gene_results"] = custom
+    out["apoe_phasing"] = apoe_phasing_assessment(custom, raw_custom)
 
     return out
 
@@ -738,7 +922,22 @@ def pgx_for_pdf(pgx: Dict[str, Any]) -> Dict[str, Any]:
         f"<code>pgx/</code> output (<code>*_pgx.report.html</code>). {html.escape(tool_v)}"
         f"</p>"
     )
+    apoe_html = ""
+    apoe_ph = pgx.get("apoe_phasing")
+    if isinstance(apoe_ph, dict) and apoe_ph.get("show_alert"):
+        sw = html.escape(str(apoe_ph.get("short_warning") or "").strip())
+        det = html.escape(str(apoe_ph.get("detail") or "").strip())
+        if sw or det:
+            apoe_html = (
+                f'<div class="pgx-apoe-phase" style="margin:0 0 12px;padding:10px 12px;border-radius:8px;'
+                f"border:1px solid #f59e0b;background:#fffbeb;font-size:8.5pt;line-height:1.45;color:#92400e\">"
+                f"<strong>APOE phasing</strong>"
+                f'{f"<br />{sw}" if sw else ""}'
+                f'{f"<br /><span style=\"font-size:8pt;opacity:.95\">{det}</span>" if det else ""}'
+                f"</div>"
+            )
     block = (
+        f"{apoe_html}"
         f'<pre class="pgx-summary" style="white-space:pre-wrap;font-family:ui-monospace,monospace;'
         f"font-size:8.5pt;line-height:1.35;border:1px solid #cbd5e1;border-radius:8px;"
         f'padding:12px;background:#f8fafc;">{esc}</pre>{foot}'

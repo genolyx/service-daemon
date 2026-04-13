@@ -19,6 +19,7 @@ import logging
 import os
 import re
 import tempfile
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..config import settings
@@ -393,6 +394,41 @@ def interpretation_genes_from_wes_panel_catalog(job: Any) -> Set[str]:
         return set()
     genes = resolve_panel_interpretation_genes(panel)
     return {str(g).strip().upper() for g in genes if str(g).strip()}
+
+
+def interpretation_genes_for_pdf(order_params: Optional[Dict[str, Any]]) -> List[str]:
+    """
+    HGNC symbols for PDF «Genes Evaluated» and ``genes_evaluated_count``.
+
+    **Catalog-first:** When ``wes_panel_id`` resolves in the merged panel catalog, symbols come from
+    ``resolve_panel_interpretation_genes(panel)`` — each panel (e.g. ``proactive_health``, carrier,
+    exome) carries **its own** ``interpretation_genes`` / file / disease_bed rules. Order-level
+    ``interpretation_genes_extra`` is then merged (reflex genes).
+
+    This avoids a **proactive** report showing a **carrier** gene list that was left in
+    ``panel_interpretation_genes`` from an older workflow.
+
+    **Fallback:** If the catalog yields no symbols (missing/unknown ``wes_panel_id``), uses
+    ``interpretation_gene_set_for_job`` (``panel_interpretation_genes`` + extras) for legacy orders.
+    """
+    if not order_params or not isinstance(order_params, dict):
+        return []
+    job = SimpleNamespace(params=order_params)
+    base = interpretation_genes_from_wes_panel_catalog(job)
+    if base:
+        out: Set[str] = set(base)
+
+        def _merge_extra(txt: Optional[str]) -> None:
+            if not txt or not str(txt).strip():
+                return
+            out.update(g.strip().upper() for g in str(txt).split(",") if g.strip())
+
+        _merge_extra(order_params.get("interpretation_genes_extra"))
+        carrier = order_params.get("carrier")
+        if isinstance(carrier, dict):
+            _merge_extra(carrier.get("interpretation_genes_extra"))
+        return sorted(out)
+    return sorted(interpretation_gene_set_for_job(job))
 
 
 def pgx_portal_gene_allowlist_for_job(job: Any) -> Optional[Set[str]]:

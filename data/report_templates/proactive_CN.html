@@ -313,7 +313,7 @@
     </table>
 
     <div class="clinical-statement">
-        本次主動健康篩查評估了與終身健康風險相關的遺傳性疾病基因。所識別的變異依據 ACMG/AMP 指南進行分類，具有臨床意義的變異予以報告。早期識別遺傳風險因素有助於積極監測和預防性護理。建議進行遺傳諮詢以討論結果及後續檢測方案。
+        本次主動健康篩查評估了 <strong>{{ data.genes_evaluated_count }}</strong> 個與終身健康風險相關的遺傳性疾病基因（解讀面板；見「評估基因列表」）。所識別的變異依據 ACMG/AMP 指南進行分類，具有臨床意義的變異予以報告。早期識別遺傳風險因素有助於積極監測和預防性護理。建議進行遺傳諮詢以討論結果及後續檢測方案。
     </div>
 
             {% if data.primary_patient.findings %}
@@ -353,9 +353,16 @@
 
     <div class="new-page">
         <div class="section-title">評估基因列表</div>
+        <p class="detail-text" style="margin-bottom:10px;font-size:8.5pt;">
+            本報告之解讀範圍為 <strong>{{ data.genes_evaluated_count }}</strong> 個基因（依訂單所選解讀面板）。
+        </p>
+        {% if data.interpretation_genes and data.interpretation_genes | length > 0 %}
         <div class="gene-list-grid">
-            ABCA3, ABCC8, ABCD1, ACAD9, ACADM, ACADSB, ACADVL, ACAT1, ADA, ADAMTS2, ADGRG1, AGA, AGL, AGPS, AGXT, AIRE, ALDH3A2, ALDOB, ALG1, ALG12, ALMS1, ALPL, AMT, AP3B1, APTX, ARG1, ARSA, ARSB, ASL, ASNS, ASPA, ASS1, ATIC, ATP6V1B1, ATP7B, ATRX, BBS1, BBS10, BBS12, BCKDHA, BCKDHB, BTD, BTK, CAPN3, CASP8, CBS, CDH23, CEP290, CERKL, CFTR, CHM, CHRNE, CIB2, CLN3, CLN5, CLN6, CLN8, CLRN1, CNGB3, COL4A3, COL4A4, COL4A5, CP, CPT1A, CPT2, CRB1, CTNS, CTSD, CTSK, CYBA, CYBB, CYP11B1, CYP11B2, CYP17A1, CYP19A1, CYP1B1, CYP21A2, CYP27A1, DBT, DCLRE1C, DHCR7, DHDDS, DKC1, DLD, DMD, DNAH5, DNAI1, DNAI2, DPM1, DYSF, EDA, EIF2B1, EIF2B2, EIF2B3, EIF2B4, EIF2B5, EMD, ERCC6, ERCC8, ESCO2, ETFA, ETFB, ETFDH, ETHE1, EVC, EVC2, EXOSC3, F11, F8, F9, FAH, FANCA, FANCC, FANCG, FH, FKRP, FKTN, G6PC, GAA, GALC, GALE, GALK1, GALT, GAMT, GBA, GBE1, GCDH, GCH1, GJB2, GJB6, GLA, GLB1, GLDC, GLE1, GNE, GNPTAB, GNPTG, GNS, GP1BA, GP9, GPHN, GRHPR, GSS, GTC, GUSB, HADHA, HADHB, HBA1, HBA2, HBB, HEXA, HEXB, HFE2, HGSNAT, HJV, HLCS, HMGCL, HOGA1, HPS1, HPS3, HSD17B4, HSD3B2, HYLS1, IDS, IDUA, IKBKAP, IL2RG, IVD, KCNJ11, LAMA2, LAMA3, LAMB3, LAMC2, LCA5, LDLRAD1, LIPPA, LMBRD1, LOXHD1, LRPPRC, LYST, MAN2B1, MCOLN1, MED17, MESP2, MFSD8, MGAT2, MKS1, MLC1, MMAA, MMAB, MMACHC, MMADHC, MPI, MPL, MPV17, MRE11A, MSH2, MTHFR, MTM1, MTR, MTRR, MTTP, MUT, MYO7A, NAGLU, NAGS, NBN, NDRG1, NDUFAF5, NDUFS4, NDUFS6, NDUFS7, NDUFV1, NEB, NPC1, NPC2, NPHP1, NPHS1, NPHS2, NR0B1, NR2E3, NTRK1, OAT, OPA3, OTC, P3H1, PAH, PANK2, PC, PCCA, PCCB, PCDH15, PDHA1, PDHB, PEX1, PEX10, PEX12, PEX13, PEX14, PEX16, PEX19, PEX2, PEX26, PEX3, PEX5, PEX6, PEX7, PFKM, PGK1, PHGDH, PHKG2, PKHD1, PMM2, PNPO, POLG, POMGNT1, POMT1, POMT2, PPT1, PROP1, PSAP, PTB1, PTS, PUD, PYGL, QDPR, RAB23, RAG1, RAG2, RAPSN, RARS2, RDH12, RDX, REEP6, RPE65, RPGRIP1L, RS1, RTEL1, SACS, SAMD9, SAMHD1, SC5D, SCN4A, SCN4B, SCN5A, SCN8A, SCN9A, SDHA, SDHAF2, SDHB, SDHC, SDHD, SEPN1, SERPINA1, SGCA, SGCB, SGCD, SGCG, SGSH, SLC12A3, SLC12A6, SLC17A5, SLC19A2, SLC19A3, SLC22A5, SLC25A13, SLC25A15, SLC25A20, SLC26A2, SLC26A4, SLC35A1, SLC35C1, SLC37A4, SLC3A1, SLC4A11, SLC6A19, SLC6A8, SLC7A7, SMARCB1, SMN1, SMPD1, SPG11, SPG7, STAR, SUMF1, SYNE1, TAT, TAZ, TCTN2, TFR2, TGM1, TH, THCA, TMEM216, TMEM67, TNP1, TPP1, TRMU, TSFM, TTPA, TYMP, TYR, USH1C, USH1G, USH2A, VDR, VHL, VPS13A, VPS13B, VPS33B, VSX2, WAS, WNT10A, WRN, XPA, XPC, ZFYVE26, ZNF469.
+            {{ data.interpretation_genes | join(', ') }}
         </div>
+        {% else %}
+        <p class="detail-text" style="font-size:8pt;color:#64748b;">基因名單以實驗室訂單設定為準；上述數字為解讀面板所涵蓋之基因數。</p>
+        {% endif %}
     </div>
 
     <div class="new-page">

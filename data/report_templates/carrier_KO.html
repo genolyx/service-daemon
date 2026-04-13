@@ -137,6 +137,10 @@
     </div>
 </div>
 
+<p class="text-muted" style="font-size:8.5pt;margin:0 0 12px;padding:0 4px;">
+    해석 대상 유전자 수: <strong>{{ data.genes_evaluated_count }}</strong> (주문 패널 기준)
+</p>
+
 {% set status = data.carrier_status.status | default('negative') %}
 <div class="status-section {{ status }}">
     <div>

@@ -166,11 +166,12 @@ class PgxGeneReviewRow(BaseModel):
 
 
 class PgxCustomGeneReviewRow(BaseModel):
-    """Per-variant review row for extended panel ``pgx.custom_gene_results[]``."""
+    """Per-variant review row for extended panel ``pgx.custom_gene_results[]`` (e.g. APOE rs429358 / rs7412)."""
 
     gene: str = Field(..., min_length=1, max_length=64)
     rsid: str = Field(..., min_length=1, max_length=32)
     reviewer_confirmed: bool = False
+    reviewer_comment: str = Field(default="", max_length=4000)
 
 
 class PgxReviewRequest(BaseModel):
@@ -184,7 +185,7 @@ class PgxReviewRequest(BaseModel):
     )
     custom_gene_reviews: List[PgxCustomGeneReviewRow] = Field(
         default_factory=list,
-        description="Updates reviewer_confirmed for matching gene+rsid in pgx.custom_gene_results",
+        description="Updates reviewer_confirmed / reviewer_comment for matching gene+rsid in pgx.custom_gene_results",
     )
 
 

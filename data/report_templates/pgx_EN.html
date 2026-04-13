@@ -454,7 +454,7 @@
     <div class="new-page">
         <div class="section-title">Genes Evaluated</div>
         <p class="detail-text" style="margin-bottom:8px;">
-            This pharmacogenomics panel evaluated {{ evaluated | length }} gene(s) for clinically relevant pharmacogenomic variants.
+            This pharmacogenomics report lists <strong>{{ data.genes_evaluated_count }}</strong> gene(s) in the interpretation scope; below, <strong>{{ evaluated | length }}</strong> gene symbol(s) appear with analysis results.
             Genes are analyzed via PharmCAT (CPIC/DPWG star-allele calling) and/or curated variant genotyping (ClinPGx).
         </p>
         <div style="font-size:8pt;color:#94a3b8;margin-top:10px;line-height:1.8;text-align:justify;">

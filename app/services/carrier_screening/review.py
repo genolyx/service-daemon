@@ -1830,7 +1830,11 @@ def generate_result_json(
     try:
         prev_path = os.path.join(output_dir, "result.json")
         if os.path.isfile(prev_path):
-            from .pgx_report import merge_pgx_gene_reviews, merge_pgx_portal_review
+            from .pgx_report import (
+                merge_pgx_custom_gene_reviews,
+                merge_pgx_gene_reviews,
+                merge_pgx_portal_review,
+            )
 
             with open(prev_path, "r", encoding="utf-8") as rf:
                 prev = json.load(rf)
@@ -1840,6 +1844,9 @@ def generate_result_json(
                 gr = pgx_block.get("gene_results")
                 if isinstance(gr, list):
                     pgx_block["gene_results"] = merge_pgx_gene_reviews(gr, prev_pgx)
+                cgr = pgx_block.get("custom_gene_results")
+                if isinstance(cgr, list):
+                    pgx_block["custom_gene_results"] = merge_pgx_custom_gene_reviews(cgr, prev_pgx)
     except Exception as e:
         logger.warning("[generate_result_json] pgx portal_review merge skipped: %s", e)
 

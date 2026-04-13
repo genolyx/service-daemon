@@ -6626,9 +6626,11 @@
       const orderId = reviewLoadedOrderId || reviewData.order_id || '';
       const pgx = reviewData.pgx;
       if (!pgx || typeof pgx !== 'object') {
-        hint.textContent =
-          'No PGx block in result.json. After the pipeline writes pgx/ under the analysis output, run «Reprocess only» or POST /order/{id}/reprocess-results.';
-        box.innerHTML = '';
+        const msg =
+          'No <code>pgx</code> block in <code>result.json</code>. The review UI needs pipeline output under <strong>…/pgx/</strong> (PharmCAT + optional <code>pgx_custom_result.json</code>). ' +
+          'If that folder does not exist yet, <strong>reprocess alone cannot create it</strong> — run the analysis pipeline (gx-exome PGx step) first, then use «Reprocess only» to refresh <code>result.json</code>.';
+        hint.textContent = 'No PGx block in result.json — pipeline pgx/ output required (reprocess alone cannot create it).';
+        box.innerHTML = `<p class="muted" style="font-size:13px;line-height:1.55;margin:0">${msg}</p>`;
         return;
       }
       const pr =
@@ -6639,10 +6641,16 @@
         pgx.status === 'error' ||
         ((pgx.summary_text || '').trim().length > 0);
       if (pgx.status === 'not_found' && !hasPipeline && !pr.reviewed && !hasNotes) {
-        hint.textContent =
-          (pgx.message && String(pgx.message)) ||
-          'No PharmCAT PGx output found. Expect pgx/pgx_summary.txt under the analysis directory (e.g. …/exome_test/pgx/). Reprocess after the pipeline finishes.';
-        box.innerHTML = '';
+        const diskMsg = (pgx.message && String(pgx.message)) ||
+          'No PharmCAT PGx output found on disk.';
+        const msg =
+          `<strong>${escapeHtml(diskMsg)}</strong><br /><br />` +
+          'Expected layout: <code>&lt;analysis_or_output&gt;/pgx/pgx_summary.txt</code> (and usually <code>pgx_result.json</code>, <code>pgx_meta.json</code>). ' +
+          'Extended panel (APOE, etc.) needs <code>pgx/pgx_custom_result.json</code> from the pipeline. ' +
+          '<br /><br />«Reprocess only» only re-reads what is already there — it does not run PharmCAT. ' +
+          'If <code>pgx/</code> is missing, run the full sequencing pipeline with PGx enabled, then reprocess.';
+        hint.textContent = diskMsg + ' Reprocess only refreshes result.json from disk; it does not run PharmCAT.';
+        box.innerHTML = `<p class="muted" style="font-size:13px;line-height:1.55;margin:0">${msg}</p>`;
         return;
       }
 
@@ -6680,6 +6688,18 @@
           '<span class="badge" style="background:rgba(22,101,52,0.12);color:#166534">Reviewed</span>';
       }
       html += '</p>';
+      const aph = pgx.apoe_phasing;
+      if (aph && typeof aph === 'object' && aph.show_alert) {
+        const sw = escapeHtml(aph.short_warning != null ? String(aph.short_warning) : '');
+        const det = escapeHtml(aph.detail != null ? String(aph.detail) : '');
+        html += '<div style="margin:0 0 14px;padding:12px 14px;border-radius:12px;border:1px solid rgba(245,158,11,.55);background:rgba(254,243,199,.22);font-size:12px;line-height:1.55">';
+        html += '<strong style="display:block;margin-bottom:6px">APOE phasing</strong>';
+        if (sw) html += `<div>${sw}</div>`;
+        if (det) html += `<div class="muted" style="margin-top:8px;font-size:11px">${det}</div>`;
+        html += '</div>';
+      } else if (aph && typeof aph === 'object' && aph.status === 'pipeline_resolved') {
+        html += '<p class="muted" style="font-size:11px;margin:0 0 12px;line-height:1.45"><strong>APOE phasing:</strong> marked resolved in pipeline output — confirm methodology in <code>pgx_custom_result.json</code> / lab SOP.</p>';
+      }
       if (meta.tool_version || meta.genome_build || meta.exit_status != null) {
         const bits = [];
         if (meta.tool_version) bits.push(`Tool: ${escapeHtml(String(meta.tool_version))}`);
@@ -6764,10 +6784,20 @@
       const customGenes = Array.isArray(pgx.custom_gene_results) ? pgx.custom_gene_results : [];
       if (customGenes.length) {
         const customVariants = customGenes.filter(r => r.is_variant || (r.zygosity && r.zygosity !== 'homozygous_ref'));
+        const rkPh = reviewOrderKind(reviewData);
+        const hasApoe = customGenes.some(r => (String(r.gene || '').trim().toUpperCase() === 'APOE'));
         html += '<h4 style="font-size:13px;margin:18px 0 8px">Extended PGx Panel — Curated Variant Genotyping</h4>';
         html += `<p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.45">` +
           `${customGenes.length} positions across non-PharmCAT pharmacogenes queried from the VCF. ` +
           `<strong>${customVariants.length}</strong> variant(s) detected. Source: ClinPGx curated annotations.</p>`;
+        if (rkPh === 'proactive' && hasApoe) {
+          html += '<div style="margin:0 0 12px;padding:10px 14px;border-radius:12px;border:1px solid rgba(130,200,160,.45);background:rgba(130,200,160,.08);font-size:12px;line-height:1.55">';
+          html += '<strong>Proactive health — APOE review</strong><br />';
+          html += '<span class="muted">This order uses the proactive health workflow. <strong>APOE</strong> rows (typically <code>rs429358</code>, <code>rs7412</code>) define ε2/ε3/ε4 alleles. ';
+          html += 'Use <strong>Reviewer comment</strong> below for clinical interpretation (e.g. risk context beyond drug metabolism). ';
+          html += 'The <strong>Significance</strong> column reflects ClinPGx drug-gene annotations.</span>';
+          html += '</div>';
+        }
 
         html += '<div style="margin:0 0 12px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:11px;line-height:1.6">';
         html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 24px">';
@@ -6805,11 +6835,13 @@
         html += '<thead><tr>';
         html += '<th style="width:50px;text-align:center" title="Include on PDF report">✓</th>';
         html += '<th>Gene</th><th>rsID</th><th>Variant</th><th>Genotype</th>';
-        html += '<th>Zygosity</th><th>Significance</th><th>Affected Drug(s)</th><th>Evidence</th><th>Status</th>';
+        html += '<th>Zygosity</th><th>Significance</th><th>Affected Drug(s)</th><th>Evidence</th>';
+        html += '<th style="min-width:12rem">Reviewer comment</th><th>Status</th>';
         html += '</tr></thead><tbody id="tblPgxCustomGenesBody">';
         customGenes.forEach(row => {
           const isVar = row.is_variant || (row.zygosity && row.zygosity !== 'homozygous_ref');
           const conf = !!row.reviewer_confirmed;
+          const rc = row.reviewer_comment != null ? String(row.reviewer_comment) : '';
           const statusBadge = isVar
             ? '<span class="badge" style="background:rgba(180,83,9,0.15);color:#b45309">Variant</span>'
             : '<span class="badge" style="opacity:0.6">Ref</span>';
@@ -6825,6 +6857,7 @@
           html += `<td style="font-size:11px">${escapeHtml(row.clinical_significance || '')}</td>`;
           html += `<td style="font-size:11px;max-width:14rem">${escapeHtml(row.drugs || '')}</td>`;
           html += `<td style="font-size:11px">${escapeHtml(row.evidence_level || '')}</td>`;
+          html += `<td><textarea class="pgx-custom-comment" rows="2" style="width:100%;min-width:10rem;font-size:11px;padding:6px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">${escapeHtml(rc)}</textarea></td>`;
           html += `<td>${statusBadge}</td>`;
           html += '</tr>';
         });
@@ -6853,7 +6886,7 @@
       html +=
         '<button type="button" class="btn primary" id="btnSavePgxReview">Save PGx review</button>';
       html +=
-        '<span class="muted" style="font-size:11px;max-width:40rem;line-height:1.45">Stores <code>pgx.portal_review</code> and per-gene fields on <code>pgx.gene_results</code>. «Reprocess only» preserves review fields when pipeline data is regenerated.</span>';
+        '<span class="muted" style="font-size:11px;max-width:40rem;line-height:1.45">Stores <code>pgx.portal_review</code>, PharmCAT <code>gene_results</code>, and extended panel <code>custom_gene_results</code> (include + reviewer comment per rsID, e.g. APOE). «Reprocess only» preserves review fields when pipeline data is regenerated.</span>';
       html += '</div>';
       box.innerHTML = html;
       const btn = qs('btnSavePgxReview');
@@ -6923,10 +6956,12 @@
         const rsid = tr.getAttribute('data-pgx-custom-rsid');
         if (!gene || !rsid) return;
         const c = tr.querySelector('.pgx-custom-confirmed');
+        const ta = tr.querySelector('.pgx-custom-comment');
         custom_gene_reviews.push({
           gene,
           rsid,
           reviewer_confirmed: !!(c && c.checked),
+          reviewer_comment: ta ? String(ta.value || '') : '',
         });
       });
       try {
@@ -7193,9 +7228,16 @@
       }
       const ga = reviewData.generated_at != null ? String(reviewData.generated_at).trim() : '';
       const n = (reviewData.variants || []).length;
+      const rk = reviewOrderKind(reviewData);
+      const kindLabel = rk === 'proactive' ? 'Proactive health'
+        : rk === 'pgx' ? 'PGx'
+        : rk === 'exome' ? 'Whole exome'
+        : rk === 'carrier' ? 'Carrier screening'
+        : rk === 'sgnipt' ? 'sgNIPT'
+        : (reviewData.service_code || 'WES');
       const parts = [];
       if (ga) parts.push(`Snapshot (result.json): ${ga}`);
-      parts.push(`${n} variant row(s)`);
+      parts.push(`${kindLabel} · ${n} variant row(s)`);
       if (isReviewOrderMismatch()) {
         const selId = (qs('reviewOrderSelect') && qs('reviewOrderSelect').value || '').trim();
         parts.push(`Loaded: ${reviewLoadedOrderId} — selected: ${selId} (click Load to refresh)`);
@@ -7243,21 +7285,30 @@
       const carrierGenes = new Set();
       pathogenic.forEach(v => { if (v.gene) carrierGenes.add(v.gene); });
 
+      const kind = reviewOrderKind(reviewData);
+      const isProactive = kind === 'proactive';
+
       let statusClass, icon, text, detail;
       if (pathogenic.length > 0) {
         statusClass = 'positive';
         icon = '⚠';
-        text = `Carrier Detected - ${carrierGenes.size} gene(s)`;
+        text = isProactive
+          ? `Significant finding(s) — ${carrierGenes.size} gene(s)`
+          : `Carrier Detected - ${carrierGenes.size} gene(s)`;
         detail = `${pathogenic.length} pathogenic/likely pathogenic variant(s) in: ${escapeHtml([...carrierGenes].join(', '))}`;
       } else if (vus.length > 0) {
         statusClass = 'uncertain';
         icon = '?';
         text = `Uncertain - ${vus.length} VUS detected`;
-        detail = 'No pathogenic variants found, but variants of uncertain significance are present';
+        detail = isProactive
+          ? 'No reportable pathogenic variants; VUS present — see variant-level interpretation'
+          : 'No pathogenic variants found, but variants of uncertain significance are present';
       } else {
         statusClass = 'negative';
         icon = '✓';
-        text = 'Negative - No pathogenic variants detected';
+        text = isProactive
+          ? 'No pathogenic variants detected (proactive screening)'
+          : 'Negative - No pathogenic variants detected';
         detail = `${variants.length} variant(s) analyzed, all benign or likely benign`;
       }
 
@@ -10066,7 +10117,7 @@
       }
 
       if (selectedVariants.size === 0) {
-        list.innerHTML = '<div class="muted" style="padding:8px">No variants selected for the report. Use the <strong>Variants</strong> tab to check rows (pathogenic / likely pathogenic are auto-checked on <strong>Load</strong> when present). Narrative boxes appear only for checked variants.</div>';
+        list.innerHTML = '<div class="muted" style="padding:8px">No variants selected — <strong>Generate Report</strong> will produce a <strong>negative</strong> result (no clinically significant variants on the PDF). Use the <strong>Variants</strong> tab to check rows to include specific findings (P/LP auto-checked on <strong>Load</strong> when present).</div>';
         return;
       }
       pruneVariantReportTexts();
@@ -10134,7 +10185,6 @@
       if (!elig.ok) {
         return toast(elig.reason || 'Report PDF is not available for this order type or report language.', false);
       }
-      if (elig.kind !== 'pgx' && selectedVariants.size === 0) return toast('Select at least one variant', false);
 
       const revName = qs('rRevName').value.trim();
       if (!revName) return toast('Reviewer name is required', false);
@@ -10565,7 +10615,6 @@
       if (!orderId) return toast('Load an order first.', false);
       const elig = carrierReportEligible(reviewData?.order_params);
       if (!elig.ok) return toast(elig.reason || 'Report is not available for this order type.', false);
-      if (elig.kind !== 'pgx' && selectedVariants.size === 0) return toast('Select at least one variant', false);
 
       const revName = qs('rRevName').value.trim();
       if (!revName) return toast('Reviewer name is required', false);

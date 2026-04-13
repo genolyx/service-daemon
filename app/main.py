@@ -368,11 +368,36 @@ async def lifespan(app: FastAPI):
 
 # ─── FastAPI App ───────────────────────────────────────────
 
+_OPENAPI_DESCRIPTION = """
+## Portal (UI)
+
+로컬·개발 시 브라우저에서 **`/portal/`** 로 접속합니다. (예: `http://localhost:8003/portal/`)
+
+- 주문·큐·Review 등은 이 UI가 동일 오리진의 **`/order/...`** API를 호출합니다.
+- 리버스 프록시가 **`/api/order/...`** 만 넘기는 경우에도, 미들웨어가 내부적으로 `/order/...` 로 변환합니다.
+
+## API 문서 (이 페이지)
+
+- **Swagger UI**: `/docs` (현재 페이지)
+- **ReDoc**: `/redoc`
+- **OpenAPI JSON**: `/openapi.json`
+
+## 선택적 인증
+
+환경 변수 **`API_KEY`** 가 설정되어 있으면, 대부분의 API는 **`Authorization: Bearer <API_KEY>`** 또는 **`X-API-Key: <API_KEY>`** 가 필요합니다.
+
+예외(키 없이 접근 가능): `/health`, `/portal/*`, `/docs`, `/openapi.json`, `/redoc`, 일부 `/api/portal/*` 등 — 상세는 `api_access_key_guard` 참고.
+
+## 개발 문서
+
+레포지토리 **`docs/API_DEVELOPMENT.md`** 에 Proxy·Portal·curl 예시를 정리해 두었습니다.
+""".strip()
+
 app = FastAPI(
     title="Service Daemon",
-    description="Multi-service genomics pipeline daemon",
+    description=_OPENAPI_DESCRIPTION,
     version="2.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # CORS 미들웨어 (테스트 Portal에서 로컬 API 호출 허용)
@@ -452,6 +477,10 @@ async def api_access_key_guard(request: Request, call_next):
         or path.startswith("/api/portal")
         or path.startswith("/api/wes-panels")
         or path.startswith("/static")
+        # OpenAPI / Swagger — 개발 시 API 탐색용 (API_KEY 있어도 문서 접근 가능)
+        or path.startswith("/docs")
+        or path == "/openapi.json"
+        or path.startswith("/redoc")
     ):
         return await call_next(request)
 
@@ -2341,7 +2370,9 @@ async def _pgx_review_impl(order_id: str, body: PgxReviewRequest) -> Dict[str, A
                 r = dict(row)
                 key = (r.get("gene", ""), r.get("rsid", ""))
                 if key in by_key:
-                    r["reviewer_confirmed"] = bool(by_key[key].reviewer_confirmed)
+                    u = by_key[key]
+                    r["reviewer_confirmed"] = bool(u.reviewer_confirmed)
+                    r["reviewer_comment"] = (u.reviewer_comment or "")[:4000]
                 new_cgrs.append(r)
             pgx2["custom_gene_results"] = new_cgrs
         data["pgx"] = pgx2
@@ -3633,6 +3664,12 @@ async def dashboard(request: Request):
         "service": "service-daemon",
         "version": "2.0.0",
         "environment": settings.app_env,
+        "api_docs": {
+            "swagger_ui": "/docs",
+            "redoc": "/redoc",
+            "openapi_json": "/openapi.json",
+            "note": "Interactive HTML API reference (generated from OpenAPI). Prefer these over static markdown for exact paths and schemas.",
+        },
         "registered_services": [
             {"code": code, "name": plugin.display_name}
             for code, plugin in plugins.items()

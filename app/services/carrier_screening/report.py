@@ -16,6 +16,7 @@ report.json 구조:
     - partner: 파트너 정보 + findings[] (couples 템플릿)
     - findings: couples 전용, primary+partner 병합 (carrier_couples_*.html 상세 해석)
     - genes_evaluated_count
+    - interpretation_genes: HGNC symbols from WES panel + extras (for PDF gene list; may be empty)
     - carrier_status, confirmed_variants, disease_groups, qc_summary, reviewer
     - dark_genes (optional): report_detailed_html (+ error-only report_summary) from result.json for PDF (approved detailed sections only; Overview/QC blocks omitted)
     - pgx (optional): PharmCAT pgx_summary.txt + pgx_meta.json from pipeline ``pgx/`` → summary_for_pdf_html for PDF
@@ -957,11 +958,20 @@ def generate_report_json(
             or "",
         )
 
+    from ..wes_panels import interpretation_genes_for_pdf
+
+    interp_genes = interpretation_genes_for_pdf(
+        order_params if isinstance(order_params, dict) else None
+    )
+
     genes_n = order_flat.get("genes_evaluated_count")
     try:
         genes_evaluated_count = int(genes_n) if genes_n is not None and str(genes_n).strip() != "" else 302
     except (TypeError, ValueError):
         genes_evaluated_count = 302
+
+    if interp_genes:
+        genes_evaluated_count = len(interp_genes)
 
     report_metadata = {
         "order_id": order_id,
@@ -991,6 +1001,9 @@ def generate_report_json(
         "partner": partner_out,
 
         "genes_evaluated_count": genes_evaluated_count,
+
+        # Panel gene list for PDF «Genes Evaluated» (empty if not resolvable from order / catalog)
+        "interpretation_genes": interp_genes,
 
         # 캐리어 상태 요약
         "carrier_status": carrier_status,

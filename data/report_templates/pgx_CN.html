@@ -448,7 +448,7 @@
     <div class="new-page">
         <div class="section-title">檢測基因列表</div>
         <p class="detail-text" style="margin-bottom:8px;">
-            本藥物基因體學檢測評估了 {{ evaluated | length }} 個基因的臨床相關藥物基因體學變異。
+            本報告解讀範圍為 <strong>{{ data.genes_evaluated_count }}</strong> 個基因；下列列出 <strong>{{ evaluated | length }}</strong> 個具分析結果之基因符號。本藥物基因體學檢測之臨床相關變異分析涵蓋 PharmCAT（CPIC/DPWG）與／或 Curated 基因分型（ClinPGx）。
             基因通過 PharmCAT（CPIC/DPWG 星號等位基因分析）和/或精選變異基因分型（ClinPGx）進行分析。
         </p>
         <div style="font-size:8pt;color:#94a3b8;margin-top:10px;line-height:1.8;text-align:justify;">

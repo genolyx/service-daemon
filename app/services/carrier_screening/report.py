@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
 from ...datetime_kst import now_kst_date_iso, now_kst_iso
+from .review import atomic_write_json_file
 
 logger = logging.getLogger(__name__)
 
@@ -973,6 +974,26 @@ def generate_report_json(
     if interp_genes:
         genes_evaluated_count = len(interp_genes)
 
+    def _include_pgx_on_pdf(v: Any) -> bool:
+        """Proactive (and other) PDFs: omit PharmCAT/APOE blocks when explicitly false."""
+        if v is None:
+            return True
+        if isinstance(v, bool):
+            return v
+        s = str(v).strip().lower()
+        if s in ("0", "false", "no"):
+            return False
+        return True
+
+    def _order_apoe_genotyping_requested(v: Any) -> bool:
+        """True when submit-time APOE tag-SNP option was enabled (params.include_apoe_pgx)."""
+        if v is None:
+            return False
+        if isinstance(v, bool):
+            return v
+        s = str(v).strip().lower()
+        return s in ("1", "true", "yes", "on")
+
     report_metadata = {
         "order_id": order_id,
         "report_date": _report_date_human_kst(),
@@ -986,6 +1007,12 @@ def generate_report_json(
         or order_flat.get("hospital")
         or "",
         "doctor": order_flat.get("doctor") or "",
+        # Proactive: PharmCAT PDF block (separate from APOE tag SNPs)
+        "include_pgx": _include_pgx_on_pdf(order_flat.get("include_pgx")),
+        # Proactive: APOE ε2/ε3/ε4 PDF block when order checked APOE genotype tag SNPs at submit
+        "include_apoe_on_proactive_pdf": _order_apoe_genotyping_requested(
+            order_flat.get("include_apoe_pgx")
+        ),
     }
 
     report: Dict[str, Any] = {
@@ -1055,8 +1082,7 @@ def generate_report_json(
     )
 
     output_path = os.path.join(output_dir, "report.json")
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(report, f, ensure_ascii=False, indent=2, default=str)
+    atomic_write_json_file(output_path, report)
 
     logger.info(
         f"Generated report.json: {output_path} "

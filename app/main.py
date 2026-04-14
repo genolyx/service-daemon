@@ -872,10 +872,13 @@ async def reprocess_order_results(order_id: str):
     logger.info("[reprocess-results] Starting process_results for %s (%s)", order_id, job.service_code)
     process_ok = await plugin.process_results(job)
     if not process_ok:
-        raise HTTPException(
-            status_code=500,
-            detail="process_results failed — see daemon logs",
+        hint = (getattr(job, "error_log", None) or "").strip()
+        detail = (
+            f"process_results failed: {hint}"
+            if hint
+            else "process_results failed — see daemon logs (container: docker logs service-daemon)"
         )
+        raise HTTPException(status_code=500, detail=detail)
 
     await queue_manager.finalize_reprocess_results(job)
     logger.info("[reprocess-results] Done for %s", order_id)
@@ -1427,8 +1430,10 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "PDF report is only supported for standard carrier screening "
-                    "or CouplesCarrier (Other test type)."
+                    "PDF report is not supported for this order configuration. "
+                    "Set package / interpretation panel so the order resolves to carrier (standard/couples), "
+                    "whole exome, proactive health, or PGx (e.g. WES panel category pgx / proactive_health, "
+                    "or package_code PGx / WholeExome / HealthScreening)."
                 ),
             )
         if report_languages_from_order(p_raw) is None:
@@ -1453,19 +1458,27 @@ async def generate_report(order_id: str, request: ReportGenerateRequest):
                 )
 
     # 리포트 생성 (patient_info, partner_info; carrier_screening은 languages는 주문 Report Language로 결정)
-    success = await plugin.generate_report(
-        job=job,
-        confirmed_variants=request.confirmed_variants,
-        reviewer_info=request.reviewer_info,
-        patient_info=request.patient_info,
-        partner_info=request.partner_info,
-        languages=request.languages,
-    )
+    try:
+        success = await plugin.generate_report(
+            job=job,
+            confirmed_variants=request.confirmed_variants,
+            reviewer_info=request.reviewer_info,
+            patient_info=request.patient_info,
+            partner_info=request.partner_info,
+            languages=request.languages,
+        )
+    except Exception as e:
+        logger.exception("Report generation raised for order %s", order_id)
+        msg = str(e).strip() or repr(e)
+        raise HTTPException(
+            status_code=500,
+            detail=msg[:8000],
+        ) from e
 
     if not success:
         raise HTTPException(
             status_code=500,
-            detail="Report generation failed"
+            detail="Report generation failed (plugin returned false — check daemon logs).",
         )
 
     await queue_manager.mark_report_ready(
@@ -2341,9 +2354,12 @@ async def _pgx_review_impl(order_id: str, body: PgxReviewRequest) -> Dict[str, A
         if not isinstance(pgx, dict):
             pgx = {"status": "not_found", "message": "PGx block was missing; created by portal save"}
         pgx2 = dict(pgx)
+        prev_pr = pgx2.get("portal_review") if isinstance(pgx2.get("portal_review"), dict) else {}
         pgx2["portal_review"] = {
+            **prev_pr,
             "reviewer_notes": (body.reviewer_notes or "")[:16000],
             "reviewed": bool(body.reviewed),
+            "include_apoe_proactive_pdf": bool(body.include_apoe_proactive_pdf),
         }
         grs = pgx2.get("gene_results")
         if isinstance(grs, list) and body.gene_reviews is not None:

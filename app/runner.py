@@ -203,6 +203,18 @@ class PipelineRunner:
             job.params["_pipeline_command"] = command
             await self._queue_manager.persist_job(job)
 
+            if (job.params or {}).get("_pipeline_fresh"):
+                lg = job.log_dir or ""
+                logger.info(
+                    "[%s] Force Run (Fresh): full pipeline — work/.nextflow cleared by run_analysis or Nextflow driver. "
+                    "Per-task lines (incl. cache where applicable): %s/trace.txt — session: %s/nextflow.log — "
+                    "this daemon capture: %s/pipeline.log",
+                    job.service_code,
+                    lg,
+                    lg,
+                    lg,
+                )
+
             exit_code = await self._run_pipeline(job, command)
 
             if job.order_id in self._user_cancelled:
@@ -254,7 +266,11 @@ class PipelineRunner:
                     except Exception:
                         pass
                     return
-                raise RuntimeError("Result processing failed")
+                el = (getattr(job, "error_log", None) or "").strip()
+                raise RuntimeError(
+                    "Result processing failed"
+                    + (f": {el}" if el else "")
+                )
 
             # ── Step 5: 파일 업로드 ──
             if job.order_id in self._user_cancelled:

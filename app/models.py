@@ -187,6 +187,10 @@ class PgxReviewRequest(BaseModel):
         default_factory=list,
         description="Updates reviewer_confirmed / reviewer_comment for matching gene+rsid in pgx.custom_gene_results",
     )
+    include_apoe_proactive_pdf: bool = Field(
+        default=False,
+        description="Include APOE ε2/ε3/ε4 proactive summary block in customer PDF (proactive health orders)",
+    )
 
 
 class WesPanelCustomSave(BaseModel):

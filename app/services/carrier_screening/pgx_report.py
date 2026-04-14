@@ -27,6 +27,8 @@ import io
 import json
 import logging
 import os
+import re
+from collections import Counter
 from typing import AbstractSet, Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -624,6 +626,265 @@ def apoe_phasing_assessment(
     }
 
 
+# ── APOE proactive PDF (ε2/ε3/ε4) — HTML fragments for customer report ─────────
+
+_EPS = ("ε2", "ε3", "ε4")
+_EPS_IDX = {e: i for i, e in enumerate(_EPS)}
+
+
+def _sort_epsilon_diplotype(a: str, b: str) -> str:
+    aa, bb = a.strip(), b.strip()
+    if aa in _EPS_IDX and bb in _EPS_IDX:
+        oa, ob = sorted([aa, bb], key=lambda x: _EPS_IDX[x])
+        return f"{oa}/{ob}"
+    return f"{aa}/{bb}"
+
+
+def _normalize_pipeline_diplotype_key(s: str) -> Optional[str]:
+    """Map pipeline free-text (e.g. 'ε3/ε4', '3/4') to canonical report_key."""
+    if not s or not isinstance(s, str):
+        return None
+    t = s.strip()
+    t = t.replace("ε", "").replace("e", "").replace("E", "")
+    m = re.search(r"([234])\s*[/\s]\s*([234])", t)
+    if not m:
+        return None
+    em = {"2": "ε2", "3": "ε3", "4": "ε4"}
+    a, b = em.get(m.group(1)), em.get(m.group(2))
+    if not a or not b:
+        return None
+    return _sort_epsilon_diplotype(a, b)
+
+
+def _pipeline_explicit_diplotype(raw: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not isinstance(raw, dict):
+        return None
+    block = raw.get("apoe_phasing")
+    if isinstance(block, dict):
+        for k in ("diplotype", "haplotype", "epsilon_diplotype"):
+            v = block.get(k)
+            if v:
+                nk = _normalize_pipeline_diplotype_key(str(v))
+                if nk:
+                    return nk
+    genes = raw.get("genes")
+    if isinstance(genes, dict):
+        for v in genes.get("APOE") or []:
+            if not isinstance(v, dict):
+                continue
+            for k in ("diplotype", "haplotype", "epsilon_diplotype"):
+                val = v.get(k)
+                if val:
+                    nk = _normalize_pipeline_diplotype_key(str(val))
+                    if nk:
+                        return nk
+    return None
+
+
+def _parse_diploid_gt(gt: str) -> Tuple[str, str]:
+    if not gt or not isinstance(gt, str):
+        return "", ""
+    s = gt.strip().upper().replace(" ", "")
+    for sep in ("/", "|", ","):
+        if sep in s:
+            parts = s.split(sep, 1)
+            if len(parts) >= 2:
+                a, b = parts[0].strip(), parts[1].strip()
+                ca = a[-1] if a else ""
+                cb = b[-1] if b else ""
+                if ca in "ACGT" and cb in "ACGT":
+                    return ca, cb
+    if len(s) >= 2 and s[0] in "ACGT" and s[1] in "ACGT":
+        return s[0], s[1]
+    return "", ""
+
+
+def _haplo_epsilon(a358: str, a412: str) -> Optional[str]:
+    """Map (rs429358 allele, rs7412 allele) to ε2/ε3/ε4 (GRCh38 tag-SNP convention)."""
+    x = (a358 or "").upper()
+    y = (a412 or "").upper()
+    if x == "T" and y == "C":
+        return "ε2"
+    if x == "T" and y == "T":
+        return "ε3"
+    if x == "C" and y == "T":
+        return "ε4"
+    return None
+
+
+def _zygosity_hint_heterozygous(row: Optional[Dict[str, Any]]) -> Optional[bool]:
+    if not isinstance(row, dict):
+        return None
+    z = (row.get("zygosity") or "").strip().lower()
+    if z in ("heterozygous", "het"):
+        return True
+    if z in ("homozygous_ref", "homozygous_alt", "hom_ref", "hom_alt"):
+        return False
+    g1, g2 = _parse_diploid_gt(row.get("genotype") or "")
+    if g1 and g2:
+        return g1 != g2
+    return None
+
+
+def infer_apoe_diplotype_for_report(
+    custom_rows: List[Dict[str, Any]],
+    raw_custom: Optional[Dict[str, Any]],
+    apoe_phasing: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Canonical ε2/ε3/ε4 diplotype key for proactive PDF text, or ambiguous/unknown.
+
+    ``report_key`` matches :data:`APOE_PROACTIVE_DIPLOTYPE_BODIES` (plus ``ambiguous_both_het``, ``unknown``).
+    """
+    pipe = _pipeline_explicit_diplotype(raw_custom)
+    if pipe:
+        return {"report_key": pipe, "source": "pipeline"}
+
+    apoe_rows = [
+        r
+        for r in custom_rows
+        if isinstance(r, dict)
+        and str(r.get("gene") or "").strip().upper() == "APOE"
+        and str(r.get("rsid") or "").strip() in APOE_TAG_RSIDS
+    ]
+    by_rs = {str(r.get("rsid") or "").strip(): r for r in apoe_rows}
+    r358 = by_rs.get("rs429358")
+    r412 = by_rs.get("rs7412")
+    if not r358 or not r412:
+        return {"report_key": "unknown", "source": "inferred", "reason": "incomplete_snps"}
+
+    g358 = _parse_diploid_gt(str(r358.get("genotype") or ""))
+    g412 = _parse_diploid_gt(str(r412.get("genotype") or ""))
+    if (not g358[0] or not g412[0]) and isinstance(apoe_phasing, dict):
+        if apoe_phasing.get("status") == "ambiguous":
+            return {"report_key": "ambiguous_both_het", "source": "inferred"}
+        if apoe_phasing.get("status") == "unknown_zygosity":
+            return {"report_key": "unknown", "source": "inferred"}
+
+    if not g358[0] or not g412[0]:
+        # Fall back to zygosity-only inference
+        h358 = _zygosity_hint_heterozygous(r358)
+        h412 = _zygosity_hint_heterozygous(r412)
+        if h358 is True and h412 is True:
+            return {"report_key": "ambiguous_both_het", "source": "inferred"}
+        return {"report_key": "unknown", "source": "inferred", "reason": "missing_genotype"}
+
+    a358, b358 = g358
+    a412, b412 = g412
+    c358 = Counter([a358, b358])
+    c412 = Counter([a412, b412])
+    u358 = set(c358.keys())
+    u412 = set(c412.keys())
+
+    if len(u358) == 1 and len(u412) == 1:
+        h = _haplo_epsilon(a358, a412)
+        if h:
+            return {"report_key": f"{h}/{h}", "source": "inferred"}
+        return {"report_key": "unknown", "source": "inferred"}
+
+    # Both loci heterozygous (unphased): chromosomes may pair as ε2+ε4 or ε3+ε3 — not resolved from exome alone.
+    if len(u358) == 2 and len(u412) == 2:
+        return {"report_key": "ambiguous_both_het", "source": "inferred"}
+
+    if len(u358) == 2 and len(u412) == 1:
+        al412 = next(iter(u412))
+        h1 = _haplo_epsilon(a358, al412)
+        h2 = _haplo_epsilon(b358, al412)
+        if h1 and h2:
+            return {"report_key": _sort_epsilon_diplotype(h1, h2), "source": "inferred"}
+        return {"report_key": "unknown", "source": "inferred"}
+
+    if len(u358) == 1 and len(u412) == 2:
+        al358 = next(iter(u358))
+        h1 = _haplo_epsilon(al358, a412)
+        h2 = _haplo_epsilon(al358, b412)
+        if h1 and h2:
+            return {"report_key": _sort_epsilon_diplotype(h1, h2), "source": "inferred"}
+        return {"report_key": "unknown", "source": "inferred"}
+
+    return {"report_key": "unknown", "source": "inferred"}
+
+
+APOE_PROACTIVE_DISCLAIMER_HTML = (
+    '<p style="margin-top:12px;padding-top:10px;border-top:1px solid #cbd5e1;font-size:7.5pt;line-height:1.4;color:#475569">'
+    "<strong>Disclaimer:</strong> Risk estimates are approximate and based on population studies. "
+    "Actual risk varies depending on age, sex, ancestry, environmental factors, and family history. "
+    "APOE genotype is not diagnostic and should not be used alone to predict disease."
+    "</p>"
+)
+
+# Single-diplotype bodies only (paired title + risk + clinical); disclaimer appended separately.
+APOE_PROACTIVE_DIPLOTYPE_BODIES: Dict[str, str] = {
+    "ε2/ε2": (
+        "<p style=\"margin:0 0 6px;font-size:11pt;font-weight:700\">ε2 / ε2</p>"
+        '<p style="margin:0 0 4px"><strong>Alzheimer disease risk:</strong><br />~0.5× (reduced risk)</p>'
+        '<p style="margin:0"><strong>Clinical summary:</strong><br />'
+        "Associated with reduced risk of Alzheimer disease. May be associated with type III "
+        "hyperlipoproteinemia in some individuals.</p>"
+    ),
+    "ε2/ε3": (
+        "<p style=\"margin:0 0 6px;font-size:11pt;font-weight:700\">ε2 / ε3</p>"
+        '<p style="margin:0 0 4px"><strong>Alzheimer disease risk:</strong><br />~0.6–0.8× (slightly reduced)</p>'
+        '<p style="margin:0"><strong>Clinical summary:</strong><br />'
+        "Generally considered protective or neutral. Mild effects on lipid metabolism may be observed.</p>"
+    ),
+    "ε3/ε3": (
+        "<p style=\"margin:0 0 6px;font-size:11pt;font-weight:700\">ε3 / ε3</p>"
+        '<p style="margin:0 0 4px"><strong>Alzheimer disease risk:</strong><br />~1× (baseline)</p>'
+        '<p style="margin:0"><strong>Clinical summary:</strong><br />'
+        "Represents the reference genotype with average population risk.</p>"
+    ),
+    "ε2/ε4": (
+        "<p style=\"margin:0 0 6px;font-size:11pt;font-weight:700\">ε2 / ε4</p>"
+        '<p style="margin:0 0 4px"><strong>Alzheimer disease risk:</strong><br />~2–3× (intermediate, variable)</p>'
+        '<p style="margin:0"><strong>Clinical summary:</strong><br />'
+        "Mixed genotype with variable risk. ε4 increases risk, ε2 may partially offset.</p>"
+    ),
+    "ambiguous_both_het": (
+        '<p style="margin:0 0 8px;font-size:10.5pt;font-weight:700">APOE haplotype — phase ambiguity</p>'
+        '<p style="margin:0 0 8px;font-size:8.5pt;line-height:1.45">'
+        "<strong>APOE haplotype could not be definitively determined due to phase ambiguity.</strong></p>"
+        '<p style="margin:0 0 6px;font-size:8.5pt;line-height:1.45">'
+        "The detected variants at the tag SNPs (rs429358, rs7412) are consistent with <strong>either</strong>:</p>"
+        '<ul style="margin:0 0 10px;padding-left:18px;font-size:8.5pt;line-height:1.45">'
+        "<li>ε2/ε4 genotype, <em>or</em></li>"
+        "<li>ε3/ε3 genotype.</li>"
+        "</ul>"
+        '<p style="margin:0;font-size:8.5pt;line-height:1.45;color:#334155">'
+        "Additional testing (e.g., targeted genotyping or long-read sequencing) may be considered to "
+        "resolve haplotype phase if clinically indicated.</p>"
+    ),
+    "ε3/ε4": (
+        "<p style=\"margin:0 0 6px;font-size:11pt;font-weight:700\">ε3 / ε4</p>"
+        '<p style="margin:0 0 4px"><strong>Alzheimer disease risk:</strong><br />~2–3× (moderate increase)</p>'
+        '<p style="margin:0"><strong>Clinical summary:</strong><br />'
+        "Associated with moderately increased risk of Alzheimer disease. May also be associated with "
+        "higher LDL cholesterol.</p>"
+    ),
+    "ε4/ε4": (
+        "<p style=\"margin:0 0 6px;font-size:11pt;font-weight:700\">ε4 / ε4</p>"
+        '<p style="margin:0 0 4px"><strong>Alzheimer disease risk:</strong><br />~8–12× (high increase)</p>'
+        '<p style="margin:0"><strong>Clinical summary:</strong><br />'
+        "Associated with significantly increased risk and earlier onset. Also linked to increased "
+        "cardiovascular risk.</p>"
+    ),
+    "unknown": (
+        '<p style="margin:0 0 6px;font-size:10pt"><strong>APOE ε2/ε3/ε4 summary</strong></p>'
+        '<p style="margin:0;font-size:8.5pt">Diplotype could not be determined from tag-SNP genotypes '
+        "in this report. Refer to raw PGx outputs and laboratory SOP.</p>"
+    ),
+}
+
+
+def build_apoe_proactive_pdf_html(report_key: str) -> str:
+    """WeasyPrint-safe HTML fragment (one diplotype block + disclaimer)."""
+    body = APOE_PROACTIVE_DIPLOTYPE_BODIES.get(report_key) or APOE_PROACTIVE_DIPLOTYPE_BODIES["unknown"]
+    return (
+        '<div class="apoe-proactive-pdf" style="font-size:8.5pt;line-height:1.45;color:#0f172a">'
+        f"{body}{APOE_PROACTIVE_DISCLAIMER_HTML}</div>"
+    )
+
+
 def load_pgx_custom_variants_reference() -> List[Dict[str, str]]:
     """Load the built-in pgx_custom_variants.tsv reference file."""
     ref_path = os.path.join(
@@ -876,7 +1137,19 @@ def collect_pgx_from_analysis_dir(root: str, sample_name: str) -> Dict[str, Any]
     custom = _custom_gene_rows_from_pgx_dict(raw_custom) if raw_custom else []
     if custom:
         out["custom_gene_results"] = custom
-    out["apoe_phasing"] = apoe_phasing_assessment(custom, raw_custom)
+    try:
+        out["apoe_phasing"] = apoe_phasing_assessment(custom, raw_custom)
+        out["apoe_diplotype_for_report"] = infer_apoe_diplotype_for_report(
+            custom, raw_custom, out.get("apoe_phasing")
+        )
+    except Exception as e:
+        logger.warning("[pgx] apoe phasing/diplotype step failed (non-fatal): %s", e)
+        out.setdefault("apoe_phasing", {"status": "error", "show_alert": False})
+        out["apoe_diplotype_for_report"] = {
+            "report_key": "unknown",
+            "source": "error",
+            "message": str(e),
+        }
 
     return out
 
@@ -947,6 +1220,45 @@ def pgx_for_pdf(pgx: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(pgx)
     out["summary_for_pdf_html"] = block
     out["tool_version_line"] = tool_v
+
+    pr_pdf = pgx.get("portal_review") if isinstance(pgx.get("portal_review"), dict) else {}
+
+    def _apoe_tag_rows_present() -> bool:
+        cgr = pgx.get("custom_gene_results")
+        if not isinstance(cgr, list):
+            return False
+        tag = {"rs429358", "rs7412"}
+        for r in cgr:
+            if not isinstance(r, dict):
+                continue
+            if str(r.get("gene") or "").strip().upper() != "APOE":
+                continue
+            if str(r.get("rsid") or "").strip() in tag:
+                return True
+        return False
+
+    ex_apoe = pr_pdf.get("include_apoe_proactive_pdf")
+    if ex_apoe is False or str(ex_apoe).strip().lower() in ("false", "0", "no"):
+        include_apoe_pdf = False
+    elif ex_apoe is True or str(ex_apoe).strip().lower() in ("true", "1", "yes"):
+        include_apoe_pdf = True
+    else:
+        # Reviewer never saved PGx review: still emit APOE PDF when extended panel has tag SNPs
+        include_apoe_pdf = _apoe_tag_rows_present()
+
+    adp = pgx.get("apoe_diplotype_for_report")
+    if include_apoe_pdf and not isinstance(adp, dict):
+        cgr = pgx.get("custom_gene_results")
+        if isinstance(cgr, list):
+            adp = infer_apoe_diplotype_for_report(
+                cgr, None, pgx.get("apoe_phasing") if isinstance(pgx.get("apoe_phasing"), dict) else None
+            )
+    if include_apoe_pdf and isinstance(adp, dict):
+        rk = str(adp.get("report_key") or "unknown").strip()
+        out["apoe_proactive_summary_html"] = build_apoe_proactive_pdf_html(rk)
+    else:
+        out["apoe_proactive_summary_html"] = ""
+
     out.pop("portal_review", None)
 
     # Build the full gene list from ALL sources BEFORE reviewer_confirmed filtering
@@ -985,7 +1297,9 @@ def pgx_for_pdf(pgx: Dict[str, Any]) -> Dict[str, Any]:
         pharmcat_genes = {r["gene"] for r in out["gene_results"] if r.get("gene")}
         non_pharmcat = [r for r in custom if r.get("gene") not in pharmcat_genes]
         confirmed_custom = [r for r in non_pharmcat if r.get("reviewer_confirmed")]
-        out["custom_gene_results"] = confirmed_custom if confirmed_custom else []
+        # Match PharmCAT row logic: if reviewer checked at least one ✓ Include, PDF shows only those;
+        # if none checked, show all extended-panel rows so the PGx report is not empty.
+        out["custom_gene_results"] = confirmed_custom if confirmed_custom else non_pharmcat
     else:
         out["custom_gene_results"] = []
 

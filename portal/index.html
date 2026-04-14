@@ -83,6 +83,12 @@
     .btn.loading::after{content:'';position:absolute;right:10px;top:50%;width:14px;height:14px;border:2px solid rgba(255,255,255,.7);border-top-color:transparent;border-radius:50%;transform:translateY(-50%);animation:spin .8s linear infinite}
     @keyframes spin{to{transform:translateY(-50%) rotate(360deg)}}
 
+    /* PGx review tables: sortable column headers */
+    th.pgx-sortable-th{cursor:pointer;user-select:none;white-space:nowrap}
+    th.pgx-sortable-th:hover{text-decoration:underline;color:var(--brand)}
+    th.pgx-sortable-th[data-sort="asc"]::after{content:' ▲';font-size:9px;opacity:.65}
+    th.pgx-sortable-th[data-sort="desc"]::after{content:' ▼';font-size:9px;opacity:.65}
+
     /* Theme Switch */
     .theme-switch{width:44px;height:22px;background:var(--btn-bg);border:1px solid var(--line);border-radius:999px;position:relative;cursor:pointer;transition:.3s;flex-shrink:0;margin:0}
     .switch-ball{position:absolute;top:2px;left:2px;width:16px;height:16px;background:var(--muted);border-radius:50%;transition:transform .3s cubic-bezier(.4,0,.2,1),background .3s}
@@ -1118,7 +1124,13 @@
               <div id="cr_proactive_apoe_wrap" class="hidden" style="margin-top:12px;padding:10px 12px;border-radius:10px;border:1px solid rgba(130,200,160,.35);background:rgba(130,200,160,.07)">
                 <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px;line-height:1.45;margin:0">
                   <input type="checkbox" id="cr_include_apoe_pgx" style="margin-top:3px;width:16px;height:16px;flex-shrink:0" />
-                  <span><strong>Include APOE PGx</strong> — genotype rs429358 &amp; rs7412 (ε2 / ε3 / ε4 tag SNPs) in the extended PGx panel. Your gx-exome pipeline should read <code>params.include_apoe_pgx</code> and emit <code>pgx/pgx_custom_result.json</code>. Exome phasing may be ambiguous when both loci are heterozygous; the Review → PGx tab will warn when applicable.</span>
+                  <span><strong>APOE genotype tag SNPs</strong> — include rs429358 &amp; rs7412 in the extended panel so the pipeline can call <strong>ε2 / ε3 / ε4</strong> from tag genotypes (not general PGx). gx-exome should read <code>params.include_apoe_pgx</code> and emit <code>pgx/pgx_custom_result.json</code>. When both loci are heterozygous, phasing may be ambiguous; the Review → PGx tab will warn when applicable.</span>
+                </label>
+              </div>
+              <div id="cr_proactive_pgx_pdf_wrap" class="hidden" style="margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid rgba(59,130,246,.32);background:rgba(59,130,246,.06)">
+                <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px;line-height:1.45;margin:0">
+                  <input type="checkbox" id="cr_include_pgx_pdf" checked style="margin-top:3px;width:16px;height:16px;flex-shrink:0" />
+                  <span><strong>Include PGx on customer PDF</strong> — PharmCAT / pharmacogenomics content on the proactive PDF (stored as <code>params.carrier.include_pgx</code>). Uncheck to omit PGx-related PDF sections. Separate from the APOE tag-SNP analysis option above.</span>
                 </label>
               </div>
             </div>
@@ -3725,6 +3737,13 @@
       if (qs('cr_include_apoe_pgx')) {
         qs('cr_include_apoe_pgx').checked = !!(p.include_apoe_pgx === true || p.include_apoe_pgx === 'true');
       }
+      if (qs('cr_include_pgx_pdf')) {
+        const inc =
+          c.include_pgx !== undefined && c.include_pgx !== null
+            ? c.include_pgx
+            : p.include_pgx;
+        qs('cr_include_pgx_pdf').checked = inc !== false && inc !== 'false';
+      }
       setFormInput('fMaxAf', p.max_af != null ? p.max_af : '');
       setFormInput('fHpoTerms', p.hpo_terms);
       setFormInput('fGeneFilter', p.gene_filter);
@@ -3871,6 +3890,14 @@
         capture_panel_id: val('cr_capture_panel_id') || 'twist-exome2',
         prior_order_id: val('cr_prior_order_id') || undefined,
         reuse_prior_pipeline_outputs: val('cr_reuse_prior_pipeline') === '1',
+        include_pgx: (() => {
+          const w = qs('cr_proactive_pgx_pdf_wrap');
+          const el = qs('cr_include_pgx_pdf');
+          if (w && !w.classList.contains('hidden') && el) {
+            return !!el.checked;
+          }
+          return true;
+        })(),
       };
       return meta;
     }
@@ -3994,16 +4021,17 @@
       refreshProactiveApoeOption();
     }
 
-    /** Show APOE opt-in only when the selected interpretation panel category is proactive_health. */
+    /** Show APOE opt-in + PGx-on-PDF only when the interpretation panel category is proactive_health. */
     function refreshProactiveApoeOption() {
       const wrap = qs('cr_proactive_apoe_wrap');
-      if (!wrap) return;
+      const wrapPdf = qs('cr_proactive_pgx_pdf_wrap');
       const sel = qs('cr_wes_panel');
       const wid = sel && sel.value ? String(sel.value).trim() : '';
       const wp = wid ? _wesPanelsById[wid] : null;
       const cat = wp && wp.category != null ? String(wp.category).trim().toLowerCase() : '';
       const show = cat === 'proactive_health';
-      wrap.classList.toggle('hidden', !show);
+      if (wrap) wrap.classList.toggle('hidden', !show);
+      if (wrapPdf) wrapPdf.classList.toggle('hidden', !show);
     }
 
     function renderWesPanelsManagerTable(panels) {
@@ -6647,6 +6675,94 @@
       renderReviewPgx();
     }
 
+    /**
+     * Proactive health — structured APOE (ε2/ε3/ε4 tag SNPs) summary above the extended panel table.
+     */
+    function buildProactiveApoeSummaryHtml(customGenes, aph, portalReview) {
+      const pr = portalReview && typeof portalReview === 'object' ? portalReview : {};
+      const includePdfChk = !!(pr.include_apoe_proactive_pdf === true || pr.include_apoe_proactive_pdf === 'true');
+      const rows = (customGenes || [])
+        .filter(r => String(r.gene || '').trim().toUpperCase() === 'APOE')
+        .sort((a, b) => String(a.rsid || '').localeCompare(String(b.rsid || '')));
+      if (!rows.length) return '';
+      let h =
+        '<div style="margin:0 0 14px;padding:14px 16px;border-radius:12px;border:1px solid rgba(59,130,246,.38);background:rgba(59,130,246,.07);font-size:12px;line-height:1.55">';
+      h +=
+        '<strong style="font-size:13px;display:block;margin-bottom:8px">APOE result (proactive health)</strong>';
+      h += '<p class="muted" style="margin:0 0 12px;font-size:11px;line-height:1.5">';
+      h +=
+        'Tag SNPs <strong>rs429358</strong> (Cys112Arg) and <strong>rs7412</strong> (Arg158Cys) define <strong>ε2 / ε3 / ε4</strong> in standard nomenclature. ';
+      h +=
+        'For proactive orders, interpret <strong>APOE</strong> here for <strong>ε2/ε3/ε4</strong> and preventive-health context; rows in the table below may still show <strong>ClinPGx drug-gene</strong> text—use <strong>Case review</strong> notes for clinical framing if needed.';
+      h += '</p>';
+      h += '<div class="table-wrap" style="max-height:none;margin:0 0 8px">';
+      h += '<table style="font-size:12px;width:100%;border-collapse:collapse">';
+      h += '<thead><tr>';
+      h +=
+        '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)">rsID</th>';
+      h +=
+        '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)">Genotype</th>';
+      h +=
+        '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)">Zygosity</th>';
+      h +=
+        '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)">Tag role</th>';
+      h += '</tr></thead><tbody>';
+      rows.forEach(r => {
+        const zyg = (r.zygosity || '').replace(/_/g, ' ');
+        const rs = String(r.rsid || '');
+        const tag =
+          rs === 'rs429358' ? 'ε4 vs ε3 (112)' : rs === 'rs7412' ? 'ε2 vs ε3 (158)' : '';
+        h += '<tr>';
+        h += `<td style="padding:6px 8px;font-family:ui-monospace,monospace;font-size:11px">${escapeHtml(rs)}</td>`;
+        h += `<td style="padding:6px 8px;font-family:ui-monospace,monospace;font-size:11px">${escapeHtml(r.genotype != null ? String(r.genotype) : '')}</td>`;
+        h += `<td style="padding:6px 8px">${escapeHtml(zyg)}</td>`;
+        h += `<td style="padding:6px 8px;font-size:11px" class="muted">${escapeHtml(tag)}</td>`;
+        h += '</tr>';
+      });
+      h += '</tbody></table></div>';
+      if (aph && typeof aph === 'object') {
+        const st = aph.status;
+        let line = '';
+        if (st === 'ambiguous') {
+          line =
+            '<strong>Phase / haplotype:</strong> ε2/ε3/ε4 <strong>cannot be resolved</strong> when both tag SNPs are heterozygous on unphased short reads—follow the APOE phasing banner above and lab policy.';
+        } else if (st === 'incomplete') {
+          line =
+            '<strong>Phase / haplotype:</strong> <strong>incomplete</strong> output (both rs429358 and rs7412 should be present).';
+        } else if (st === 'likely_unambiguous') {
+          line =
+            '<strong>Phase / haplotype:</strong> at least one locus is homozygous—ε2/ε3/ε4 is often inferable without cross-SNP phasing; confirm per laboratory policy.';
+        } else if (st === 'pipeline_resolved') {
+          line =
+            '<strong>Phase / haplotype:</strong> marked <strong>resolved</strong> in pipeline output—confirm in <code>pgx_custom_result.json</code> / SOP.';
+        } else if (st === 'unknown_zygosity') {
+          line =
+            '<strong>Phase / haplotype:</strong> zygosity could not be assessed from the extended panel rows—see warning above.';
+        }
+        if (line) {
+          h += `<p style="margin:10px 0 0;font-size:11px;line-height:1.5">${line}</p>`;
+        }
+      }
+      h += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(59,130,246,.28)">';
+      h += '<p style="margin:0 0 6px;font-size:11px"><strong>Quick reference (ε2/ε3/ε4 diplotype)</strong></p>';
+      h += '<ul style="margin:0 0 10px;padding-left:18px;font-size:11px;line-height:1.5" class="muted">';
+      h += '<li>ε2/ε2 → Reduced risk</li>';
+      h += '<li>ε2/ε3 → Slightly reduced</li>';
+      h += '<li>ε3/ε3 → Baseline</li>';
+      h += '<li>ε2/ε4 → Intermediate</li>';
+      h += '<li>ε3/ε4 → Moderate increase</li>';
+      h += '<li>ε4/ε4 → High risk</li>';
+      h += '</ul>';
+      h +=
+        '<label style="display:flex;align-items:flex-start;gap:8px;margin:0;cursor:pointer;font-size:12px;line-height:1.45">';
+      h += `<input type="checkbox" id="pgxIncludeApoeProactivePdf" style="margin-top:3px;width:16px;height:16px;flex-shrink:0" ${includePdfChk ? 'checked' : ''} />`;
+      h +=
+        '<span>Include <strong>APOE ε2/ε3/ε4</strong> summary (population risk estimates, clinical summary, disclaimer) in the <strong>customer PDF</strong> when you generate the report. Saves with <strong>Save PGx review</strong> below.</span>';
+      h += '</label></div>';
+      h += '</div>';
+      return h;
+    }
+
     // ── PGx (PharmCAT: pgx/pgx_summary.txt + portal notes) ──
     function renderReviewPgx() {
       const hint = qs('pgxReviewHint');
@@ -6693,6 +6809,9 @@
         return;
       }
 
+      const customGenesEarly = Array.isArray(pgx.custom_gene_results) ? pgx.custom_gene_results : [];
+      const aph = pgx.apoe_phasing;
+
       const meta = pgx.meta && typeof pgx.meta === 'object' ? pgx.meta : {};
       const art = pgx.artifacts && typeof pgx.artifacts === 'object' ? pgx.artifacts : {};
       const links = [];
@@ -6727,7 +6846,6 @@
           '<span class="badge" style="background:rgba(22,101,52,0.12);color:#166534">Reviewed</span>';
       }
       html += '</p>';
-      const aph = pgx.apoe_phasing;
       if (aph && typeof aph === 'object' && aph.show_alert) {
         const sw = escapeHtml(aph.short_warning != null ? String(aph.short_warning) : '');
         const det = escapeHtml(aph.detail != null ? String(aph.detail) : '');
@@ -6738,6 +6856,12 @@
         html += '</div>';
       } else if (aph && typeof aph === 'object' && aph.status === 'pipeline_resolved') {
         html += '<p class="muted" style="font-size:11px;margin:0 0 12px;line-height:1.45"><strong>APOE phasing:</strong> marked resolved in pipeline output — confirm methodology in <code>pgx_custom_result.json</code> / lab SOP.</p>';
+      }
+      if (
+        reviewOrderKind(reviewData) === 'proactive' &&
+        customGenesEarly.some(r => String(r.gene || '').trim().toUpperCase() === 'APOE')
+      ) {
+        html += buildProactiveApoeSummaryHtml(customGenesEarly, aph, pr);
       }
       if (meta.tool_version || meta.genome_build || meta.exit_status != null) {
         const bits = [];
@@ -6820,7 +6944,7 @@
       }
 
       // ── Extended PGx Panel (custom non-PharmCAT genes) ──
-      const customGenes = Array.isArray(pgx.custom_gene_results) ? pgx.custom_gene_results : [];
+      const customGenes = customGenesEarly;
       if (customGenes.length) {
         const customVariants = customGenes.filter(r => r.is_variant || (r.zygosity && r.zygosity !== 'homozygous_ref'));
         const rkPh = reviewOrderKind(reviewData);
@@ -6831,10 +6955,10 @@
           `<strong>${customVariants.length}</strong> variant(s) detected. Source: ClinPGx curated annotations.</p>`;
         if (rkPh === 'proactive' && hasApoe) {
           html += '<div style="margin:0 0 12px;padding:10px 14px;border-radius:12px;border:1px solid rgba(130,200,160,.45);background:rgba(130,200,160,.08);font-size:12px;line-height:1.55">';
-          html += '<strong>Proactive health — APOE review</strong><br />';
-          html += '<span class="muted">This order uses the proactive health workflow. <strong>APOE</strong> rows (typically <code>rs429358</code>, <code>rs7412</code>) define ε2/ε3/ε4 alleles. ';
-          html += 'Use <strong>Reviewer comment</strong> below for clinical interpretation (e.g. risk context beyond drug metabolism). ';
-          html += 'The <strong>Significance</strong> column reflects ClinPGx drug-gene annotations.</span>';
+          html += '<strong>Proactive health — extended panel (incl. APOE)</strong><br />';
+          html += '<span class="muted">The <strong>APOE result</strong> summary above lists tag-SNP genotypes and phase notes. ';
+          html +=
+            'In this table, <strong>Significance</strong> / <strong>Affected drug(s)</strong> come from <strong>ClinPGx</strong> and may read as pharmacogenomic even when your clinical question is ε2/ε3/ε4 or preventive health—use <strong>Case review</strong> notes below if needed.</span>';
           html += '</div>';
         }
 
@@ -6875,12 +6999,11 @@
         html += '<th style="width:50px;text-align:center" title="Include on PDF report">✓</th>';
         html += '<th>Gene</th><th>rsID</th><th>Variant</th><th>Genotype</th>';
         html += '<th>Zygosity</th><th>Significance</th><th>Affected Drug(s)</th><th>Evidence</th>';
-        html += '<th style="min-width:12rem">Reviewer comment</th><th>Status</th>';
+        html += '<th>Status</th>';
         html += '</tr></thead><tbody id="tblPgxCustomGenesBody">';
         customGenes.forEach(row => {
           const isVar = row.is_variant || (row.zygosity && row.zygosity !== 'homozygous_ref');
           const conf = !!row.reviewer_confirmed;
-          const rc = row.reviewer_comment != null ? String(row.reviewer_comment) : '';
           const statusBadge = isVar
             ? '<span class="badge" style="background:rgba(180,83,9,0.15);color:#b45309">Variant</span>'
             : '<span class="badge" style="opacity:0.6">Ref</span>';
@@ -6896,7 +7019,6 @@
           html += `<td style="font-size:11px">${escapeHtml(row.clinical_significance || '')}</td>`;
           html += `<td style="font-size:11px;max-width:14rem">${escapeHtml(row.drugs || '')}</td>`;
           html += `<td style="font-size:11px">${escapeHtml(row.evidence_level || '')}</td>`;
-          html += `<td><textarea class="pgx-custom-comment" rows="2" style="width:100%;min-width:10rem;font-size:11px;padding:6px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)">${escapeHtml(rc)}</textarea></td>`;
           html += `<td>${statusBadge}</td>`;
           html += '</tr>';
         });
@@ -6925,7 +7047,7 @@
       html +=
         '<button type="button" class="btn primary" id="btnSavePgxReview">Save PGx review</button>';
       html +=
-        '<span class="muted" style="font-size:11px;max-width:40rem;line-height:1.45">Stores <code>pgx.portal_review</code>, PharmCAT <code>gene_results</code>, and extended panel <code>custom_gene_results</code> (include + reviewer comment per rsID, e.g. APOE). «Reprocess only» preserves review fields when pipeline data is regenerated.</span>';
+        '<span class="muted" style="font-size:11px;max-width:40rem;line-height:1.45">Stores <code>pgx.portal_review</code>, PharmCAT <code>gene_results</code> (include on PDF per gene), and extended panel <code>custom_gene_results</code> (include per rsID). «Reprocess only» preserves review fields when pipeline data is regenerated.</span>';
       html += '</div>';
       box.innerHTML = html;
       const btn = qs('btnSavePgxReview');
@@ -6966,6 +7088,11 @@
         cfInput.addEventListener('input', applyCustomFilter);
         if (cfVariant) cfVariant.addEventListener('change', applyCustomFilter);
       }
+
+      delete _pgxTableSortState.tblPgxGenes;
+      delete _pgxTableSortState.tblPgxCustomGenes;
+      installPgxTableSorting('tblPgxGenes');
+      installPgxTableSorting('tblPgxCustomGenes');
     }
 
     async function savePgxReview() {
@@ -6990,31 +7117,50 @@
         });
       });
       const custom_gene_reviews = [];
+      const prevCustom = Array.isArray(reviewData.pgx && reviewData.pgx.custom_gene_results)
+        ? reviewData.pgx.custom_gene_results
+        : [];
       document.querySelectorAll('#tblPgxCustomGenesBody tr[data-pgx-custom-gene]').forEach(tr => {
         const gene = tr.getAttribute('data-pgx-custom-gene');
         const rsid = tr.getAttribute('data-pgx-custom-rsid');
         if (!gene || !rsid) return;
         const c = tr.querySelector('.pgx-custom-confirmed');
-        const ta = tr.querySelector('.pgx-custom-comment');
+        const prevRow = prevCustom.find(
+          r => String(r.gene || '') === gene && String(r.rsid || '') === rsid
+        );
         custom_gene_reviews.push({
           gene,
           rsid,
           reviewer_confirmed: !!(c && c.checked),
-          reviewer_comment: ta ? String(ta.value || '') : '',
+          reviewer_comment: prevRow ? String(prevRow.reviewer_comment || '') : '',
         });
       });
       try {
+        const cbApoePdf = qs('pgxIncludeApoeProactivePdf');
+        const pvPrev = reviewData.pgx && reviewData.pgx.portal_review;
+        let incApoePdf = false;
+        if (cbApoePdf) {
+          incApoePdf = !!cbApoePdf.checked;
+        } else if (pvPrev && typeof pvPrev === 'object') {
+          incApoePdf = !!(
+            pvPrev.include_apoe_proactive_pdf === true || pvPrev.include_apoe_proactive_pdf === 'true'
+          );
+        }
         const res = await apiPost(`/order/${encodeURIComponent(orderId)}/pgx-review`, {
           reviewer_notes,
           reviewed,
           gene_reviews,
           custom_gene_reviews,
+          include_apoe_proactive_pdf: incApoePdf,
         });
         if (res && res.pgx && typeof res.pgx === 'object') {
           reviewData.pgx = res.pgx;
         }
         toast('PGx review saved');
         renderReviewPgx();
+        try {
+          if (typeof updateSelectedVariantsList === 'function') updateSelectedVariantsList();
+        } catch (e2) { /* ignore */ }
       } catch (e) {
         const msg = String((e && e.message) || e);
         const hint404 =
@@ -10140,22 +10286,118 @@
       return lines.length ? lines.join('<br/>') : '<span class="muted">No extra reference fields on this variant (pipeline metadata).</span>';
     }
 
+    /** HTML summary of PharmCAT + extended PGx rows marked ✓ Include (saved via Save PGx review). */
+    function buildPgxReportSelectionsHtml(pharmOn, customOn) {
+      const pa = Array.isArray(pharmOn) ? pharmOn : [];
+      const ca = Array.isArray(customOn) ? customOn : [];
+      if (!pa.length && !ca.length) {
+        return '<div style="padding:12px 14px;border:1px dashed var(--line);border-radius:12px;background:rgba(180,83,9,.06);font-size:12px;line-height:1.5">' +
+          '<strong>No PGx rows selected for the PDF yet.</strong> Open the <strong>PGx</strong> tab, check <strong>✓ Include</strong> for PharmCAT genes and/or extended panel positions, then click <strong>Save PGx review</strong>.</div>';
+      }
+      let html = '<div class="muted" style="font-size:11px;margin-bottom:10px">These inclusions are stored in <code>result.json</code> and drive the PharmCAT / extended-panel sections on the customer PDF.</div>';
+      if (pa.length) {
+        html += `<h4 style="font-size:13px;margin:0 0 6px">PharmCAT — included on report (${pa.length})</h4>` +
+          '<table style="font-size:12px;width:100%;border-collapse:collapse;margin-bottom:14px">' +
+          '<thead><tr>' +
+          '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)">Gene</th>' +
+          '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)">Diplotype</th>' +
+          '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)">Phenotype</th>' +
+          '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)">Category</th>' +
+          '</tr></thead><tbody>';
+        pa.forEach(g => {
+          const cat = String(g.category || '').trim();
+          const catLabel = cat === 'actionable' ? 'Actionable' : 'Normal';
+          html += '<tr>' +
+            `<td style="padding:6px 8px;font-weight:600">${escapeHtml(String(g.gene || ''))}</td>` +
+            `<td style="padding:6px 8px;font-family:ui-monospace,monospace;font-size:11px">${escapeHtml(String(g.diplotype || ''))}</td>` +
+            `<td style="padding:6px 8px">${escapeHtml(String(g.phenotype || ''))}</td>` +
+            `<td style="padding:6px 8px">${escapeHtml(catLabel)}</td>` +
+            '</tr>';
+        });
+        html += '</tbody></table>';
+      }
+      if (ca.length) {
+        html += `<h4 style="font-size:13px;margin:0 0 6px">Extended PGx panel — included on report (${ca.length})</h4>` +
+          '<table style="font-size:12px;width:100%;border-collapse:collapse;margin-bottom:8px">' +
+          '<thead><tr>' +
+          '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)">Gene</th>' +
+          '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)">rsID</th>' +
+          '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)">Genotype</th>' +
+          '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)">Zygosity</th>' +
+          '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)">Evidence</th>' +
+          '</tr></thead><tbody>';
+        ca.forEach(r => {
+          const zyg = String(r.zygosity || '').replace(/_/g, ' ');
+          html += '<tr>' +
+            `<td style="padding:6px 8px;font-weight:600">${escapeHtml(String(r.gene || ''))}</td>` +
+            `<td style="padding:6px 8px;font-size:11px">${escapeHtml(String(r.rsid || ''))}</td>` +
+            `<td style="padding:6px 8px;font-family:ui-monospace;font-size:11px">${escapeHtml(String(r.genotype || ''))}</td>` +
+            `<td style="padding:6px 8px">${escapeHtml(zyg)}</td>` +
+            `<td style="padding:6px 8px">${escapeHtml(String(r.evidence_level || ''))}</td>` +
+            '</tr>';
+        });
+        html += '</tbody></table>';
+      }
+      return html;
+    }
+
+    let _pgxTableSortState = {};
+    function installPgxTableSorting(tableId) {
+      const table = document.getElementById(tableId);
+      if (!table) return;
+      const tbody = table.querySelector('tbody');
+      const theadRow = table.querySelector('thead tr');
+      if (!tbody || !theadRow) return;
+      theadRow.querySelectorAll('th').forEach((th, colIdx) => {
+        if (colIdx === 0) return;
+        th.classList.add('pgx-sortable-th');
+        const label = (th.textContent || '').replace(/\s*[▲▼]\s*$/g, '').trim();
+        th.title = (th.title ? th.title + ' · ' : '') + 'Sort by ' + (label || 'column');
+        th.addEventListener('click', () => sortPgxTableColumn(tableId, tbody, colIdx, th, theadRow));
+      });
+    }
+    function sortPgxTableColumn(tableId, tbody, colIdx, th, theadRow) {
+      const st = _pgxTableSortState[tableId] || {};
+      let dir = 1;
+      if (st.col === colIdx) dir = -st.dir;
+      _pgxTableSortState[tableId] = { col: colIdx, dir };
+      theadRow.querySelectorAll('th').forEach(h => h.removeAttribute('data-sort'));
+      th.setAttribute('data-sort', dir === 1 ? 'asc' : 'desc');
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      rows.sort((a, b) => {
+        const ta = (a.cells[colIdx] && a.cells[colIdx].innerText || '').trim();
+        const tb = (b.cells[colIdx] && b.cells[colIdx].innerText || '').trim();
+        return ta.localeCompare(tb, undefined, { numeric: true, sensitivity: 'base' }) * dir;
+      });
+      rows.forEach(r => tbody.appendChild(r));
+    }
+
     function updateSelectedVariantsList() {
       const list = qs('selectedVariantsList');
 
-      // PGx orders: gene results come from PharmCAT, not from the Variants tab
       const elig = carrierReportEligible(reviewData?.order_params);
+      const pgx = reviewData?.pgx || {};
+      const pharmOn = Array.isArray(pgx.gene_results) ? pgx.gene_results.filter(g => g.reviewer_confirmed) : [];
+      const customOn = Array.isArray(pgx.custom_gene_results) ? pgx.custom_gene_results.filter(r => r.reviewer_confirmed) : [];
+      const nPgxPdf = pharmOn.length + customOn.length;
+
+      // PGx-only orders: report case lists saved ✓ Include rows (same data the PDF uses via pgx_for_pdf).
       if (elig.ok && elig.kind === 'pgx') {
-        const pgx = reviewData?.pgx || {};
-        const genes = pgx.gene_results || [];
-        const confirmed = genes.filter(g => g.reviewer_confirmed);
-        list.innerHTML = `<div class="muted" style="padding:8px">PGx report — ${genes.length} gene(s) from PharmCAT analysis` +
-          (confirmed.length ? `, ${confirmed.length} confirmed on the <strong>PGx</strong> tab` : '') +
-          `. No variant selection needed; the report includes all gene results. Use <strong>Preview HTML</strong> or <strong>Generate Report</strong> below.</div>`;
+        let html = '<div style="font-size:12px;line-height:1.55;margin-bottom:12px">';
+        html += '<strong>PGx report scope</strong> — check <strong>✓ Include</strong> on the <strong>PGx</strong> tab and click <strong>Save PGx review</strong>. ';
+        html += 'Listed below matches what will appear on the pharmacogenomics PDF.</div>';
+        html += buildPgxReportSelectionsHtml(pharmOn, customOn);
+        list.innerHTML = html;
         return;
       }
 
       if (selectedVariants.size === 0) {
+        if (nPgxPdf && elig.ok && (elig.kind === 'proactive' || elig.kind === 'exome')) {
+          list.innerHTML =
+            '<div class="muted" style="font-size:12px;margin-bottom:12px">No rows checked on the <strong>Variants</strong> tab — the PDF can still include the PGx sections below (per <strong>PGx</strong> tab + <strong>Save PGx review</strong>).</div>' +
+            buildPgxReportSelectionsHtml(pharmOn, customOn);
+          return;
+        }
         list.innerHTML = '<div class="muted" style="padding:8px">No variants selected — <strong>Generate Report</strong> will produce a <strong>negative</strong> result (no clinically significant variants on the PDF). Use the <strong>Variants</strong> tab to check rows to include specific findings (P/LP auto-checked on <strong>Load</strong> when present).</div>';
         return;
       }
@@ -10192,6 +10434,11 @@
           <textarea class="report-variant-text" data-variant-id="${vidEnc}" data-report-field="variant_summary" rows="5" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-size:12px;resize:vertical">${escapeHtml(rt.variant_summary)}</textarea>
         </div>`;
       });
+      if (nPgxPdf && elig.ok && (elig.kind === 'proactive' || elig.kind === 'exome')) {
+        html += '<hr style="border:0;border-top:1px solid var(--line);margin:20px 0 14px" />' +
+          '<h4 style="font-size:13px;margin:0 0 8px">Also on PDF from PGx review</h4>' +
+          buildPgxReportSelectionsHtml(pharmOn, customOn);
+      }
       list.innerHTML = html;
 
       list.querySelectorAll('[data-remove-vid]').forEach(btn => {

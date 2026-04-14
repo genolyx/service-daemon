@@ -25,7 +25,6 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from ..base import ServicePlugin
 from ..wes_panels import (
     interpretation_gene_set_for_job,
-    pgx_portal_gene_allowlist_for_job,
     should_apply_interpretation_post_filter,
 )
 from ...config import normalize_legacy_carrier_container_path, settings
@@ -1064,6 +1063,10 @@ class CarrierScreeningPlugin(ServicePlugin):
         )
         if is_fresh:
             parts.append("--fresh")
+            # Live Nextflow process table (shows each process; cached tasks appear as CACHED in trace/log).
+            if getattr(settings, "carrier_screening_fresh_append_nf_live_log", True):
+                if "--nf-live-log" not in parts:
+                    parts.append("--nf-live-log")
         extra = (settings.carrier_screening_script_extra_args or "").strip()
         if extra:
             parts.extend(shlex.split(extra))
@@ -1198,12 +1201,19 @@ class CarrierScreeningPlugin(ServicePlugin):
 
         apply_wes_panel_to_job_params(job)
 
-        if job.params.get("_prior_reuse"):
+        # Follow-up / reflex orders set _prior_reuse so we normally skip Nextflow and reuse the prior VCF.
+        # Force Run (Fresh) sets _pipeline_fresh — user expects a full gx-exome re-run; do NOT short-circuit.
+        if job.params.get("_prior_reuse") and not (job.params or {}).get("_pipeline_fresh"):
             logger.info(
                 "[carrier_screening] prior pipeline reuse — skipping Nextflow/run_analysis for %s",
                 job.order_id,
             )
             return "true"
+        if job.params.get("_prior_reuse") and (job.params or {}).get("_pipeline_fresh"):
+            logger.info(
+                "[carrier_screening] Force Run (Fresh): running full pipeline despite _prior_reuse for %s",
+                job.order_id,
+            )
 
         script_path = self._effective_run_analysis_script()
         if script_path:
@@ -1520,7 +1530,12 @@ class CarrierScreeningPlugin(ServicePlugin):
                 VariantFilterConfig,
             )
             from .annotator import VariantAnnotator
-            from .review import extract_qc_summary, generate_result_json, generate_variants_tsv
+            from .review import (
+                atomic_write_json_file,
+                extract_qc_summary,
+                generate_result_json,
+                generate_variants_tsv,
+            )
             from .vep_parser import is_vep_annotated_vcf, extract_vep_annotations_from_vcf
             from .layout_norm import align_carrier_job_dirs_from_main_vcf
 
@@ -2020,7 +2035,8 @@ class CarrierScreeningPlugin(ServicePlugin):
                 seen_mr.add(rp)
                 metric_image_roots.append(p)
             dark_roots = self._qc_extra_search_dirs(job, analysis_dir)
-            _pgx_allow = pgx_portal_gene_allowlist_for_job(job)
+            # PharmCAT rows: list all genes PharmCAT emitted (portal reviewer selects ✓ Include for PDF).
+            # Do not intersect with WES interpretation genes — that hid most PharmCAT output.
             result_json_path = await asyncio.to_thread(
                 generate_result_json,
                 annotated_variants=annotated_variants,
@@ -2041,7 +2057,6 @@ class CarrierScreeningPlugin(ServicePlugin):
                     "vep_preparsed_keys": len(vep_annotations) if vep_annotations else 0,
                     "vep_annotation_enabled": bool(is_vep_vcf),
                 },
-                pgx_panel_gene_symbols=_pgx_allow,
             )
 
             # ── 13. variants.tsv 생성 ──
@@ -2057,8 +2072,7 @@ class CarrierScreeningPlugin(ServicePlugin):
             # ── 14. QC summary JSON 저장 ──
             def _write_qc():
                 qc_path = os.path.join(portal_output_dir, "qc_summary.json")
-                with open(qc_path, "w", encoding="utf-8") as f:
-                    json.dump(qc_summary, f, ensure_ascii=False, indent=2, default=str)
+                atomic_write_json_file(qc_path, qc_summary)
 
             await asyncio.to_thread(_write_qc)
 
@@ -2074,6 +2088,10 @@ class CarrierScreeningPlugin(ServicePlugin):
             return False
         except Exception as e:
             logger.error(f"Result processing failed: {e}", exc_info=True)
+            try:
+                job.error_log = str(e)
+            except Exception:
+                pass
             return False
 
     # ─── Step 5: 출력 파일 목록 ────────────────────────────
@@ -2170,11 +2188,12 @@ class CarrierScreeningPlugin(ServicePlugin):
             langs = report_languages_from_order(raw_params)
             params = _carrier_order_flat(raw_params)
             if kind is None or langs is None:
-                logger.warning(
-                    f"[generate_report] Unsupported carrier PDF order: {job.order_id} "
-                    f"kind={kind} langs={langs} params_keys={list(params.keys())}"
+                raise RuntimeError(
+                    "Cannot determine PDF template or languages for this order "
+                    f"({job.order_id}): kind={kind!r}, langs={langs!r}. "
+                    "Ensure package_code / wes_panel_id match a supported PDF type (carrier, couples, "
+                    "whole exome, proactive, PGx) and report_language is EN, CN, or KO."
                 )
-                return False
 
             languages = langs
 
@@ -2195,10 +2214,10 @@ class CarrierScreeningPlugin(ServicePlugin):
                     if params.get("patient2_gender"):
                         merged["gender"] = params["patient2_gender"]
                 if not (merged.get("name") or "").strip():
-                    logger.warning(
-                        f"[generate_report] Couples report missing partner name: {job.order_id}"
+                    raise RuntimeError(
+                        "Couples report requires a partner name (order patient2_name or partner name "
+                        f"on the Generate Report form). Order: {job.order_id}"
                     )
-                    return False
                 partner_info = merged
 
             pi = dict(patient_info) if patient_info else {}
@@ -2259,6 +2278,13 @@ class CarrierScreeningPlugin(ServicePlugin):
             for pdf_path in pdf_paths:
                 logger.info(f"  Generated PDF: {pdf_path}")
 
+            if not pdf_paths:
+                raise RuntimeError(
+                    "No PDF files were written. Common causes: WeasyPrint missing or failed to render; "
+                    "Jinja template error (check template_dir and pgx_* / carrier_* HTML); or permission "
+                    f"denied writing under {output_dir}. See service-daemon logs for the first error above."
+                )
+
             logger.info(
                 f"[generate_report] Complete: {output_dir} "
                 f"({len(pdf_paths)} PDF files generated)"
@@ -2267,7 +2293,7 @@ class CarrierScreeningPlugin(ServicePlugin):
 
         except Exception as e:
             logger.error(f"Report generation failed: {e}", exc_info=True)
-            return False
+            raise
 
     async def generate_report(
         self,

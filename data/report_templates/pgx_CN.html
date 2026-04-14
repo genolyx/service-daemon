@@ -354,8 +354,13 @@
 
 
     {% set drug_recs = data.pgx.drug_recommendations if data.pgx and data.pgx.drug_recommendations else [] %}
-    {% if actionable | length > 0 and drug_recs | length > 0 %}
+    {% set custom_results = data.pgx.custom_gene_results if data.pgx and data.pgx.custom_gene_results else [] %}
+    {% set custom_variants = custom_results | selectattr('is_variant') | list if custom_results else [] %}
+    {% set _pgx_show_drugs = actionable | length > 0 and drug_recs | length > 0 %}
+    {% set _pgx_show_custom = custom_results | length > 0 %}
+    {% if _pgx_show_drugs or _pgx_show_custom %}
     <div class="new-page">
+        {% if _pgx_show_drugs %}
         <div class="section-title">藥物處方建議</div>
         <p style="font-size:8pt;color:#64748b;margin:6px 0 12px;">基於 CPIC / DPWG 臨床指南，針對需關注結果的基因。</p>
         <table class="drug-rec-table">
@@ -380,14 +385,9 @@
                 {% endfor %}
             </tbody>
         </table>
-    </div>
-    {% endif %}
-
-    {% set custom_results = data.pgx.custom_gene_results if data.pgx and data.pgx.custom_gene_results else [] %}
-    {% set custom_variants = custom_results | selectattr('is_variant') | list if custom_results else [] %}
-    {% if custom_results | length > 0 %}
-    <div class="new-page">
-        <div class="section-title">擴展 PGx 基因面板 — 策展變異基因分型</div>
+        {% endif %}
+        {% if _pgx_show_custom %}
+        <div class="section-title"{% if _pgx_show_drugs %} style="margin-top:28px;"{% endif %}>擴展 PGx 基因面板 — 策展變異基因分型</div>
         <p style="font-size:8pt;color:#64748b;margin:6px 0 8px;">
             PharmCAT (CPIC/DPWG) 分析之外的額外藥物基因體學標記。
             {% if custom_variants | length > 0 %}檢測到 {{ custom_variants | length }} 個變異。{% else %}未檢測到變異；所有位點均為純合參考型。{% endif %}
@@ -440,6 +440,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        {% endif %}
     </div>
     {% endif %}
 

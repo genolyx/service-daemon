@@ -320,6 +320,10 @@ class QueueManager:
             self._stats[job.service_code]["completed"] += 1
 
         logger.info(f"[{job.service_code}] Job {job.order_id} COMPLETED")
+        # One-shot Force Run (Fresh) flag — do not persist across completed orders.
+        if job.params and "_pipeline_fresh" in job.params:
+            job.params = dict(job.params)
+            job.params.pop("_pipeline_fresh", None)
         await self._ingest_result_snapshot(job)
         await self.persist_job(job)
 
@@ -360,6 +364,9 @@ class QueueManager:
             self._stats[job.service_code]["failed"] += 1
 
         logger.error(f"[{job.service_code}] Job {job.order_id} FAILED: {error}")
+        if job.params and "_pipeline_fresh" in job.params:
+            job.params = dict(job.params)
+            job.params.pop("_pipeline_fresh", None)
         await self.persist_job(job)
 
     def get_job(self, order_id: str) -> Optional[Job]:

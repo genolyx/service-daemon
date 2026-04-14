@@ -31,6 +31,7 @@ import csv
 import json
 import glob
 import logging
+import tempfile
 from typing import AbstractSet, Dict, Any, List, Optional, Tuple
 
 from ...config import normalize_legacy_carrier_container_path
@@ -1681,6 +1682,41 @@ def _carrier_result_metadata_block(
     return meta
 
 
+def atomic_write_json_file(path: str, obj: Any) -> None:
+    """
+    Write JSON atomically (temp file in the same directory + os.replace).
+
+    Raises RuntimeError with remediation hints on permission errors (common when
+    Nextflow/Docker created the directory or prior result.json as root).
+    """
+    d = os.path.dirname(path) or "."
+    os.makedirs(d, exist_ok=True)
+    text = json.dumps(obj, ensure_ascii=False, indent=2, default=str)
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp", prefix=".json_write_")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except PermissionError as e:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise RuntimeError(
+            "Cannot write "
+            f"{path}: permission denied. If the pipeline created this folder or "
+            "result.json as root, fix ownership (e.g. chown the order directory to the "
+            "daemon UID) or set CARRIER_SCREENING_ARTIFACT_BASE / "
+            "CARRIER_SCREENING_REPORT_OUTPUT_ROOT to a volume writable by the daemon."
+        ) from e
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def generate_result_json(
     annotated_variants: List[Dict[str, Any]],
     acmg_results: List[Dict[str, Any]],
@@ -1714,9 +1750,10 @@ def generate_result_json(
         analysis_dir: Pipeline analysis root (dark-gene Nextflow outdir); defaults to output_dir
         dark_genes_extra_roots: Extra dirs to scan for summary/*.txt when artifact analysis_dir
             has no pipeline publishDir output (e.g. Nextflow wrote under carrier_screening_layout_base).
-        pgx_panel_gene_symbols: Allowlist from ``wes_panels.pgx_portal_gene_allowlist_for_job``:
-            non-empty ``set`` filters ``gene_results``; empty ``set`` clears rows (scoped order, no genes);
-            ``None`` = unscoped (show all PharmCAT genes).
+        pgx_panel_gene_symbols: Optional allowlist to intersect ``gene_results`` with a gene set.
+            Non-empty ``set`` filters ``gene_results``; empty ``set`` clears rows;
+            ``None`` = show all PharmCAT genes (default for carrier ``process_results`` — reviewer uses
+            per-gene ``reviewer_confirmed`` for PDF). Pass a set only for specialized callers.
 
     Returns:
         생성된 result.json 파일 경로
@@ -2019,8 +2056,7 @@ def generate_result_json(
     }
 
     output_path = os.path.join(output_dir, "result.json")
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False, indent=2, default=str)
+    atomic_write_json_file(output_path, result)
 
     logger.info(f"Generated result.json: {output_path} ({len(variants_for_review)} variants)")
     return output_path

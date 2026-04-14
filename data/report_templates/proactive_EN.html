@@ -208,6 +208,19 @@
                 word-break: break-all; /* Ensures long gene names don't break the layout */
             }
 
+            /* PGx structured tables (same data as standalone PGx report) */
+            .banner.banner-pgx-act { background-color: #fffbeb; color: #92400e; border-left: 4px solid #d97706; }
+            .banner.banner-pgx-ok { background-color: #f0fdf4; color: #15803d; border-left: 4px solid #15803d; }
+            .badge-actionable { display: inline-block; background: #fef3c7; color: #92400e; font-size: 7pt; font-weight: 600; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; }
+            .badge-normal { display: inline-block; background: #f0fdf4; color: #15803d; font-size: 7pt; font-weight: 500; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; }
+            .badge-variant { display: inline-block; background: #fef3c7; color: #92400e; font-size: 7pt; font-weight: 600; padding: 1px 6px; border-radius: 3px; }
+            .badge-ref { display: inline-block; background: #f1f5f9; color: #64748b; font-size: 7pt; font-weight: 500; padding: 1px 6px; border-radius: 3px; }
+            .drug-rec-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            .drug-rec-table th { text-align: left; font-size: 7pt; color: #64748b; border-bottom: 1.5px solid #cbd5e1; padding: 4px 4px; text-transform: uppercase; font-weight: 500; }
+            .drug-rec-table td { padding: 6px 4px; border-bottom: 1px solid #f1f5f9; font-size: 7.5pt; vertical-align: top; }
+            .drug-name { font-weight: 600; text-transform: capitalize; }
+            .rec-text { font-size: 7pt; line-height: 1.3; color: #334155; }
+
             .director-section {
                 margin-top: 50px;
                 padding-top: 10px;
@@ -352,10 +365,157 @@
     </div>
     {% endif %}
 
-    {% if data.pgx and data.pgx.summary_for_pdf_html %}
+    {# include_pgx → structured PGx tables; include_apoe_on_proactive_pdf → APOE tag SNPs #}
+    {% set _rm = data.report_metadata if data.report_metadata else {} %}
+    {% set _inc_pgx = _rm.get('include_pgx', true) %}
+    {% set _inc_apoe_order = _rm.get('include_apoe_on_proactive_pdf', false) %}
+
+    {# Structured PharmCAT + extended panel (curated) — data from pgx_for_pdf merge #}
+    {% if _inc_pgx and data.pgx %}
+    {% set gene_results = data.pgx.gene_results if data.pgx.gene_results else [] %}
+    {% set actionable = gene_results | selectattr('category', 'equalto', 'actionable') | list %}
+    {% if gene_results | length > 0 %}
     <div class="new-page">
-        <div class="section-title">Pharmacogenomics (PharmCAT)</div>
-        {{ data.pgx.summary_for_pdf_html|safe }}
+        <div class="section-title">Pharmacogenomics — gene-level results (PharmCAT)</div>
+        {% if actionable | length > 0 %}
+        <div class="banner banner-pgx-act">
+            <p class="status-text">ACTIONABLE RESULT(S)</p>
+            <p class="banner-desc">{{ actionable | length }} gene(s) with actionable pharmacogenomic findings.</p>
+        </div>
+        {% else %}
+        <div class="banner banner-pgx-ok">
+            <p class="status-text">NO ACTIONABLE PGx FINDINGS</p>
+            <p class="banner-desc">No actionable pharmacogenomic variants were identified among the genes listed below.</p>
+        </div>
+        {% endif %}
+        <table class="summary-table">
+            <thead>
+                <tr>
+                    <th width="12%">Gene</th>
+                    <th width="18%">Diplotype</th>
+                    <th width="22%">Phenotype</th>
+                    <th width="24%">Allele Functions</th>
+                    <th width="11%">Source</th>
+                    <th width="13%">Category</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in gene_results %}
+                <tr>
+                    <td><span style="font-weight:600;">{{ row.gene }}</span></td>
+                    <td><span style="font-size:7pt;">{{ row.diplotype }}</span></td>
+                    <td>{{ row.phenotype }}</td>
+                    <td style="font-size:7pt;">
+                        {% set fns = [] %}
+                        {% if row.allele1_function %}{% set _ = fns.append(row.allele1_function) %}{% endif %}
+                        {% if row.allele2_function %}{% set _ = fns.append(row.allele2_function) %}{% endif %}
+                        {{ fns | join(' / ') if fns else '&mdash;' }}
+                    </td>
+                    <td>{{ row.guideline_source }}</td>
+                    <td>
+                        {% if row.category == 'actionable' %}
+                            <span class="badge-actionable">Actionable</span>
+                        {% else %}
+                            <span class="badge-normal">Normal</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="clinical-statement" style="margin-top:14px;">
+            This pharmacogenomics (PGx) test evaluates genetic variants in drug-metabolizing enzymes, transporters, and drug targets
+            to predict individual drug response. Results are derived from PharmCAT analysis using CPIC and DPWG clinical guidelines.
+            Actionable findings indicate that drug selection or dose adjustment may be warranted based on the patient's genotype.
+            These results should be interpreted in the context of the patient's complete clinical picture, including other medications,
+            organ function, and clinical status. Consultation with a clinical pharmacist or pharmacogenomics specialist is recommended
+            for actionable results.
+        </div>
+    </div>
+    {% endif %}
+
+    {% set drug_recs = data.pgx.drug_recommendations if data.pgx.drug_recommendations else [] %}
+    {% set custom_results = data.pgx.custom_gene_results if data.pgx.custom_gene_results else [] %}
+    {% set custom_variants = custom_results | selectattr('is_variant') | list if custom_results else [] %}
+    {% set _pgx_show_drugs = actionable | length > 0 and drug_recs | length > 0 %}
+    {% set _pgx_show_custom = custom_results | length > 0 %}
+    {% if _pgx_show_drugs or _pgx_show_custom %}
+    <div class="new-page">
+        {% if _pgx_show_drugs %}
+        <div class="section-title">Drug prescribing recommendations (PGx)</div>
+        <p class="detail-text" style="margin:6px 0 12px;">Based on CPIC / DPWG for genes with actionable findings.</p>
+        <table class="drug-rec-table">
+            <thead>
+                <tr>
+                    <th width="10%">Gene</th>
+                    <th width="16%">Drug</th>
+                    <th width="8%">Source</th>
+                    <th width="30%">Clinical implication</th>
+                    <th width="36%">Prescribing recommendation</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rec in drug_recs %}
+                <tr>
+                    <td><span style="font-weight:600;">{{ rec.gene }}</span></td>
+                    <td><span class="drug-name">{{ rec.drug }}</span></td>
+                    <td>{{ rec.source }}</td>
+                    <td><span class="rec-text">{{ rec.implication }}</span></td>
+                    <td><span class="rec-text">{{ rec.recommendation }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+        {% if _pgx_show_custom %}
+        <div class="section-title"{% if _pgx_show_drugs %} style="margin-top:28px;"{% endif %}>Extended PGx panel — curated variant genotyping</div>
+        <p class="detail-text" style="margin:6px 0 8px;">
+            Additional pharmacogenomic markers beyond core PharmCAT output; genotyped against curated positions (e.g. ClinPGx).
+            {% if custom_variants | length > 0 %}{{ custom_variants | length }} variant(s) detected.{% else %}No variants detected at typed positions (homozygous reference).{% endif %}
+        </p>
+        <table class="summary-table">
+            <thead>
+                <tr>
+                    <th width="10%">Gene</th>
+                    <th width="12%">rsID</th>
+                    <th width="12%">Variant</th>
+                    <th width="10%">Genotype</th>
+                    <th width="20%">Significance</th>
+                    <th width="22%">Affected drug(s)</th>
+                    <th width="7%">Evidence</th>
+                    <th width="7%">Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in custom_results %}
+                <tr>
+                    <td><span style="font-weight:600;">{{ row.gene }}</span></td>
+                    <td style="font-size:7pt;">{{ row.rsid }}</td>
+                    <td style="font-size:7pt;">{{ row.variant_name }}</td>
+                    <td style="font-size:7pt;">{{ row.genotype }}</td>
+                    <td style="font-size:7pt;">{{ row.clinical_significance }}</td>
+                    <td style="font-size:7pt;">{{ row.drugs }}</td>
+                    <td style="font-size:7pt;">{{ row.evidence_level }}</td>
+                    <td>
+                        {% if row.is_variant %}
+                            <span class="badge-variant">Variant</span>
+                        {% else %}
+                            <span class="badge-ref">Ref</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if (_inc_apoe_order or _inc_pgx) and data.pgx and data.pgx.apoe_proactive_summary_html %}
+    <div class="new-page">
+        <div class="section-title">APOE (proactive health)</div>
+        {{ data.pgx.apoe_proactive_summary_html|safe }}
     </div>
     {% endif %}
 
@@ -370,6 +530,19 @@
         </div>
         {% else %}
         <p class="detail-text" style="font-size:8pt;color:#64748b;">Gene symbols are defined by the laboratory order; the count above matches the configured interpretation panel.</p>
+        {% endif %}
+        {% if _inc_pgx and data.pgx and data.pgx.genes_evaluated and data.pgx.genes_evaluated | length > 0 %}
+        {% set pgx_ev = data.pgx.genes_evaluated %}
+        <div style="margin-top:22px;padding-top:16px;border-top:1px solid #e2e8f0;">
+            <div class="sub-label">Pharmacogenomics — genes evaluated (PGx)</div>
+            <p class="detail-text" style="margin-bottom:8px;margin-top:8px;">
+                This pharmacogenomics report lists <strong>{{ pgx_ev | length }}</strong> gene(s) in the interpretation scope; below, <strong>{{ pgx_ev | length }}</strong> gene symbol(s) appear with analysis results.
+                Genes are analyzed via PharmCAT (CPIC/DPWG star-allele calling) and/or curated variant genotyping (ClinPGx).
+            </p>
+            <div class="gene-list-grid">
+                {{ pgx_ev | join(', ') }}
+            </div>
+        </div>
         {% endif %}
     </div>
 

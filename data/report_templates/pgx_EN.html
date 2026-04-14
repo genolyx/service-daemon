@@ -359,8 +359,13 @@
     </div>
 
     {% set drug_recs = data.pgx.drug_recommendations if data.pgx and data.pgx.drug_recommendations else [] %}
-    {% if actionable | length > 0 and drug_recs | length > 0 %}
+    {% set custom_results = data.pgx.custom_gene_results if data.pgx and data.pgx.custom_gene_results else [] %}
+    {% set custom_variants = custom_results | selectattr('is_variant') | list if custom_results else [] %}
+    {% set _pgx_show_drugs = actionable | length > 0 and drug_recs | length > 0 %}
+    {% set _pgx_show_custom = custom_results | length > 0 %}
+    {% if _pgx_show_drugs or _pgx_show_custom %}
     <div class="new-page">
+        {% if _pgx_show_drugs %}
         <div class="section-title">Drug Prescribing Recommendations</div>
         <p style="font-size:8pt;color:#64748b;margin:6px 0 12px;">Based on CPIC / DPWG clinical guidelines for genes with actionable findings.</p>
         <table class="drug-rec-table">
@@ -385,14 +390,9 @@
                 {% endfor %}
             </tbody>
         </table>
-    </div>
-    {% endif %}
-
-    {% set custom_results = data.pgx.custom_gene_results if data.pgx and data.pgx.custom_gene_results else [] %}
-    {% set custom_variants = custom_results | selectattr('is_variant') | list if custom_results else [] %}
-    {% if custom_results | length > 0 %}
-    <div class="new-page">
-        <div class="section-title">Extended PGx Panel — Curated Variant Genotyping</div>
+        {% endif %}
+        {% if _pgx_show_custom %}
+        <div class="section-title"{% if _pgx_show_drugs %} style="margin-top:28px;"{% endif %}>Extended PGx Panel — Curated Variant Genotyping</div>
         <p style="font-size:8pt;color:#64748b;margin:6px 0 8px;">
             Additional pharmacogenomic markers beyond PharmCAT (CPIC/DPWG) analysis.
             Variants are genotyped from the sequencing data against curated positions from ClinPGx.
@@ -446,6 +446,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        {% endif %}
     </div>
     {% endif %}
 

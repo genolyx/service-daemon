@@ -48,6 +48,10 @@
         .status-badge.carrier { background: #dc3545; }
         .status-badge.uncertain { background: #ffc107; color: #333; }
         .status-badge.negative { background: #28a745; }
+        .status-section.actionable { background: linear-gradient(135deg, #fffbeb, #fff3cd); border: 2px solid #d97706; }
+        .status-section.normal { background: linear-gradient(135deg, #f0fff4, #d4edda); border: 2px solid #28a745; }
+        .status-badge.actionable { background: #d97706; }
+        .status-badge.normal { background: #28a745; }
         .status-summary { margin-top: 8px; font-size: 9.5pt; color: #555; }
         h2 { font-size: 13pt; color: #2c3e50; margin: 25px 0 10px; padding-bottom: 5px; border-bottom: 2px solid #3498db; }
         .qc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 10px 0 20px; }
@@ -74,6 +78,59 @@
         .text-right { text-align: right; }
         .text-muted { color: #7f8c8d; }
         .mt-10 { margin-top: 10px; }
+        .clinical-statement {
+            font-size: 8.5pt;
+            color: #64748b;
+            line-height: 1.45;
+            text-align: justify;
+            margin-top: 14px;
+            margin-bottom: 12px;
+            background: #f8f9fa;
+            padding: 10px 12px;
+            border-radius: 6px;
+        }
+        .badge-actionable {
+            display: inline-block;
+            background: #fef3c7;
+            color: #92400e;
+            font-size: 7.5pt;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .badge-normal {
+            display: inline-block;
+            background: #d4edda;
+            color: #155724;
+            font-size: 7.5pt;
+            font-weight: 500;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .badge-variant {
+            display: inline-block;
+            background: #fef3c7;
+            color: #92400e;
+            font-size: 7.5pt;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .badge-ref {
+            display: inline-block;
+            background: #f1f5f9;
+            color: #64748b;
+            font-size: 7.5pt;
+            font-weight: 500;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .drug-rec-table { width: 100%; border-collapse: collapse; margin: 10px 0 20px; font-size: 8pt; }
+        .drug-rec-table th { background: #2980b9; color: white; padding: 6px 5px; text-align: left; font-size: 7.5pt; font-weight: 600; }
+        .drug-rec-table td { padding: 5px; border-bottom: 1px solid #ecf0f1; vertical-align: top; font-size: 7.5pt; }
+        .drug-rec-table tr:nth-child(even) { background: #f8f9fa; }
+        .drug-name { font-weight: 600; text-transform: capitalize; }
+        .rec-text { font-size: 7pt; line-height: 1.3; }
     </style>
 </head>
 <body>
@@ -140,6 +197,25 @@
 <p class="text-muted" style="font-size:8.5pt;margin:0 0 12px;padding:0 4px;">
     해석 대상 유전자 수: <strong>{{ data.genes_evaluated_count }}</strong> (주문 패널 기준)
 </p>
+{% if data.interpretation_genes and data.interpretation_genes | length > 0 %}
+<p style="font-size:8pt;color:#94a3b8;line-height:1.75;text-align:justify;margin:0 0 12px;padding:0 4px;">
+    {{ data.interpretation_genes | join(', ') }}
+</p>
+{% endif %}
+{% set _rm_pgx_gl = data.report_metadata if data.report_metadata else {} %}
+{% set _inc_pgx_gl = _rm_pgx_gl.get('include_pgx', true) %}
+{% if _inc_pgx_gl and data.pgx and data.pgx.genes_evaluated and data.pgx.genes_evaluated | length > 0 %}
+{% set pgx_ev = data.pgx.genes_evaluated %}
+<div style="margin-top:4px;padding-top:12px;border-top:1px solid #e9ecef;">
+    <p style="font-size:8.5pt;font-weight:600;color:#2c3e50;margin:0 0 6px;padding:0 4px;">약물유전체(PGx) 분석 대상 유전자</p>
+    <p style="font-size:8pt;color:#334155;margin:0 0 8px;line-height:1.4;padding:0 4px;">
+        본 보고서 약물유전체 해석 범위는 <strong>{{ pgx_ev | length }}</strong>개 유전자이며, 아래에는 분석 결과가 있는 <strong>{{ pgx_ev | length }}</strong>개 유전자 기호가 나열됩니다. PharmCAT(CPIC/DPWG) 및/또는 Curated(ClinPGx) 유전자형 분석을 포함합니다.
+    </p>
+    <p style="font-size:8pt;color:#94a3b8;line-height:1.8;text-align:justify;margin:0;padding:0 4px 12px;">
+        {{ pgx_ev | join(', ') }}
+    </p>
+</div>
+{% endif %}
 
 {% set status = data.carrier_status.status | default('negative') %}
 <div class="status-section {{ status }}">
@@ -260,10 +336,167 @@
 {% endfor %}
 {% endif %}
 
-{% if data.pgx and data.pgx.summary_for_pdf_html %}
+{% set _rm = data.report_metadata if data.report_metadata else {} %}
+{% set _inc_pgx = _rm.get('include_pgx', true) %}
+{% set _inc_apoe_order = _rm.get('include_apoe_on_proactive_pdf', false) %}
+
+{% if _inc_pgx and data.pgx %}
+{% set gene_results = data.pgx.gene_results if data.pgx.gene_results else [] %}
+{% set actionable = gene_results | selectattr('category', 'equalto', 'actionable') | list %}
+{% if gene_results | length > 0 %}
 <div class="page-break"></div>
-<h2>약물유전체 (PharmCAT)</h2>
-{{ data.pgx.summary_for_pdf_html|safe }}
+<h2>유전자별 결과 (PharmCAT)</h2>
+{% if actionable | length > 0 %}
+<div class="status-section actionable">
+    <div>
+        <span class="status-badge actionable">조치 필요 결과</span>
+    </div>
+    <div class="status-summary">{{ actionable | length }}개 유전자에서 조치가 필요한 약물유전체 결과가 확인되었습니다. 약물 선택 또는 용량 조절이 필요할 수 있습니다.</div>
+</div>
+{% else %}
+<div class="status-section normal">
+    <div>
+        <span class="status-badge normal">정상</span>
+    </div>
+    <div class="status-summary">조치가 필요한 약물유전체 변이가 확인되지 않았습니다. 평가된 유전자에 대해 표준 약물 선택 및 용량이 적용됩니다.</div>
+</div>
+{% endif %}
+<table>
+    <thead>
+        <tr>
+            <th>유전자</th>
+            <th>이배체형</th>
+            <th>표현형</th>
+            <th>대립유전자 기능</th>
+            <th>지침 출처</th>
+            <th>분류</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in gene_results %}
+        <tr>
+            <td><strong>{{ row.gene }}</strong></td>
+            <td style="font-size:7.5pt;">{{ row.diplotype }}</td>
+            <td>{{ row.phenotype }}</td>
+            <td style="font-size:7.5pt;">
+                {% set fns = [] %}
+                {% if row.allele1_function %}{% set _ = fns.append(row.allele1_function) %}{% endif %}
+                {% if row.allele2_function %}{% set _ = fns.append(row.allele2_function) %}{% endif %}
+                {{ fns | join(' / ') if fns else '&mdash;' }}
+            </td>
+            <td>{{ row.guideline_source }}</td>
+            <td>
+                {% if row.category == 'actionable' %}
+                    <span class="badge-actionable">조치 필요</span>
+                {% else %}
+                    <span class="badge-normal">정상</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+<div class="clinical-statement">
+    본 약물유전체(PGx) 검사는 약물 대사효소, 운반체 및 약물 표적의 유전자 변이를 평가하여 개인별 약물 반응을 예측합니다. 결과는 PharmCAT 분석 및 CPIC·DPWG 임상 지침에 따릅니다.
+    조치가 필요한 소견은 환자 유전자형에 따라 약물 선택 또는 용량 조절이 필요할 수 있음을 의미합니다. 다른 약물, 장기 기능 및 임상 상태를 포함한 환자의 전체 임상 상황을 고려하여 해석해야 하며, 조치가 필요한 결과에 대해서는 임상 약사 또는 약물유전체 전문가 상담을 권장합니다.
+</div>
+{% endif %}
+
+{% set drug_recs = data.pgx.drug_recommendations if data.pgx.drug_recommendations else [] %}
+{% set custom_results = data.pgx.custom_gene_results if data.pgx.custom_gene_results else [] %}
+{% set custom_variants = custom_results | selectattr('is_variant') | list if custom_results else [] %}
+{% set _pgx_show_drugs = actionable | length > 0 and drug_recs | length > 0 %}
+{% set _pgx_show_custom = custom_results | length > 0 %}
+{% if _pgx_show_drugs or _pgx_show_custom %}
+<div class="page-break"></div>
+{% if _pgx_show_drugs %}
+<h2>약물 처방 권고</h2>
+<p class="text-muted" style="font-size:8pt;margin:6px 0 12px;">CPIC / DPWG 임상 지침에 따른 조치 필요 유전자 약물 권고.</p>
+<table class="drug-rec-table">
+    <thead>
+        <tr>
+            <th>유전자</th>
+            <th>약물</th>
+            <th>출처</th>
+            <th>임상적 영향</th>
+            <th>처방 권고</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for rec in drug_recs %}
+        <tr>
+            <td><strong>{{ rec.gene }}</strong></td>
+            <td><span class="drug-name">{{ rec.drug }}</span></td>
+            <td>{{ rec.source }}</td>
+            <td><span class="rec-text">{{ rec.implication }}</span></td>
+            <td><span class="rec-text">{{ rec.recommendation }}</span></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% if _pgx_show_custom %}
+<h2{% if _pgx_show_drugs %} style="margin-top:28px;"{% endif %}>확장 PGx 패널 — 큐레이션 변이 유전자형 분석</h2>
+<p class="text-muted" style="font-size:8pt;margin:6px 0 8px;">
+    PharmCAT (CPIC/DPWG) 분석 외 추가 약물유전체 마커.
+    {% if custom_variants | length > 0 %}{{ custom_variants | length }}개 변이 검출.{% else %}변이 미검출; 모든 위치 동형접합 참조형.{% endif %}
+</p>
+<div style="font-size:7pt;color:#475569;margin:0 0 10px;line-height:1.55;padding:6px 8px;border:0.5pt solid #e2e8f0;border-radius:4px;background:#f8fafc;">
+    <strong>상태:</strong>
+    <span style="background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:3px;font-weight:600;">변이</span> = 비참조 대립유전자 보유;
+    <span style="background:#f1f5f9;color:#64748b;padding:1px 5px;border-radius:3px;">참조</span> = 동형접합 참조형(야생형).
+    <strong style="margin-left:6px;">관련 약물:</strong> 변이 존재 시 효능, 대사 또는 안전성에 영향을 받을 수 있는 약물 — 용량 조절, 대체 약물 선택 또는 추가 모니터링이 필요할 수 있습니다.
+    <br>
+    <strong>근거 수준 (CPIC/PharmGKB):</strong>
+    <strong>1A</strong> = CPIC 가이드라인/FDA 라벨;
+    <strong>1B</strong> = 강력한 임상 주석;
+    <strong>2A</strong> = 중등도, 반복 검증;
+    <strong>2B</strong> = 중등도, 제한적 반복;
+    <strong>3</strong> = 낮음/단일 연구;
+    <strong>4</strong> = 예비/시험관 내.
+</div>
+<table>
+    <thead>
+        <tr>
+            <th>유전자</th>
+            <th>rsID</th>
+            <th>변이</th>
+            <th>유전자형</th>
+            <th>임상적 의의</th>
+            <th>관련 약물</th>
+            <th>근거</th>
+            <th>상태</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in custom_results %}
+        <tr>
+            <td><strong>{{ row.gene }}</strong></td>
+            <td style="font-size:7.5pt;">{{ row.rsid }}</td>
+            <td style="font-size:7.5pt;">{{ row.variant_name }}</td>
+            <td style="font-size:7.5pt;">{{ row.genotype }}</td>
+            <td style="font-size:7.5pt;">{{ row.clinical_significance }}</td>
+            <td style="font-size:7.5pt;">{{ row.drugs }}</td>
+            <td style="font-size:7.5pt;">{{ row.evidence_level }}</td>
+            <td>
+                {% if row.is_variant %}
+                    <span class="badge-variant">변이</span>
+                {% else %}
+                    <span class="badge-ref">참조</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endif %}
+{% endif %}
+
+{% if (_inc_apoe_order or _inc_pgx) and data.pgx and data.pgx.apoe_proactive_summary_html %}
+<div class="page-break"></div>
+<h2>APOE (주도적 건강)</h2>
+{{ data.pgx.apoe_proactive_summary_html|safe }}
 {% endif %}
 
 <div class="disclaimer">

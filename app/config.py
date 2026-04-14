@@ -247,6 +247,14 @@ class Settings(BaseSettings):
             "are already built explicitly; add only truly extra flags here (e.g. --shared-ref-dir /path)."
         ),
     )
+    carrier_screening_fresh_append_nf_live_log: bool = Field(
+        default=True,
+        description=(
+            "When Force Run (Fresh) invokes run_analysis.sh, append --nf-live-log so stdout shows a live "
+            "Nextflow process table. Full audit remains in gx-exome log/nextflow.log and log/trace.txt "
+            "(per-task metrics; resume shows CACHED where applicable). Set false for quieter pipeline.log."
+        ),
+    )
     carrier_screening_artifact_base: Optional[str] = Field(
         default=None,
         description=(

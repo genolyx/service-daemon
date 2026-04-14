@@ -206,6 +206,19 @@
             word-break: break-all; /* Ensures long gene names don't break the layout */
         }
 
+        /* PGx structured tables（與獨立 PGx 報告相同資料來源） */
+        .banner-actionable { background-color: #fffbeb; color: #92400e; border-left: 4px solid #d97706; }
+        .banner-normal { background-color: #f0fdf4; color: #15803d; border-left: 4px solid #15803d; }
+        .badge-actionable { display: inline-block; background: #fef3c7; color: #92400e; font-size: 7pt; font-weight: 600; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; }
+        .badge-normal { display: inline-block; background: #f0fdf4; color: #15803d; font-size: 7pt; font-weight: 500; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; }
+        .badge-variant { display: inline-block; background: #fef3c7; color: #92400e; font-size: 7pt; font-weight: 600; padding: 1px 6px; border-radius: 3px; }
+        .badge-ref { display: inline-block; background: #f1f5f9; color: #64748b; font-size: 7pt; font-weight: 500; padding: 1px 6px; border-radius: 3px; }
+        .drug-rec-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        .drug-rec-table th { text-align: left; font-size: 7pt; color: #64748b; border-bottom: 1.5px solid #cbd5e1; padding: 4px 4px; text-transform: uppercase; font-weight: 500; }
+        .drug-rec-table td { padding: 6px 4px; border-bottom: 1px solid #f1f5f9; font-size: 7.5pt; vertical-align: top; }
+        .drug-name { font-weight: 600; text-transform: capitalize; }
+        .rec-text { font-size: 7pt; line-height: 1.3; color: #334155; }
+
         .director-section {
             margin-top: 50px;
             padding-top: 10px;
@@ -344,10 +357,166 @@
         </div>
         {% endif %}
 
-    {% if data.pgx and data.pgx.summary_for_pdf_html %}
+    {% set _rm = data.report_metadata if data.report_metadata else {} %}
+    {% set _inc_pgx = _rm.get('include_pgx', true) %}
+    {% set _inc_apoe_order = _rm.get('include_apoe_on_proactive_pdf', false) %}
+
+    {% if _inc_pgx and data.pgx %}
+    {% set gene_results = data.pgx.gene_results if data.pgx.gene_results else [] %}
+    {% set actionable = gene_results | selectattr('category', 'equalto', 'actionable') | list %}
+    {% if gene_results | length > 0 %}
     <div class="new-page">
-        <div class="section-title">藥物基因體學（PharmCAT）</div>
-        {{ data.pgx.summary_for_pdf_html|safe }}
+        <div class="section-title">藥物基因體學 — 基因層級結果（PharmCAT）</div>
+        {% if actionable | length > 0 %}
+        <div class="banner banner-actionable">
+            <p class="status-text">需關注的藥物基因結果</p>
+            <p class="banner-desc">發現 {{ actionable | length }} 個基因具有需關注的藥物基因體學結果。可能需要調整藥物選擇或劑量。</p>
+        </div>
+        {% else %}
+        <div class="banner banner-normal">
+            <p class="status-text">無需關注的藥物基因結果</p>
+            <p class="banner-desc">未發現需要關注的藥物基因體學變異。所評估的基因適用標準藥物選擇和劑量。</p>
+        </div>
+        {% endif %}
+        <table class="summary-table">
+            <thead>
+                <tr>
+                    <th width="12%">基因</th>
+                    <th width="18%">二倍體型</th>
+                    <th width="22%">表現型</th>
+                    <th width="24%">等位基因功能</th>
+                    <th width="11%">指南來源</th>
+                    <th width="13%">類別</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in gene_results %}
+                <tr>
+                    <td><span style="font-weight:600;">{{ row.gene }}</span></td>
+                    <td><span style="font-size:7pt;">{{ row.diplotype }}</span></td>
+                    <td>{{ row.phenotype }}</td>
+                    <td style="font-size:7pt;">
+                        {% set fns = [] %}
+                        {% if row.allele1_function %}{% set _ = fns.append(row.allele1_function) %}{% endif %}
+                        {% if row.allele2_function %}{% set _ = fns.append(row.allele2_function) %}{% endif %}
+                        {{ fns | join(' / ') if fns else '&mdash;' }}
+                    </td>
+                    <td>{{ row.guideline_source }}</td>
+                    <td>
+                        {% if row.category == 'actionable' %}
+                            <span class="badge-actionable">需關注</span>
+                        {% else %}
+                            <span class="badge-normal">正常</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="clinical-statement" style="margin-top:14px;">
+            本藥物基因體學 (PGx) 檢測評估藥物代謝酶、轉運蛋白和藥物靶點的基因變異，以預測個體藥物反應。結果基於 PharmCAT 分析，
+            參照 CPIC 和 DPWG 臨床指南。需關注的結果表明可能需要根據患者基因型調整藥物選擇或劑量。這些結果應結合患者的完整臨床
+            情況進行解讀，包括其他藥物、器官功能和臨床狀態。對於需關注的結果，建議諮詢臨床藥劑師或藥物基因體學專家。
+        </div>
+    </div>
+    {% endif %}
+
+    {% set drug_recs = data.pgx.drug_recommendations if data.pgx.drug_recommendations else [] %}
+    {% set custom_results = data.pgx.custom_gene_results if data.pgx.custom_gene_results else [] %}
+    {% set custom_variants = custom_results | selectattr('is_variant') | list if custom_results else [] %}
+    {% set _pgx_show_drugs = actionable | length > 0 and drug_recs | length > 0 %}
+    {% set _pgx_show_custom = custom_results | length > 0 %}
+    {% if _pgx_show_drugs or _pgx_show_custom %}
+    <div class="new-page">
+        {% if _pgx_show_drugs %}
+        <div class="section-title">藥物處方建議</div>
+        <p style="font-size:8pt;color:#64748b;margin:6px 0 12px;">基於 CPIC / DPWG 臨床指南，針對需關注結果的基因。</p>
+        <table class="drug-rec-table">
+            <thead>
+                <tr>
+                    <th width="10%">基因</th>
+                    <th width="16%">藥物</th>
+                    <th width="8%">來源</th>
+                    <th width="30%">臨床影響</th>
+                    <th width="36%">處方建議</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rec in drug_recs %}
+                <tr>
+                    <td><span style="font-weight:600;">{{ rec.gene }}</span></td>
+                    <td><span class="drug-name">{{ rec.drug }}</span></td>
+                    <td>{{ rec.source }}</td>
+                    <td><span class="rec-text">{{ rec.implication }}</span></td>
+                    <td><span class="rec-text">{{ rec.recommendation }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+        {% if _pgx_show_custom %}
+        <div class="section-title"{% if _pgx_show_drugs %} style="margin-top:28px;"{% endif %}>擴展 PGx 基因面板 — 策展變異基因分型</div>
+        <p style="font-size:8pt;color:#64748b;margin:6px 0 8px;">
+            PharmCAT (CPIC/DPWG) 分析之外的額外藥物基因體學標記。
+            {% if custom_variants | length > 0 %}檢測到 {{ custom_variants | length }} 個變異。{% else %}未檢測到變異；所有位點均為純合參考型。{% endif %}
+        </p>
+        <div style="font-size:7pt;color:#475569;margin:0 0 10px;line-height:1.55;padding:6px 8px;border:0.5pt solid #e2e8f0;border-radius:4px;background:#f8fafc;">
+            <strong>狀態：</strong>
+            <span style="background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:3px;font-weight:600;">變異</span> = 患者攜帶非參考等位基因；
+            <span style="background:#f1f5f9;color:#64748b;padding:1px 5px;border-radius:3px;">參考</span> = 純合參考型（野生型）。
+            <strong style="margin-left:6px;">相關藥物：</strong>當存在變異時，療效、代謝或安全性可能受影響的藥物——處方時可能需要劑量調整、替代選擇或額外監測。
+            <br>
+            <strong>證據等級 (CPIC/PharmGKB)：</strong>
+            <strong>1A</strong> = CPIC指南/FDA標籤；
+            <strong>1B</strong> = 強臨床註釋；
+            <strong>2A</strong> = 中等，已重複驗證；
+            <strong>2B</strong> = 中等，有限重複；
+            <strong>3</strong> = 低/單一研究；
+            <strong>4</strong> = 初步/體外。
+        </div>
+        <table class="summary-table">
+            <thead>
+                <tr>
+                    <th width="10%">基因</th>
+                    <th width="12%">rsID</th>
+                    <th width="12%">變異</th>
+                    <th width="10%">基因型</th>
+                    <th width="20%">臨床意義</th>
+                    <th width="22%">相關藥物</th>
+                    <th width="7%">證據</th>
+                    <th width="7%">狀態</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in custom_results %}
+                <tr>
+                    <td><span style="font-weight:600;">{{ row.gene }}</span></td>
+                    <td style="font-size:7pt;">{{ row.rsid }}</td>
+                    <td style="font-size:7pt;">{{ row.variant_name }}</td>
+                    <td style="font-size:7pt;">{{ row.genotype }}</td>
+                    <td style="font-size:7pt;">{{ row.clinical_significance }}</td>
+                    <td style="font-size:7pt;">{{ row.drugs }}</td>
+                    <td style="font-size:7pt;">{{ row.evidence_level }}</td>
+                    <td>
+                        {% if row.is_variant %}
+                            <span class="badge-variant">變異</span>
+                        {% else %}
+                            <span class="badge-ref">參考</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if (_inc_apoe_order or _inc_pgx) and data.pgx and data.pgx.apoe_proactive_summary_html %}
+    <div class="new-page">
+        <div class="section-title">APOE（主動健康）</div>
+        {{ data.pgx.apoe_proactive_summary_html|safe }}
     </div>
     {% endif %}
 
@@ -362,6 +531,19 @@
         </div>
         {% else %}
         <p class="detail-text" style="font-size:8pt;color:#64748b;">基因名單以實驗室訂單設定為準；上述數字為解讀面板所涵蓋之基因數。</p>
+        {% endif %}
+        {% if _inc_pgx and data.pgx and data.pgx.genes_evaluated and data.pgx.genes_evaluated | length > 0 %}
+        {% set pgx_ev = data.pgx.genes_evaluated %}
+        <div style="margin-top:22px;padding-top:16px;border-top:1px solid #e2e8f0;">
+            <div class="sub-label">藥物基因體學（PGx）檢測基因列表</div>
+            <p class="detail-text" style="margin-bottom:8px;margin-top:8px;">
+                本報告解讀範圍為 <strong>{{ pgx_ev | length }}</strong> 個藥物基因體學相關基因；下列列出 <strong>{{ pgx_ev | length }}</strong> 個具分析結果之基因符號。本藥物基因體學檢測之臨床相關變異分析涵蓋 PharmCAT（CPIC/DPWG）與／或 Curated 基因分型（ClinPGx）。
+                基因通過 PharmCAT（CPIC/DPWG 星號等位基因分析）和/或精選變異基因分型（ClinPGx）進行分析。
+            </p>
+            <div class="gene-list-grid">
+                {{ pgx_ev | join(', ') }}
+            </div>
+        </div>
         {% endif %}
     </div>
 

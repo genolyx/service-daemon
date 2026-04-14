@@ -836,7 +836,8 @@ APOE_PROACTIVE_DIPLOTYPE_BODIES: Dict[str, str] = {
     ),
     "ε2/ε4": (
         "<p style=\"margin:0 0 6px;font-size:11pt;font-weight:700\">ε2 / ε4</p>"
-        '<p style="margin:0 0 4px"><strong>Alzheimer disease risk:</strong><br />~2–3× (intermediate, variable)</p>'
+        '<p style="margin:0 0 4px"><strong>Alzheimer disease risk:</strong><br />'
+        "<strong>Intermediate</strong> (approximate relative risk often cited ~2–3× vs ε3/ε3 baseline; population estimates vary)</p>"
         '<p style="margin:0"><strong>Clinical summary:</strong><br />'
         "Mixed genotype with variable risk. ε4 increases risk, ε2 may partially offset.</p>"
     ),
@@ -856,14 +857,16 @@ APOE_PROACTIVE_DIPLOTYPE_BODIES: Dict[str, str] = {
     ),
     "ε3/ε4": (
         "<p style=\"margin:0 0 6px;font-size:11pt;font-weight:700\">ε3 / ε4</p>"
-        '<p style="margin:0 0 4px"><strong>Alzheimer disease risk:</strong><br />~2–3× (moderate increase)</p>'
+        '<p style="margin:0 0 4px"><strong>Alzheimer disease risk:</strong><br />'
+        "<strong>Moderate increase</strong> (approximate relative risk often cited ~2–4× vs ε3/ε3; population estimates vary)</p>"
         '<p style="margin:0"><strong>Clinical summary:</strong><br />'
         "Associated with moderately increased risk of Alzheimer disease. May also be associated with "
         "higher LDL cholesterol.</p>"
     ),
     "ε4/ε4": (
         "<p style=\"margin:0 0 6px;font-size:11pt;font-weight:700\">ε4 / ε4</p>"
-        '<p style="margin:0 0 4px"><strong>Alzheimer disease risk:</strong><br />~8–12× (high increase)</p>'
+        '<p style="margin:0 0 4px"><strong>Alzheimer disease risk:</strong><br />'
+        "<strong>High risk</strong> (approximate relative risk often cited ~8–12× vs ε3/ε3; population estimates vary)</p>"
         '<p style="margin:0"><strong>Clinical summary:</strong><br />'
         "Associated with significantly increased risk and earlier onset. Also linked to increased "
         "cardiovascular risk.</p>"
@@ -876,12 +879,44 @@ APOE_PROACTIVE_DIPLOTYPE_BODIES: Dict[str, str] = {
 }
 
 
+def _apoe_proactive_pdf_alert_html(report_key: str) -> str:
+    """Prominent alert strip for customer PDF (risk tier or unresolved phase)."""
+    rk = (report_key or "").strip()
+    if rk in ("ε2/ε4", "ε3/ε4", "ε4/ε4"):
+        labels = {
+            "ε2/ε4": ("Intermediate", "#fffbeb", "#d97706", "#92400e"),
+            "ε3/ε4": ("Moderate increase", "#fffbeb", "#d97706", "#92400e"),
+            "ε4/ε4": ("High risk", "#fef2f2", "#dc2626", "#991b1b"),
+        }
+        label, bg, border, fg = labels[rk]
+        disp = rk.replace("/", " / ")
+        return (
+            f'<div style="margin:0 0 12px;padding:10px 12px;border-radius:8px;border:2px solid {border};'
+            f'background:{bg};font-size:9pt;line-height:1.45;color:{fg}">'
+            f"<strong>Clinical alert — APOE</strong><br />"
+            f"Diplotype <strong>{html.escape(disp)}</strong>: Alzheimer disease risk — "
+            f"<strong>{html.escape(label)}</strong>. Interpret in full clinical context.</div>"
+        )
+    if rk in ("ambiguous_both_het", "unknown"):
+        return (
+            '<div style="margin:0 0 12px;padding:10px 12px;border-radius:8px;border:2px solid #dc2626;'
+            'background:#fef2f2;font-size:9pt;line-height:1.45;color:#991b1b">'
+            "<strong>Phasing alert — APOE</strong><br />"
+            "ε2/ε3/ε4 haplotype phase could not be determined from the available tag-SNP data. "
+            "Do not report a definitive diplotype for preventive-health counseling without resolving phase "
+            "per laboratory policy (e.g. orthogonal typing or read-backed phasing).</div>"
+        )
+    return ""
+
+
 def build_apoe_proactive_pdf_html(report_key: str) -> str:
-    """WeasyPrint-safe HTML fragment (one diplotype block + disclaimer)."""
-    body = APOE_PROACTIVE_DIPLOTYPE_BODIES.get(report_key) or APOE_PROACTIVE_DIPLOTYPE_BODIES["unknown"]
+    """WeasyPrint-safe HTML fragment (optional alert + one diplotype block + disclaimer)."""
+    rk = (report_key or "").strip() or "unknown"
+    alert = _apoe_proactive_pdf_alert_html(rk)
+    body = APOE_PROACTIVE_DIPLOTYPE_BODIES.get(rk) or APOE_PROACTIVE_DIPLOTYPE_BODIES["unknown"]
     return (
         '<div class="apoe-proactive-pdf" style="font-size:8.5pt;line-height:1.45;color:#0f172a">'
-        f"{body}{APOE_PROACTIVE_DISCLAIMER_HTML}</div>"
+        f"{alert}{body}{APOE_PROACTIVE_DISCLAIMER_HTML}</div>"
     )
 
 

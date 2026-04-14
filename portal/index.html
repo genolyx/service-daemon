@@ -6678,7 +6678,43 @@
     /**
      * Proactive health — structured APOE (ε2/ε3/ε4 tag SNPs) summary above the extended panel table.
      */
-    function buildProactiveApoeSummaryHtml(customGenes, aph, portalReview) {
+    /**
+     * Risk / phasing alerts for inferred APOE diplotype (matches PDF proactive APOE block).
+     */
+    function buildProactiveApoeDiplotypeAlertsHtml(apoeDiplotype) {
+      const adp = apoeDiplotype && typeof apoeDiplotype === 'object' ? apoeDiplotype : null;
+      if (!adp) return '';
+      const rk = String(adp.report_key || '').trim();
+      if (rk === 'ε2/ε4' || rk === 'ε3/ε4' || rk === 'ε4/ε4') {
+        const labels = { 'ε2/ε4': 'Intermediate', 'ε3/ε4': 'Moderate increase', 'ε4/ε4': 'High risk' };
+        const label = labels[rk];
+        const isHigh = rk === 'ε4/ε4';
+        const border = isHigh ? 'rgba(220,38,38,.65)' : 'rgba(245,158,11,.65)';
+        const bg = isHigh ? 'rgba(254,242,242,.65)' : 'rgba(255,251,235,.9)';
+        const fg = isHigh ? '#991b1b' : '#92400e';
+        const disp = rk.replace(/\//g, ' / ');
+        return (
+          `<div style="margin:0 0 12px;padding:12px 14px;border-radius:10px;border:2px solid ${border};background:${bg};font-size:12px;line-height:1.55;color:${fg}">` +
+          '<strong style="display:block;margin-bottom:4px">Clinical alert — APOE</strong>' +
+          `Diplotype <strong>${escapeHtml(disp)}</strong>: Alzheimer disease risk — <strong>${escapeHtml(
+            label
+          )}</strong>. Review in full clinical context.` +
+          '</div>'
+        );
+      }
+      if (rk === 'ambiguous_both_het' || rk === 'unknown') {
+        return (
+          '<div style="margin:0 0 12px;padding:12px 14px;border-radius:10px;border:2px solid rgba(220,38,38,.65);background:rgba(254,242,242,.65);font-size:12px;line-height:1.55;color:#991b1b">' +
+          '<strong style="display:block;margin-bottom:4px">Phasing alert — APOE</strong>' +
+          'ε2/ε3/ε4 haplotype phase could not be determined from the tag-SNP data in this review. ' +
+          'Do not report a definitive ε2/ε3/ε4 diplotype for counseling without resolving phase per laboratory policy.' +
+          '</div>'
+        );
+      }
+      return '';
+    }
+
+    function buildProactiveApoeSummaryHtml(customGenes, aph, portalReview, apoeDiplotype) {
       const pr = portalReview && typeof portalReview === 'object' ? portalReview : {};
       const includePdfChk = !!(pr.include_apoe_proactive_pdf === true || pr.include_apoe_proactive_pdf === 'true');
       const rows = (customGenes || [])
@@ -6689,6 +6725,7 @@
         '<div style="margin:0 0 14px;padding:14px 16px;border-radius:12px;border:1px solid rgba(59,130,246,.38);background:rgba(59,130,246,.07);font-size:12px;line-height:1.55">';
       h +=
         '<strong style="font-size:13px;display:block;margin-bottom:8px">APOE result (proactive health)</strong>';
+      h += buildProactiveApoeDiplotypeAlertsHtml(apoeDiplotype);
       h += '<p class="muted" style="margin:0 0 12px;font-size:11px;line-height:1.5">';
       h +=
         'Tag SNPs <strong>rs429358</strong> (Cys112Arg) and <strong>rs7412</strong> (Arg158Cys) define <strong>ε2 / ε3 / ε4</strong> in standard nomenclature. ';
@@ -6861,7 +6898,12 @@
         reviewOrderKind(reviewData) === 'proactive' &&
         customGenesEarly.some(r => String(r.gene || '').trim().toUpperCase() === 'APOE')
       ) {
-        html += buildProactiveApoeSummaryHtml(customGenesEarly, aph, pr);
+        html += buildProactiveApoeSummaryHtml(
+          customGenesEarly,
+          aph,
+          pr,
+          pgx.apoe_diplotype_for_report
+        );
       }
       if (meta.tool_version || meta.genome_build || meta.exit_status != null) {
         const bits = [];

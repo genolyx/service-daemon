@@ -98,6 +98,17 @@ class StartOrderRequest(BaseModel):
         default=False,
         description="True면 파이프라인 캐시(Nextflow work/ 등)를 지우고 처음부터 재실행 (sgNIPT --fresh).",
     )
+    use_ssd: bool = Field(
+        default=False,
+        description=(
+            "Carrier / whole exome / health screening: run_analysis.sh 에 --use-ssd 및 "
+            "(선택) --scratch-dir 를 붙여 SSD scratch 프로파일을 사용합니다."
+        ),
+    )
+    scratch_dir: Optional[str] = Field(
+        default=None,
+        description="use_ssd 가 True일 때 run_analysis.sh --scratch-dir 에 넘길 호스트 경로 (예: /tmp/exome-scratch).",
+    )
 
 
 class OrderSaveResponse(BaseModel):

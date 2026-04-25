@@ -1067,6 +1067,11 @@ class CarrierScreeningPlugin(ServicePlugin):
             if getattr(settings, "carrier_screening_fresh_append_nf_live_log", True):
                 if "--nf-live-log" not in parts:
                     parts.append("--nf-live-log")
+        if (job.params or {}).get("_pipeline_use_ssd"):
+            parts.append("--use-ssd")
+            sdir = ((job.params or {}).get("_pipeline_scratch_dir") or "").strip()
+            if sdir:
+                parts += ["--scratch-dir", sdir]
         extra = (settings.carrier_screening_script_extra_args or "").strip()
         if extra:
             parts.extend(shlex.split(extra))

@@ -561,6 +561,11 @@
       box-shadow:0 1px 4px rgba(0,0,0,.08);
     }
     #smnIgvModalFrameHost .dg-smn-igv-msg{color:#455a64;font-size:13px;padding:14px;margin:0;line-height:1.5}
+    /* APOE cis/trans IGV popup — same full-viewport layout as SMN modal */
+    #apoeIgvModal .modal.dg-smn-igv-modal{max-width:min(98vw,1920px);width:min(98vw,1920px);max-height:96vh;overflow:hidden;display:flex;flex-direction:column;padding:14px 18px 16px}
+    #apoeIgvModalFrameHost.dg-smn-igv-host{color-scheme:light;flex:1;min-width:0;min-height:min(78vh,920px);max-height:min(90vh,1240px);overflow:hidden;background:#eceff1;border:1px solid #b0bec5;border-radius:12px;padding:10px;box-shadow:inset 0 1px 0 rgba(255,255,255,.75)}
+    #apoeIgvModalFrameHost.dg-smn-igv-host iframe.dg-smn-igv-frame{width:100%;height:min(82vh,1000px);min-height:min(78vh,920px);border:0;border-radius:8px;background:#fff;display:block;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+    #apoeIgvModalFrameHost .dg-smn-igv-msg{color:#455a64;font-size:13px;padding:14px;margin:0;line-height:1.5}
     /* Repeat plots: large viewport + light “paper” region that ignores portal dark theme variables */
     #repeatPlotsModal .modal{
       max-width:min(98vw,1920px);
@@ -876,6 +881,7 @@
       <button id="tabReview" class="btn" onclick="showView('review')">Review</button>
       <button id="tabLiterature" class="btn" onclick="showView('literature')">Literature</button>
       <button id="tabPanels" class="btn" onclick="showView('panels')">Panels</button>
+      <button id="tabConfig" class="btn" onclick="showView('config')">Configuration</button>
 
       <div class="header-theme-rail" role="group" aria-label="Theme: dark or light">
         <span class="theme-label theme-label-dark">Dark</span>
@@ -1626,6 +1632,35 @@
       </div>
     </section>
 
+    <!-- Pipeline / run_analysis options (gx-exome) -->
+    <section id="viewConfig" class="card hidden">
+      <h3 class="submit-page-title" style="margin-bottom:6px">Configuration</h3>
+      <p class="submit-page-sub" style="margin-bottom:14px">
+        Options for <strong>Carrier screening</strong>, <strong>Whole exome</strong>, and <strong>Health screening</strong> when you <strong>Submit</strong>, <strong>Force Run</strong>, or <strong>Force Run (Fresh)</strong>.
+        When <strong>Use SSD</strong> is on, the daemon adds <code>--use-ssd</code> and <code>--scratch-dir</code> to <code>run_analysis.sh</code> (same host path the script expects).
+      </p>
+      <div class="form-section-card" style="max-width:560px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <input type="checkbox" id="cfgUseSsd" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent, #3b82f6)" />
+          <label for="cfgUseSsd" style="margin:0;cursor:pointer;font-size:14px"><strong>Use SSD</strong> (Y/N)</label>
+        </div>
+        <label for="cfgScratchDir" style="font-size:13px">Scratch location (host path)</label>
+        <input
+          id="cfgScratchDir"
+          type="text"
+          placeholder="/tmp/exome-scratch"
+          autocomplete="off"
+          style="width:100%;max-width:520px;margin-top:6px;padding:10px 12px;border-radius:10px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-family:ui-monospace,monospace;font-size:13px;box-sizing:border-box"
+        />
+        <p class="muted" style="font-size:11px;margin:8px 0 0;line-height:1.45">
+          Example: <code>./src/run_analysis.sh -w 2604 -s Sample_A10 --use-ssd --scratch-dir /tmp/exome-scratch</code>
+        </p>
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn primary" onclick="savePortalPipelineConfig()">Save</button>
+        </div>
+      </div>
+    </section>
+
     <!-- Variant Review View -->
     <section id="viewReview" class="card hidden">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
@@ -1959,6 +1994,17 @@
     </div>
   </div>
 
+  <div id="apoeIgvModal" class="modal-overlay hidden" style="z-index:20003" aria-hidden="true" onclick="if(event.target===this)apoeIgvModalClose()">
+    <div class="modal dg-smn-igv-modal" role="dialog" aria-modal="true" aria-labelledby="apoeIgvModalTitle" onclick="event.stopPropagation()">
+      <h3 id="apoeIgvModalTitle" style="font-size:15px;margin:0 0 6px">APOE — Cis/Trans IGV Review</h3>
+      <p class="muted" style="font-size:11px;margin:0 0 10px;line-height:1.45">Review read pairs spanning <strong>rs429358</strong> + <strong>rs7412</strong> (~138 bp apart). If a read or mate pair carries both variant alleles on the same molecule → <strong>cis</strong> (same chromosome). Color by base is enabled — mismatches to reference are highlighted.</p>
+      <div id="apoeIgvModalFrameHost" class="dg-smn-igv-host"><p class="dg-smn-igv-msg">Loading…</p></div>
+      <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px">
+        <button type="button" class="btn" onclick="apoeIgvModalClose()">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div id="repeatPlotsModal" class="modal-overlay hidden" style="z-index:20002" aria-hidden="true" onclick="if(event.target===this)repeatPlotsModalClose()">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="repeatPlotsModalTitle" onclick="event.stopPropagation()" style="padding:14px 18px 16px">
       <h3 id="repeatPlotsModalTitle" style="font-size:15px;margin:0 0 6px">Repeat expansion plots</h3>
@@ -2073,6 +2119,51 @@
       if (!k) return null;
       const t = String(k).trim();
       return t || null;
+    }
+
+    const PORTAL_USE_SSD_KEY = 'portalPipelineUseSsd';
+    const PORTAL_SCRATCH_DIR_KEY = 'portalPipelineScratchDir';
+    function getDefaultPipelineScratchDir() {
+      return '/tmp/exome-scratch';
+    }
+    function loadPortalPipelineConfigUi() {
+      const u = localStorage.getItem(PORTAL_USE_SSD_KEY);
+      const chk = qs('cfgUseSsd');
+      if (chk) chk.checked = u === '1';
+      const inp = qs('cfgScratchDir');
+      if (inp) {
+        const v = (localStorage.getItem(PORTAL_SCRATCH_DIR_KEY) || '').trim();
+        inp.value = v || getDefaultPipelineScratchDir();
+      }
+    }
+    function savePortalPipelineConfig() {
+      const chk = qs('cfgUseSsd');
+      const inp = qs('cfgScratchDir');
+      if (chk) localStorage.setItem(PORTAL_USE_SSD_KEY, chk.checked ? '1' : '0');
+      if (inp) {
+        const t = (inp.value || '').trim() || getDefaultPipelineScratchDir();
+        localStorage.setItem(PORTAL_SCRATCH_DIR_KEY, t);
+        inp.value = t;
+      }
+      toast('Configuration saved', true);
+    }
+    /**
+     * Body for POST /order/{id}/start — include run_analysis SSD options for carrier / WES / health.
+     * @param {object} [extra] e.g. { fresh: true }
+     */
+    function buildStartOrderBody(extra) {
+      const o = Object.assign({ fresh: false }, extra || {});
+      let useSsd = false;
+      let scratch = getDefaultPipelineScratchDir();
+      const chk = qs('cfgUseSsd');
+      const inp = qs('cfgScratchDir');
+      if (chk) useSsd = !!chk.checked;
+      else useSsd = localStorage.getItem(PORTAL_USE_SSD_KEY) === '1';
+      if (inp) scratch = (inp.value || '').trim() || getDefaultPipelineScratchDir();
+      else scratch = (localStorage.getItem(PORTAL_SCRATCH_DIR_KEY) || '').trim() || getDefaultPipelineScratchDir();
+      o.use_ssd = useSsd;
+      o.scratch_dir = useSsd ? scratch : null;
+      return o;
     }
 
     function apiFetchHeaders(base) {
@@ -3408,7 +3499,7 @@
 
     function showView(name, opts) {
       const opt = opts || {};
-      ['Dash', 'Orders', 'Review', 'Literature', 'Panels'].forEach(v => {
+      ['Dash', 'Orders', 'Review', 'Literature', 'Panels', 'Config'].forEach(v => {
         const ve = qs('view' + v);
         const te = qs('tab' + v);
         if (ve) ve.classList.add('hidden');
@@ -3422,7 +3513,7 @@
 
       qs('mainWrap').classList.toggle(
         'wide',
-        name === 'orders' || name === 'review' || name === 'literature' || name === 'panels'
+        name === 'dash' || name === 'orders' || name === 'review' || name === 'literature' || name === 'panels' || name === 'config'
       );
 
       if (name === 'dash') {
@@ -3449,6 +3540,10 @@
       if (name === 'panels') {
         stopOrdersListPolling();
         void loadWesPanelCatalog();
+      }
+      if (name === 'config') {
+        stopOrdersListPolling();
+        loadPortalPipelineConfigUi();
       }
 
       localStorage.setItem('activeTab', name);
@@ -5054,7 +5149,7 @@
     async function startSavedOrder(orderId) {
       closeAllMoreMenus();
       try {
-        const res = await apiPost(`/order/${encodeURIComponent(orderId)}/start`, {});
+        const res = await apiPost(`/order/${encodeURIComponent(orderId)}/start`, buildStartOrderBody({}));
         toast(res.message || 'Queued');
         loadOrders();
       } catch (e) {
@@ -5079,7 +5174,7 @@
       });
       if (!ok) return;
       try {
-        const res = await apiPost(`/order/${encodeURIComponent(oid)}/start`, { fresh: false });
+        const res = await apiPost(`/order/${encodeURIComponent(oid)}/start`, buildStartOrderBody({ fresh: false }));
         toast(res.message || 'Queued for full run', true);
         loadOrders();
         loadDashboard();
@@ -5104,7 +5199,7 @@
       });
       if (!ok) return;
       try {
-        const res = await apiPost(`/order/${encodeURIComponent(oid)}/start`, { fresh: true });
+        const res = await apiPost(`/order/${encodeURIComponent(oid)}/start`, buildStartOrderBody({ fresh: true }));
         toast(res.message || 'Queued for fresh run', true);
         loadOrders();
         loadDashboard();
@@ -6714,7 +6809,7 @@
       return '';
     }
 
-    function buildProactiveApoeSummaryHtml(customGenes, aph, portalReview, apoeDiplotype) {
+    function buildProactiveApoeSummaryHtml(customGenes, aph, portalReview, apoeDiplotype, orderId) {
       const pr = portalReview && typeof portalReview === 'object' ? portalReview : {};
       const includePdfChk = !!(pr.include_apoe_proactive_pdf === true || pr.include_apoe_proactive_pdf === 'true');
       const rows = (customGenes || [])
@@ -6778,6 +6873,24 @@
         }
         if (line) {
           h += `<p style="margin:10px 0 0;font-size:11px;line-height:1.5">${line}</p>`;
+        }
+      }
+      // APOE cis/trans IGV popup — derive path from visual_evidence or sample_name
+      if (orderId) {
+        let apoeIgvRel = '';
+        const ve = (reviewData && reviewData.dark_genes && reviewData.dark_genes.visual_evidence) || {};
+        const igvRel = ve.igv_report_html || '';
+        if (igvRel && igvRel.includes('_visual_report.html')) {
+          apoeIgvRel = igvRel.replace('_visual_report.html', '_apoe_igv.html');
+        } else {
+          const sn = (reviewData && reviewData.sample_name) || '';
+          if (sn) apoeIgvRel = `snapshots/${sn}_apoe_igv.html`;
+        }
+        if (apoeIgvRel) {
+          h += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(59,130,246,.28)">';
+          h += `<button type="button" onclick="openApoeIgvModal('${apoeIgvRel.replace(/'/g, "\\'")}')" style="display:inline-block;padding:6px 14px;background:#7c3aed;color:#fff;border:1px solid #6d28d9;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-right:8px">APOE IGV — Cis/Trans Review</button>`;
+          h += '<span class="muted" style="font-size:11px;line-height:1.45">Opens IGV viewer for read-pair phasing at the APOE locus.</span>';
+          h += '</div>';
         }
       }
       h += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(59,130,246,.28)">';
@@ -6902,7 +7015,8 @@
           customGenesEarly,
           aph,
           pr,
-          pgx.apoe_diplotype_for_report
+          pgx.apoe_diplotype_for_report,
+          orderId
         );
       }
       if (meta.tool_version || meta.genome_build || meta.exit_status != null) {
@@ -8770,7 +8884,42 @@
       if (host) host.innerHTML = '';
     }
 
+    function apoeIgvModalClose() {
+      const m = qs('apoeIgvModal');
+      const host = qs('apoeIgvModalFrameHost');
+      if (m) { m.classList.add('hidden'); m.setAttribute('aria-hidden', 'true'); }
+      if (host) host.innerHTML = '';
+    }
+
+    async function openApoeIgvModal(relPath) {
+      const oid = typeof getActiveReviewOrderId === 'function' ? getActiveReviewOrderId() : null;
+      const modal = qs('apoeIgvModal');
+      const host = qs('apoeIgvModalFrameHost');
+      if (!modal || !host) return;
+      host.innerHTML = '<p class="dg-smn-igv-msg">Loading APOE IGV…</p>';
+      modal.classList.remove('hidden');
+      modal.setAttribute('aria-hidden', 'false');
+      if (!oid || !relPath) {
+        host.innerHTML = '<p class="dg-smn-igv-msg">Missing order ID or file path.</p>';
+        return;
+      }
+      try {
+        const url = orderArtifactFileUrl(oid, relPath);
+        const r = await fetch(url, { headers: apiFetchHeaders() });
+        if (!r.ok) throw new Error('fetch failed');
+        const html = await r.text();
+        const blob = new Blob([html], { type: 'text/html' });
+        const blobUrl = URL.createObjectURL(blob);
+        host.innerHTML = `<iframe title="APOE cis/trans IGV" class="dg-visual-iframe dg-smn-igv-frame" src="${blobUrl}"></iframe>`;
+      } catch (e) {
+        host.innerHTML = '<p class="dg-smn-igv-msg">Could not load APOE IGV report. Ensure the pipeline has been run with the latest visualize.nf (generates <code>*_apoe_igv.html</code> in snapshots/).</p>';
+      }
+    }
+
     document.addEventListener('keydown', ev => {
+      if (ev.key === 'Escape' && qs('apoeIgvModal') && !qs('apoeIgvModal').classList.contains('hidden')) {
+        apoeIgvModalClose();
+      }
       if (ev.key === 'Escape' && qs('smnIgvModal') && !qs('smnIgvModal').classList.contains('hidden')) {
         smnIgvModalClose();
       }
@@ -10830,6 +10979,12 @@
       wireBamCsvBrowseUi();
       wireDashBucketTable();
       await detectOrderApiPrefix();
+      try {
+        if (!localStorage.getItem(PORTAL_SCRATCH_DIR_KEY)) {
+          localStorage.setItem(PORTAL_SCRATCH_DIR_KEY, getDefaultPipelineScratchDir());
+        }
+      } catch (e) { /* ignore */ }
+      loadPortalPipelineConfigUi();
       const reviewOrderSel = qs('reviewOrderSelect');
       if (reviewOrderSel) reviewOrderSel.addEventListener('change', onReviewOrderSelectChange);
       let lastTab = localStorage.getItem('activeTab') || 'dash';

@@ -480,12 +480,23 @@ class QueueManager:
         job.exit_code = None
         job.duration = None
 
-    async def start_saved_job(self, order_id: str, *, fresh: bool = False) -> tuple:
+    async def start_saved_job(
+        self,
+        order_id: str,
+        *,
+        fresh: bool = False,
+        use_ssd: bool = False,
+        scratch_dir: Optional[str] = None,
+    ) -> tuple:
         """
         SAVED 주문, 또는 FAILED/CANCELLED/COMPLETED 주문(재분석)을 큐에 넣습니다.
         fresh=True 이면 job.params['_pipeline_fresh']=True 를 설정해 플러그인이 캐시 삭제를 수행하게 함.
+        use_ssd=True 이면 (carrier/wes/health) run_analysis.sh 에 --use-ssd / --scratch-dir 를 붙이기 위한
+        _pipeline_use_ssd / _pipeline_scratch_dir 를 job.params 에 넣는다.
         (Job, queue_position) 반환.
         """
+        _carrier_like_run = frozenset({"carrier_screening", "whole_exome", "health_screening"})
+
         async with self._lock:
             job = self._saved_jobs.pop(order_id, None)
             if job:
@@ -510,6 +521,19 @@ class QueueManager:
         else:
             if job.params and "_pipeline_fresh" in job.params:
                 del job.params["_pipeline_fresh"]
+
+        if job.service_code in _carrier_like_run:
+            job.params = dict(job.params or {})
+            if use_ssd:
+                job.params["_pipeline_use_ssd"] = True
+                sd = (scratch_dir or "").strip()
+                if sd:
+                    job.params["_pipeline_scratch_dir"] = sd
+                else:
+                    job.params.pop("_pipeline_scratch_dir", None)
+            else:
+                job.params.pop("_pipeline_use_ssd", None)
+                job.params.pop("_pipeline_scratch_dir", None)
 
         queue_position = await self.enqueue(job)
         return job, queue_position

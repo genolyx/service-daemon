@@ -766,7 +766,13 @@ async def start_saved_order(
     - body 없음 또는 ``{"fresh": false}`` (기본): Nextflow -resume 등 캐시 재활용 (Force Run).
     - ``{"fresh": true}``: 파이프라인 캐시를 삭제하고 처음부터 재실행 (Force Run Fresh / ``--fresh``).
     """
-    fresh = request.fresh if request is not None else False
+    fresh = False
+    use_ssd = False
+    scratch_dir = None
+    if request is not None:
+        fresh = request.fresh
+        use_ssd = request.use_ssd
+        scratch_dir = request.scratch_dir
     queue_manager = get_queue_manager()
     job_preview = queue_manager.get_job(order_id)
     if job_preview and job_preview.service_code in _CARRIER_LIKE:
@@ -776,7 +782,12 @@ async def start_saved_order(
             if not ok:
                 raise HTTPException(status_code=400, detail=f"Invalid params: {err}")
     try:
-        job, queue_position = await queue_manager.start_saved_job(order_id, fresh=fresh)
+        job, queue_position = await queue_manager.start_saved_job(
+            order_id,
+            fresh=fresh,
+            use_ssd=use_ssd,
+            scratch_dir=scratch_dir,
+        )
     except KeyError:
         raise HTTPException(
             status_code=404,

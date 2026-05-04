@@ -1635,11 +1635,63 @@
     <!-- Pipeline / run_analysis options (gx-exome) -->
     <section id="viewConfig" class="card hidden">
       <h3 class="submit-page-title" style="margin-bottom:6px">Configuration</h3>
-      <p class="submit-page-sub" style="margin-bottom:14px">
-        Options for <strong>Carrier screening</strong>, <strong>Whole exome</strong>, and <strong>Health screening</strong> when you <strong>Submit</strong>, <strong>Force Run</strong>, or <strong>Force Run (Fresh)</strong>.
-        When <strong>Use SSD</strong> is on, the daemon adds <code>--use-ssd</code> and <code>--scratch-dir</code> to <code>run_analysis.sh</code> (same host path the script expects).
-      </p>
+
+      <!-- ── Daemon Connection ─────────────────────────────── -->
+      <div class="form-section-card" style="max-width:700px;margin-bottom:18px">
+        <h4 style="margin:0 0 12px;font-size:14px">Daemon Connection</h4>
+        <p class="muted" style="font-size:12px;margin:0 0 14px;line-height:1.5">
+          Select which daemon this Portal talks to. The active daemon receives all API calls (Submit, Review, Report, etc.).
+        </p>
+
+        <!-- Preset buttons -->
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px" id="cfgDaemonPresets">
+          <button type="button" class="btn" id="cfgPresetSvc"
+            onclick="applyDaemonPreset('http://100.112.118.12:8003', 'service-daemon')"
+            style="font-size:12px;padding:6px 14px">
+            service-daemon <span class="muted" style="font-size:11px">:8003</span>
+          </button>
+          <button type="button" class="btn" id="cfgPresetGx"
+            onclick="applyDaemonPreset('http://100.112.118.12:8010', 'gx-daemon')"
+            style="font-size:12px;padding:6px 14px">
+            gx-daemon <span class="muted" style="font-size:11px">:8010</span>
+          </button>
+          <button type="button" class="btn" id="cfgPresetNipt"
+            onclick="applyDaemonPreset('http://100.112.118.12:8000', 'nipt-daemon')"
+            style="font-size:12px;padding:6px 14px">
+            nipt-daemon <span class="muted" style="font-size:11px">:8000</span>
+          </button>
+        </div>
+
+        <!-- Manual URL + API Key -->
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:2;min-width:200px">
+            <label for="cfgDaemonUrl" style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Daemon URL</label>
+            <input id="cfgDaemonUrl" type="text" placeholder="http://host:port"
+              style="width:100%;padding:9px 12px;border-radius:10px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-family:ui-monospace,monospace;font-size:13px;box-sizing:border-box" />
+          </div>
+          <div style="flex:1;min-width:160px">
+            <label for="cfgApiKey" style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">X-API-Key <span class="muted" style="font-weight:400">(optional)</span></label>
+            <input id="cfgApiKey" type="password" placeholder="leave empty if not set"
+              style="width:100%;padding:9px 12px;border-radius:10px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-family:ui-monospace,monospace;font-size:13px;box-sizing:border-box" />
+          </div>
+        </div>
+
+        <!-- Status row -->
+        <div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap">
+          <button type="button" class="btn primary" style="font-size:12px;padding:7px 18px" onclick="applyDaemonConfig()">Connect</button>
+          <button type="button" class="btn" style="font-size:12px;padding:7px 14px" onclick="checkCfgDaemonHealth()">Test</button>
+          <span id="cfgConnResult" class="muted" style="font-size:12px"></span>
+        </div>
+      </div>
+
+      <!-- ── Pipeline Options ──────────────────────────────── -->
       <div class="form-section-card" style="max-width:560px">
+        <h4 style="margin:0 0 12px;font-size:14px">Pipeline Options</h4>
+        <p class="muted" style="font-size:12px;margin:0 0 14px;line-height:1.5">
+          Applied when you <strong>Submit</strong>, <strong>Force Run</strong>, or <strong>Force Run (Fresh)</strong>
+          for Carrier screening / Whole exome / Health screening.
+          When <strong>Use SSD</strong> is on, <code>--use-ssd --scratch-dir &lt;path&gt;</code> is added to <code>run_analysis.sh</code>.
+        </p>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
           <input type="checkbox" id="cfgUseSsd" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent, #3b82f6)" />
           <label for="cfgUseSsd" style="margin:0;cursor:pointer;font-size:14px"><strong>Use SSD</strong> (Y/N)</label>
@@ -2126,7 +2178,109 @@
     function getDefaultPipelineScratchDir() {
       return '/tmp/exome-scratch';
     }
+    // ── Daemon name helper ───────────────────────────────────
+    function currentDaemonName() {
+      const norm = (u) => (u || '').trim().replace(/\/+$/, '').toLowerCase();
+      const cur = norm(API_BASE);
+      for (const [name, url] of Object.entries(DAEMON_PRESETS)) {
+        if (cur === norm(url)) return name;
+      }
+      if (!cur) return 'service-daemon'; // same-origin default
+      // Extract port as fallback label
+      try {
+        const port = new URL(cur).port;
+        if (port) return `:${port}`;
+      } catch (e) { /* ignore */ }
+      return 'daemon';
+    }
+
+    // ── Daemon preset highlight ──────────────────────────────
+    const DAEMON_PRESETS = {
+      'service-daemon': 'http://100.112.118.12:8003',
+      'gx-daemon':      'http://100.112.118.12:8010',
+      'nipt-daemon':    'http://100.112.118.12:8000',
+    };
+    const PRESET_BTN_IDS = {
+      'service-daemon': 'cfgPresetSvc',
+      'gx-daemon':      'cfgPresetGx',
+      'nipt-daemon':    'cfgPresetNipt',
+    };
+
+    function _refreshDaemonPresetHighlight(activeUrl) {
+      const norm = (u) => (u || '').trim().replace(/\/+$/, '').toLowerCase();
+      const cur = norm(activeUrl);
+      Object.entries(PRESET_BTN_IDS).forEach(([name, btnId]) => {
+        const btn = qs(btnId);
+        if (!btn) return;
+        const match = cur === norm(DAEMON_PRESETS[name]);
+        btn.classList.toggle('primary', match);
+      });
+    }
+
+    function applyDaemonPreset(url, name) {
+      const urlInp = qs('cfgDaemonUrl');
+      if (urlInp) urlInp.value = url;
+      applyDaemonConfig(url);
+    }
+
+    async function applyDaemonConfig(overrideUrl) {
+      const urlInp = qs('cfgDaemonUrl');
+      const keyInp = qs('cfgApiKey');
+      const raw = overrideUrl != null
+        ? String(overrideUrl)
+        : (urlInp ? urlInp.value : '');
+      const newBase = normalizeDaemonApiBase(raw);
+
+      // Apply in-memory
+      API_BASE = newBase;
+      localStorage.setItem('apiBase', newBase);
+
+      // API Key
+      if (keyInp) {
+        const kt = keyInp.value.trim();
+        if (kt) localStorage.setItem('daemonApiKey', kt);
+        else localStorage.removeItem('daemonApiKey');
+      }
+
+      // Sync URL input
+      if (urlInp) urlInp.value = newBase || '';
+
+      ORDER_API_PREFIX = '';
+      await detectOrderApiPrefix();
+
+      _refreshDaemonPresetHighlight(newBase);
+      await checkCfgDaemonHealth();
+      loadDashboard();
+    }
+
+    async function checkCfgDaemonHealth() {
+      const res = qs('cfgConnResult');
+      if (res) res.textContent = 'Checking…';
+      try {
+        const h = await apiGet('/health');
+        const label = h.environment || 'ok';
+        const info = h.registered_services
+          ? ` · services: ${(h.registered_services || []).map(s => s.code || s).join(', ')}`
+          : '';
+        if (res) res.innerHTML = `<span style="color:var(--ok)">●</span> Connected — ${escapeHtml(label)}${escapeHtml(info)}`;
+        qs('connStatus').innerHTML = `<span class="conn-dot ok"></span><strong>${escapeHtml(currentDaemonName())}</strong> · ${escapeHtml(label)}${ORDER_API_PREFIX ? ' · /api' : ''}`;
+      } catch (e) {
+        if (res) res.innerHTML = `<span style="color:var(--err)">●</span> Cannot connect — ${escapeHtml(e.message || String(e))}`;
+        qs('connStatus').innerHTML = `<span class="conn-dot err"></span><strong>${escapeHtml(currentDaemonName())}</strong> · Disconnected`;
+      }
+    }
+
     function loadPortalPipelineConfigUi() {
+      // Daemon section
+      const urlInp = qs('cfgDaemonUrl');
+      if (urlInp) urlInp.value = API_BASE || '';
+      const keyInp = qs('cfgApiKey');
+      if (keyInp) keyInp.value = localStorage.getItem('daemonApiKey') || '';
+      _refreshDaemonPresetHighlight(API_BASE);
+      const res = qs('cfgConnResult');
+      if (res) res.textContent = '';
+
+      // SSD section
       const u = localStorage.getItem(PORTAL_USE_SSD_KEY);
       const chk = qs('cfgUseSsd');
       if (chk) chk.checked = u === '1';
@@ -2145,7 +2299,7 @@
         localStorage.setItem(PORTAL_SCRATCH_DIR_KEY, t);
         inp.value = t;
       }
-      toast('Configuration saved', true);
+      toast('Pipeline options saved', true);
     }
     /**
      * Body for POST /order/{id}/start — include run_analysis SSD options for carrier / WES / health.
@@ -2527,26 +2681,10 @@
     // Utilities
     // ═══════════════════════════════════════════════════════════
     async function changeDaemonUrl() {
-      const url = prompt(
-        'Daemon URL (scheme + host + port only; no /api or /portal — e.g. http://127.0.0.1:8000):',
-        API_BASE
-      );
-      if (!(url && url.trim())) return;
-      API_BASE = normalizeDaemonApiBase(url);
-      localStorage.setItem('apiBase', API_BASE);
-      const curKey = localStorage.getItem('daemonApiKey') || '';
-      const keyAns = prompt(
-        'X-API-Key (optional; required if daemon sets API_KEY env). Leave empty to clear:',
-        curKey
-      );
-      if (keyAns !== null) {
-        const kt = String(keyAns).trim();
-        if (kt) localStorage.setItem('daemonApiKey', kt);
-        else localStorage.removeItem('daemonApiKey');
-      }
-      await detectOrderApiPrefix();
-      toast('Daemon URL changed to ' + (API_BASE || '(same origin)') + (ORDER_API_PREFIX ? ' — API under /api' : ''));
-      loadDashboard();
+      // Redirect to Configuration tab for daemon switching
+      showView('config');
+      loadPortalPipelineConfigUi();
+      toast('Use Configuration → Daemon Connection to switch daemon', true);
     }
 
     const toast = (m, ok = true) => {
@@ -4565,7 +4703,7 @@
           apiGet('/services'),
         ]);
 
-        qs('connStatus').innerHTML = `<span class="conn-dot ok"></span>${health.environment || 'Connected'}`;
+        qs('connStatus').innerHTML = `<span class="conn-dot ok"></span><strong>${escapeHtml(currentDaemonName())}</strong> · ${escapeHtml(health.environment || 'Connected')}`;
 
         const servicesList = services.services || [];
         const totalServices = services.total != null ? services.total : servicesList.length;
@@ -4594,7 +4732,7 @@
         if (tab !== 'all' && !servicesList.some(s => s.service_code === tab)) tab = 'all';
         setDashServiceTab(tab);
       } catch (e) {
-        qs('connStatus').innerHTML = `<span class="conn-dot err"></span>Disconnected`;
+        qs('connStatus').innerHTML = `<span class="conn-dot err"></span><strong>${escapeHtml(currentDaemonName())}</strong> · Disconnected`;
         toast('Cannot connect to daemon at ' + API_BASE, false);
       }
     }
@@ -10985,6 +11123,7 @@
         }
       } catch (e) { /* ignore */ }
       loadPortalPipelineConfigUi();
+      _refreshDaemonPresetHighlight(API_BASE);
       const reviewOrderSel = qs('reviewOrderSelect');
       if (reviewOrderSel) reviewOrderSel.addEventListener('change', onReviewOrderSelectChange);
       let lastTab = localStorage.getItem('activeTab') || 'dash';
@@ -11003,9 +11142,9 @@
       }
       try {
         const health = await apiGet('/health');
-        qs('connStatus').innerHTML = `<span class="conn-dot ok"></span>${health.environment || 'Connected'}${ORDER_API_PREFIX ? ' · /api' : ''}`;
+        qs('connStatus').innerHTML = `<span class="conn-dot ok"></span><strong>${escapeHtml(currentDaemonName())}</strong> · ${escapeHtml(health.environment || 'Connected')}${ORDER_API_PREFIX ? ' · /api' : ''}`;
       } catch (e) {
-        qs('connStatus').innerHTML = `<span class="conn-dot err"></span>Disconnected`;
+        qs('connStatus').innerHTML = `<span class="conn-dot err"></span><strong>${escapeHtml(currentDaemonName())}</strong> · Disconnected`;
       }
     })();
   </script>

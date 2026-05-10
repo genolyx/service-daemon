@@ -325,6 +325,15 @@ def _merge_pgx_from_result_json_for_report_json(
 # PDF kinds that always use solo templates (partner section omitted in plugin).
 CARRIER_PDF_SOLO_KINDS = frozenset({"standard", "exome", "proactive", "pgx"})
 
+# Carrier-style dark-gene supplement (hard-to-sequence regions) is omitted for these products.
+_PDF_KINDS_NO_DARK_GENES = frozenset({"proactive", "pgx"})
+
+
+def pdf_template_kind_excludes_dark_genes(pdf_kind: Optional[str]) -> bool:
+    """Proactive health and standalone PGx PDFs do not include the carrier dark-genes annex."""
+    k = (pdf_kind or "").strip().lower()
+    return k in _PDF_KINDS_NO_DARK_GENES
+
 _REPORT_TYPE_LABEL_FOR_KIND: Dict[str, str] = {
     "standard": "Carrier Screening Report",
     "couples": "Carrier Screening Report",
@@ -1058,25 +1067,28 @@ def generate_report_json(
     if is_couple:
         report["findings"] = primary_findings + partner_findings
 
-    # Dark genes supplement: read disk result.json → dark_genes_for_pdf → report.json only.
-    # (Not copied from DB defaults; PDF uses detailed_sections + section_reviews when aligned.)
-    # Same path fallbacks as generate_report_pdf when report output root ≠ pipeline output_dir.
+    # Dark genes supplement: carrier / exome only — not proactive or standalone PGx.
     result_json_path = os.path.join(output_dir, "result.json")
-    candidates = _dark_genes_result_json_paths_for_pdf(
-        result_json_path, extra_result_json_paths
-    )
-    pdf_dg, src, any_file = _build_dark_genes_for_pdf_from_result_json_candidates(
-        candidates, "generate_report_json"
-    )
-    if pdf_dg and src:
-        report["dark_genes"] = pdf_dg
-    elif any_file:
-        logger.warning(
-            "[generate_report_json] no usable dark_genes from candidates (newest-first) %s — "
-            "supplement will be absent in PDF (check detailed_sections / approvals)",
-            candidates,
+    if not pdf_template_kind_excludes_dark_genes(pdf_tk):
+        candidates = _dark_genes_result_json_paths_for_pdf(
+            result_json_path, extra_result_json_paths
         )
+        pdf_dg, src, any_file = _build_dark_genes_for_pdf_from_result_json_candidates(
+            candidates, "generate_report_json"
+        )
+        if pdf_dg and src:
+            report["dark_genes"] = pdf_dg
+        elif any_file:
+            logger.warning(
+                "[generate_report_json] no usable dark_genes from candidates (newest-first) %s — "
+                "supplement will be absent in PDF (check detailed_sections / approvals)",
+                candidates,
+            )
 
+        apply_supplemental_dark_genes_findings_to_report_data(report)
+    else:
+        report.pop("dark_genes", None)
+        _strip_supplemental_dark_genes_findings(report)
     _merge_pgx_from_result_json_for_report_json(
         report, result_json_path, extra_result_json_paths
     )
@@ -1134,6 +1146,61 @@ def _group_by_disease(variants: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     # pathogenic 수가 많은 질환 순으로 정렬
     groups.sort(key=lambda g: g["pathogenic_count"], reverse=True)
     return groups
+
+
+_SUP_DG_SOURCE = "dark_genes_supplemental"
+
+
+def _strip_supplemental_dark_genes_findings(report_data: Dict[str, Any]) -> None:
+    pp = report_data.get("primary_patient")
+    if not isinstance(pp, dict):
+        return
+    raw = pp.get("findings") or []
+    filt = [
+        f
+        for f in raw
+        if not (isinstance(f, dict) and f.get("finding_source") == _SUP_DG_SOURCE)
+    ]
+    if len(filt) == len(raw):
+        return
+    pp["findings"] = filt
+    meta = report_data.get("report_metadata") or {}
+    if meta.get("is_couple"):
+        partner = report_data.get("partner")
+        if isinstance(partner, dict):
+            report_data["findings"] = filt + list(partner.get("findings") or [])
+
+
+def apply_supplemental_dark_genes_findings_to_report_data(report_data: Dict[str, Any]) -> None:
+    """
+    Merge ``dark_genes.supplemental_summary_findings`` into ``primary_patient.findings`` so
+    carrier PDF templates show **+ POSITIVE** when a reviewer marks an approved supplementary
+    section as high risk. Idempotent; strips prior supplemental rows first. When no supplemental
+    rows, removes stale supplemental-only findings (e.g. after reviewer lowers risk).
+    """
+    dg = report_data.get("dark_genes")
+    if not isinstance(dg, dict):
+        _strip_supplemental_dark_genes_findings(report_data)
+        return
+    sup = dg.get("supplemental_summary_findings") or []
+    if not sup:
+        _strip_supplemental_dark_genes_findings(report_data)
+        return
+    pp = report_data.get("primary_patient")
+    if not isinstance(pp, dict):
+        return
+    raw = pp.get("findings") or []
+    base = [
+        f
+        for f in raw
+        if not (isinstance(f, dict) and f.get("finding_source") == _SUP_DG_SOURCE)
+    ]
+    pp["findings"] = base + list(sup)
+    meta = report_data.get("report_metadata") or {}
+    if meta.get("is_couple"):
+        partner = report_data.get("partner")
+        if isinstance(partner, dict):
+            report_data["findings"] = pp["findings"] + list(partner.get("findings") or [])
 
 
 def _determine_carrier_status(variants: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -1228,16 +1295,26 @@ def generate_report_pdf(
         logger.error(f"Failed to read report JSON: {e}")
         return []
 
-    _merge_dark_genes_from_result_json_for_pdf(
-        report_data, report_json_path, extra_result_json_paths=extra_result_json_paths
-    )
+    md_pdf = report_data.get("report_metadata") or {}
+    pdf_tk_disk = md_pdf.get("pdf_template_kind")
+    if not isinstance(pdf_tk_disk, str):
+        pdf_tk_disk = None
 
-    try:
-        from .dark_genes import sanitize_dark_genes_payload_for_pdf_render
+    if not pdf_template_kind_excludes_dark_genes(pdf_tk_disk):
+        _merge_dark_genes_from_result_json_for_pdf(
+            report_data, report_json_path, extra_result_json_paths=extra_result_json_paths
+        )
+        apply_supplemental_dark_genes_findings_to_report_data(report_data)
 
-        sanitize_dark_genes_payload_for_pdf_render(report_data)
-    except Exception as e:
-        logger.warning("[generate_report_pdf] dark_genes PDF sanitize skipped: %s", e)
+        try:
+            from .dark_genes import sanitize_dark_genes_payload_for_pdf_render
+
+            sanitize_dark_genes_payload_for_pdf_render(report_data)
+        except Exception as e:
+            logger.warning("[generate_report_pdf] dark_genes PDF sanitize skipped: %s", e)
+    else:
+        report_data.pop("dark_genes", None)
+        _strip_supplemental_dark_genes_findings(report_data)
 
     _merge_pgx_from_result_json_for_pdf(
         report_data, report_json_path, extra_result_json_paths=extra_result_json_paths
@@ -1249,16 +1326,17 @@ def generate_report_pdf(
     except Exception as e:
         logger.warning("[generate_report_pdf] pgx PDF sanitize skipped: %s", e)
 
-    dg = report_data.get("dark_genes")
-    if not isinstance(dg, dict) or not (
-        (dg.get("report_detailed_html") or "").strip() or dg.get("status") == "error"
-    ):
-        logger.warning(
-            "[generate_report_pdf] dark_genes missing or empty after merge/sanitize — "
-            "PDF will have no supplementary hard-to-sequence block "
-            "(check result.json dark_genes next to %s)",
-            os.path.dirname(os.path.abspath(report_json_path)),
-        )
+    if not pdf_template_kind_excludes_dark_genes(pdf_tk_disk):
+        dg = report_data.get("dark_genes")
+        if not isinstance(dg, dict) or not (
+            (dg.get("report_detailed_html") or "").strip() or dg.get("status") == "error"
+        ):
+            logger.warning(
+                "[generate_report_pdf] dark_genes missing or empty after merge/sanitize — "
+                "PDF will have no supplementary hard-to-sequence block "
+                "(check result.json dark_genes next to %s)",
+                os.path.dirname(os.path.abspath(report_json_path)),
+            )
 
     # Re-write report.json so on-disk JSON matches what WeasyPrint uses (merge is in-memory only above).
     try:
@@ -1674,7 +1752,7 @@ def _builtin_dark_genes_supplement_html(report_data: Dict[str, Any]) -> str:
         return ""
     if dg.get("status") == "error" and (dg.get("report_summary") or "").strip():
         return (
-            '<h2 style="page-break-before: always;">Supplementary analysis (hard-to-sequence regions)</h2>'
+            '<h2 style="page-break-before: always;">Supplementary analysis</h2>'
             f'<p style="white-space:pre-wrap;font-size:9pt;">'
             f"{html.escape(str(dg.get('report_summary') or ''), quote=True)}</p>"
         )
@@ -1682,7 +1760,7 @@ def _builtin_dark_genes_supplement_html(report_data: Dict[str, Any]) -> str:
     if not html_snip:
         return ""
     return (
-        '<h2 style="page-break-before: always;">Supplementary analysis (hard-to-sequence regions)</h2>'
+        '<h2 style="page-break-before: always;">Supplementary analysis</h2>'
         '<div style="font-size:9pt;color:#334155;">' + html_snip + "</div>"
     )
 

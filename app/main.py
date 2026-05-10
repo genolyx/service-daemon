@@ -1711,10 +1711,24 @@ async def preview_report_html(order_id: str, request: ReportGenerateRequest):
         from .services.carrier_screening.report import (
             _merge_dark_genes_from_result_json_for_pdf,
             _merge_pgx_from_result_json_for_pdf,
+            _strip_supplemental_dark_genes_findings,
+            apply_supplemental_dark_genes_findings_to_report_data,
+            pdf_template_kind_excludes_dark_genes,
         )
         extras = _extra_result_json_paths_for_carrier_report(job)
-        _merge_dark_genes_from_result_json_for_pdf(report_data, report_json_path, extra_result_json_paths=extras)
-        sanitize_dark_genes_payload_for_pdf_render(report_data)
+        md_r = report_data.get("report_metadata") or {}
+        _pdf_tk_r = md_r.get("pdf_template_kind")
+        if not isinstance(_pdf_tk_r, str):
+            _pdf_tk_r = None
+        if not pdf_template_kind_excludes_dark_genes(_pdf_tk_r):
+            _merge_dark_genes_from_result_json_for_pdf(
+                report_data, report_json_path, extra_result_json_paths=extras
+            )
+            apply_supplemental_dark_genes_findings_to_report_data(report_data)
+            sanitize_dark_genes_payload_for_pdf_render(report_data)
+        else:
+            report_data.pop("dark_genes", None)
+            _strip_supplemental_dark_genes_findings(report_data)
         _merge_pgx_from_result_json_for_pdf(report_data, report_json_path, extra_result_json_paths=extras)
         sanitize_pgx_payload_for_pdf_render(report_data)
 
@@ -2243,8 +2257,9 @@ async def _dark_genes_review_impl(order_id: str, body: DarkGenesReviewRequest) -
     Writes ``dark_genes.section_reviews`` (index-aligned with ``detailed_sections``) into
     the same ``result.json`` that Generate Report reads (``carrier_report_output_dir``, mirroring
     to ``job.output_dir`` when those paths differ). Notes and workflow state are stored for the
-    portal; the customer PDF lists all eligible supplementary sections (Overview / QC-only /
-    duplicate row still omitted) and may show **Notes** when present.
+    portal; the customer PDF includes only sections that pass ``effective_approved_for_dark_genes_section``
+    (low-risk five core loci auto-approve; high-risk—including CAH language that infers high—needs
+    Approve + stored **High** tier; CFTR adjunct needs explicit approval). **Notes** may show when present.
     """
     queue_manager = get_queue_manager()
     job = queue_manager.get_job(order_id)

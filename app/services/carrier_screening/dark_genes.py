@@ -46,10 +46,107 @@ def _coerce_risk_level(val: Any) -> str:
     return "high"
 
 
+_CAH_PARALOG_DELETION_KEYS = (
+    "paralog_deletion",
+    "cyp21_paralog_deletion",
+    "paralog_deletion_call",
+    "deletion_paralog",
+)
+_CAH_DELETION_KV_NEGATIVE_VALUES = frozenset(
+    {
+        "no",
+        "none",
+        "false",
+        "0",
+        "negative",
+        "absent",
+        "undetected",
+        "normal",
+        "wt",
+        "wildtype",
+        "na",
+        "n/a",
+        "neg",
+    }
+)
+
+
+def _cah_paralog_deletion_kv_actionable(body: str) -> bool:
+    """
+    True when a structured paralog / deletion call line is present and not clearly negative.
+    Prose-only reports still use ``_cah_body_prose_implies_uncertain_deletion``.
+    """
+    raw = body or ""
+    if not raw.strip():
+        return False
+    for key in _CAH_PARALOG_DELETION_KEYS:
+        for rx in (
+            re.compile(rf"(?im)^\s*{re.escape(key)}\s*[:=]\s*(.+)$"),
+            re.compile(rf"(?i)\b{re.escape(key)}\s*[:=]\s*(.+)"),
+        ):
+            m = rx.search(raw)
+            if not m:
+                continue
+            val = (m.group(1) or "").strip().lower()
+            if not val:
+                continue
+            first_tok = val.split(",")[0].strip().split()[0:1]
+            tok0 = first_tok[0] if first_tok else ""
+            if tok0 in _CAH_DELETION_KV_NEGATIVE_VALUES or val in _CAH_DELETION_KV_NEGATIVE_VALUES:
+                continue
+            if re.match(r"^no\b", val) or re.match(r"^not\s", val):
+                continue
+            return True
+    return False
+
+
+def _cah_body_prose_implies_uncertain_deletion(body: str) -> bool:
+    """
+    CAH / CYP21A2 dosage blocks sometimes state uncertain copy-number or deletion language
+    without a ``WARNING:`` prefix — treat as high priority so reviewers see red / must approve.
+    """
+    raw = body or ""
+    if not raw.strip():
+        return False
+    # "not a possible deletion" / "without suspected deletion"
+    if re.search(
+        r"(?i)\b(not|without)\s+(\S+\s+){0,3}(possible|likely|suspected)\s+deletion\b",
+        raw,
+    ):
+        return False
+    if re.search(
+        r"(?i)\b(not|without)\s+(\S+\s+){0,2}(possible|likely|suspected)\s+gene\s+deletion\b",
+        raw,
+    ):
+        return False
+    prose_hits = (
+        r"(?i)\b(possible|likely|suspected)\s+deletion\b",
+        r"(?i)\b(possible|likely|suspected)\s+gene\s+deletion\b",
+        r"(?i)\bpossible\b[\s.,:;()—–\-]{0,24}\bdeletion\b",
+        r"(?i)\b(possible|likely|suspected)\b[\s\S]{0,72}\bdeletion\b",
+        r"(?i)\bpossible\s+partial\s+deletion\b",
+        r"(?i)\bdeletion\s+(cannot\s+be\s+ruled\s+out|cannot\s+be\s+excluded)\b",
+        r"(?i)\bcannot\s+(exclude|rule\s+out)\b[\s\S]{0,120}\bdeletion\b",
+        r"(?i)\bindicat(es|ing|ed)\b[\s\S]{0,80}\b(possible|likely|suspected)\s+deletion\b",
+    )
+    if any(re.search(p, raw) for p in prose_hits):
+        return True
+    return False
+
+
+def _cah_section_body_implies_high_priority(body: str) -> bool:
+    return _cah_paralog_deletion_kv_actionable(body) or _cah_body_prose_implies_uncertain_deletion(
+        body
+    )
+
+
 def _infer_pipeline_section_high_risk(sec: Dict[str, Any]) -> bool:
     """
-    True when the pipeline marked this block as risky (``WARNING:`` line or warning-kind section).
-    Used when ``section_reviews[i].risk`` is absent — default is **low** unless this is true.
+    True when the pipeline marked this block as risky (``WARNING:`` line or warning-kind section),
+    or when CAH / CYP21A2 text signals uncertain deletion / CNV without a formal WARNING line.
+
+    Used when ``section_reviews[i].risk`` is absent, and to detect **high** even when a stale
+    **low** is still on disk (see ``effective_risk_for_section`` / ``align_section_reviews``).
     """
     if not sec or not isinstance(sec, dict):
         return False
@@ -64,6 +161,10 @@ def _infer_pipeline_section_high_risk(sec: Dict[str, Any]) -> bool:
         return True
     if re.search(r"(?im)^\s*Status\s*:\s*WARNING\s*:", body):
         return True
+    if _is_cyp21_cah_dosage_title(sec.get("title")) and _cah_section_body_implies_high_priority(
+        body
+    ):
+        return True
     return False
 
 
@@ -72,16 +173,64 @@ def effective_risk_for_section(
     sec: Optional[Dict[str, Any]],
 ) -> str:
     """
-    Stored ``risk`` when set (reviewer override). When missing/empty, infer from pipeline
-    (high if WARNING / warning-kind, else low).
+    ``section_reviews[i].risk`` when set, except a stored **low** is ignored if the pipeline
+    section text still signals high priority (CAH uncertain deletion, ``WARNING:``, etc.) so
+    stale JSON / reprocessed reports do not stay green after the body updates.
     """
+    inferred = bool(sec and _infer_pipeline_section_high_risk(sec))
     if rev:
         r = rev.get("risk")
         if r is not None and str(r).strip() != "":
-            return _coerce_risk_level(r)
+            stored = _coerce_risk_level(r)
+            if stored == "low" and inferred:
+                return "high"
+            return stored
     if sec is not None:
-        return "high" if _infer_pipeline_section_high_risk(sec) else "low"
+        return "high" if inferred else "low"
     return "low"
+
+
+def _disk_review_risk_is_explicit_high(rev: Dict[str, Any]) -> bool:
+    if not rev:
+        return False
+    r = rev.get("risk")
+    if r is None or str(r).strip() == "":
+        return False
+    return _coerce_risk_level(r) == "high"
+
+
+def effective_approved_for_dark_genes_section(
+    rev: Dict[str, Any],
+    sec: Optional[Dict[str, Any]],
+) -> bool:
+    """
+    **Low** effective risk auto-approves **only** the five core loci (same set as
+    ``dark_genes_section_always_on_customer_pdf``): SMA, Alpha Thalassemia, CAH, Fragile X, DMD.
+    **CFTR** supplementary blocks (IVS8/9 / EH) never get that default—even when poly-T/TG are
+    negative/low—and need an explicit portal ``approved``. Other non-core sections need portal
+    ``approved`` when tier is low.
+
+    **CFTR supplementary — molecular benign** (EH / tract REPCN without 5T, TG12, TG13+) is
+    **never** eligible for the customer PDF, even if ``approved`` is true.
+
+    **High** effective risk still requires portal ``approved`` plus an explicit stored **high**
+    tier when the pipeline infers high priority (see ``_disk_review_risk_is_explicit_high``).
+    """
+    if _cftr_section_molecular_risk_level(sec) == "low":
+        return False
+    if effective_risk_for_section(rev, sec) == "low":
+        if (
+            sec is not None
+            and dark_genes_section_always_on_customer_pdf(sec)
+            and not cftr_supplementary_section_excludes_low_risk_auto_approve(sec)
+        ):
+            return True
+        return _coerce_approved_bool(rev.get("approved"))
+    if not _coerce_approved_bool(rev.get("approved")):
+        return False
+    if sec is not None and _infer_pipeline_section_high_risk(sec):
+        return _disk_review_risk_is_explicit_high(rev)
+    return True
 
 
 def _risk_heading_colors(risk_level: str) -> Tuple[str, str]:
@@ -114,6 +263,75 @@ def dark_genes_display_title(raw: Optional[str]) -> str:
         return "Spinal Muscular Atrophy"
     key = " ".join(t.lower().split())
     return _DARK_GENES_DISPLAY_TITLE.get(key, t)
+
+
+# Core dark-gene display titles (SMA, Alpha Thalassemia, CAH, Fragile X, DMD). Used for
+# low-risk auto-approve eligibility and report naming — **not** an “always emit on PDF” bypass;
+# customer PDF inclusion uses ``effective_approved_for_dark_genes_section`` (high risk needs
+# explicit approval).
+_CUSTOMER_PDF_ALWAYS_INCLUDE_DARK_GENES = frozenset(
+    {
+        "Spinal Muscular Atrophy",
+        "Alpha Thalassemia",
+        "Congenital Adrenal Hyperplasia (CAH)",
+        "Fragile X",
+        "Duchenne Muscular Dystrophy (DMD)",
+    }
+)
+
+
+def dark_genes_section_always_on_customer_pdf(sec: Optional[Dict[str, Any]]) -> bool:
+    """True when the customer-facing title is one of the five core dark-gene loci (SMA, HBA, CAH, FX, DMD)."""
+    if not sec or not isinstance(sec, dict):
+        return False
+    disp = dark_genes_display_title(sec.get("title"))
+    return disp in _CUSTOMER_PDF_ALWAYS_INCLUDE_DARK_GENES
+
+
+def cftr_supplementary_section_excludes_low_risk_auto_approve(
+    sec: Optional[Dict[str, Any]],
+) -> bool:
+    """
+    True when this block is a **CFTR** IVS8/9 or Expansion Hunter adjunct: low/benign tracts must
+    not inherit the five-loci low-risk auto-approve (explicit review still required).
+
+    Pipeline may emit CFTR-related lines inside a core section body; those rows are **not**
+    excluded when the section title is already one of the five core loci.
+    """
+    if not sec or not isinstance(sec, dict):
+        return False
+    title = str(sec.get("title") or "")
+    body = str(sec.get("body") or "")
+    if re.search(r"\bCFTR\b", title, re.I) or re.search(
+        r"cystic\s+fibrosis", title, re.I
+    ):
+        return True
+    if dark_genes_section_always_on_customer_pdf(sec):
+        return False
+    blob = f"{title}\n{body}"
+    if re.search(r"\bCFTR_(polyT|TG)\s*=", blob, re.I):
+        return True
+    if re.search(r"\bCFTR\s+poly", blob, re.I):
+        return True
+    if re.search(
+        r"CFTR_IVS9|\(TG\)11\(T\)7|EH locus[^\n]{0,60}CFTR",
+        blob,
+        re.I,
+    ):
+        return True
+    if re.search(r"IVS\s*9.*\bCFTR\b|\bCFTR\b.*IVS\s*9", blob, re.I):
+        return True
+    if re.search(
+        r"expansion\s*hunter[^\n]{0,80}CFTR|CFTR[^\n]{0,80}expansion\s*hunter",
+        blob,
+        re.I,
+    ):
+        return True
+    if parse_cftr_expansion_hunter_ivs9(body) is not None:
+        return True
+    if extract_cftr_poly_tract_calls(body):
+        return True
+    return False
 
 
 # Lines that are only decorative separators (e.g. runs of hyphens between blocks in *_detailed_report.txt)
@@ -564,6 +782,345 @@ def parse_detailed_report_sections(text: str) -> List[Dict[str, Any]]:
     return sections
 
 
+# CFTR IVS8 poly-T / IVS9 poly-TG — key names and line labels seen in unified dark-gene reports.
+_CFTR_T_KV_NAMES: Tuple[str, ...] = (
+    "poly_t",
+    "polyt",
+    "poly-t",
+    "t_tract",
+    "t_track",
+    "cftr_poly_t",
+    "cftr_t_tract",
+    "cftr_t",
+    "ivs8_polyt",
+    "ivs8_poly_t",
+    "polyt_genotype",
+    "poly_t_genotype",
+    "POLYT",
+    "T_tract",
+    "T_track",
+    "ivs8_t",
+    "ivs_8_t",
+    "ivs_8_polyt",
+)
+_CFTR_TG_KV_NAMES: Tuple[str, ...] = (
+    "poly_tg",
+    "polytg",
+    "poly-tg",
+    "tg_tract",
+    "tg_track",
+    "cftr_poly_tg",
+    "cftr_tg_tract",
+    "ivs9_polytg",
+    "ivs9_poly_tg",
+    "ivs9_tg",
+    "polytg_genotype",
+    "poly_tg_genotype",
+    "TG_tract",
+    "TG_track",
+    "ivs_9_tg",
+    "ivs_9_polytg",
+)
+
+_CFTR_T_LINE = re.compile(
+    r"(?im)^\s*(?:CFTR\s+)?"
+    r"(?:(?:poly[-\s]?T\b)|(?:\bpoly\s+T\b)|(?:\bT\s+poly\b)|"
+    r"(?:\bT\s+tract\b)|(?:\bT\s+track\b)|"
+    r"(?:IVS8[/\s-]*poly[-\s]?T)|(?:IVS\s*8\b[^\n:]{0,80}))"
+    r"\s*[:-]\s*(.+)$"
+)
+_CFTR_TG_LINE = re.compile(
+    r"(?im)^\s*(?:CFTR\s+)?"
+    r"(?:(?:poly[-\s]?TG\b)|(?:\bpoly\s+TG\b)|(?:\bTG\s+poly\b)|"
+    r"(?:\bTG\s+tract\b)|(?:\bTG\s+track\b)|"
+    r"(?:IVS9[/\s-]*poly[-\s]?TG)|(?:IVS\s*9\b[^\n:]{0,80}))"
+    r"\s*[:-]\s*(.+)$"
+)
+
+
+def _cftr_kv_scalar(raw: str, names: Tuple[str, ...]) -> Optional[str]:
+    """First key=value / key: value match for any known CFTR tract key."""
+    s = raw or ""
+    for name in names:
+        for pat in (
+            rf"(?im)^\s*{re.escape(name)}\s*[:=]\s*(.+)$",
+            rf"(?i)\b{re.escape(name)}\s*[:=]\s*([^\n;|]+?)(?=\s*$|\s*[;|]|\n)",
+        ):
+            m = re.search(pat, s)
+            if m:
+                v = (m.group(1) or "").strip()
+                if v:
+                    return v[:500]
+    return None
+
+
+def _cftr_guess_t_from_cftr_context(text: str) -> Optional[str]:
+    """Line-local ``5T/7T``-style alleles on lines that mention IVS8 / poly-T."""
+    for line in (text or "").splitlines():
+        ln = line.strip()
+        if not ln:
+            continue
+        if not re.search(
+            r"(?i)cftr|poly[-\s]?T\b|T\s*tract|T\s*track|IVS\s*[-/]?\s*8|intron\s*8|T\s*allele",
+            ln,
+        ):
+            continue
+        m = re.search(r"\b(\d+T)\s*/\s*(\d+T)\b", ln, re.I)
+        if m:
+            return f"{m.group(1)}/{m.group(2)}"
+        m = re.search(r"\b([579]T)\s*/\s*([579]T)\b", ln, re.I)
+        if m:
+            return f"{m.group(1)}/{m.group(2)}"
+        m = re.search(
+            r"(?i)(?:poly[-\s]?T|T\s*tract|IVS\s*[-/]?\s*8)\s*[:-]\s*(\d+T)\b",
+            ln,
+        )
+        if m:
+            return m.group(1).upper()
+    return None
+
+
+def _cftr_guess_tg_from_cftr_context(text: str) -> Optional[str]:
+    """``TG11/TG12`` or ``(TG)11/(TG)12`` on lines mentioning IVS9 / poly-TG."""
+    for line in (text or "").splitlines():
+        ln = line.strip()
+        if not ln:
+            continue
+        if not re.search(
+            r"(?i)cftr|poly[-\s]?TG\b|TG\s*tract|TG\s*track|"
+            r"IVS\s*[-/]?\s*9|intron\s*9|TG\s*allele",
+            ln,
+        ):
+            continue
+        m = re.search(r"(?i)\b(\(TG\)\d+)\s*/\s*(\(TG\)\d+)\b", ln)
+        if m:
+            return f"{m.group(1)}/{m.group(2)}"
+        m = re.search(r"(?i)\b(TG\d+)\s*/\s*(TG\d+)\b", ln)
+        if m:
+            return f"{m.group(1).upper()}/{m.group(2).upper()}"
+        m = re.search(
+            r"(?i)(?:poly[-\s]?TG|TG\s*tract|IVS\s*[-/]?\s*9)\s*[:-]\s*((?:\(TG\)|TG)\d+)\b",
+            ln,
+        )
+        if m:
+            return m.group(1)
+    return None
+
+
+def extract_cftr_poly_tract_calls(text: str) -> Dict[str, str]:
+    """
+    Parse CFTR poly-T (IVS8) and poly-TG (IVS9) tract calls from dark-gene
+    ``summary_text`` / ``detailed_text``.
+
+    Returns a subset dict with keys ``T`` and/or ``TG`` mapping to display strings
+    (e.g. ``9T/9T``, ``TG11/TG12``). Empty if no patterns match.
+    """
+    raw = (text or "").strip()
+    out: Dict[str, str] = {}
+    if not raw:
+        return out
+
+    t_val = _cftr_kv_scalar(raw, _CFTR_T_KV_NAMES)
+    if not t_val:
+        m = _CFTR_T_LINE.search(raw)
+        if m:
+            t_val = (m.group(1) or "").strip()[:500] or None
+    if t_val:
+        out["T"] = t_val
+
+    tg_val = _cftr_kv_scalar(raw, _CFTR_TG_KV_NAMES)
+    if not tg_val:
+        m = _CFTR_TG_LINE.search(raw)
+        if m:
+            tg_val = (m.group(1) or "").strip()[:500] or None
+    if tg_val:
+        out["TG"] = tg_val
+
+    if (
+        "T" not in out
+        and re.search(r"(?i)\bCFTR\b|poly[-\s]?T\b|IVS\s*[-/]?\s*8|intron\s*8", raw)
+    ):
+        gv = _cftr_guess_t_from_cftr_context(raw)
+        if gv:
+            out["T"] = gv[:500]
+    if "TG" not in out and re.search(
+        r"(?i)\bCFTR\b|poly[-\s]?TG\b|IVS\s*[-/]?\s*9|intron\s*9", raw
+    ):
+        gv = _cftr_guess_tg_from_cftr_context(raw)
+        if gv:
+            out["TG"] = gv[:500]
+
+    eh = parse_cftr_expansion_hunter_ivs9(raw)
+    if eh:
+        if "T" not in out and eh.get("display_t"):
+            out["T"] = str(eh["display_t"])[:500]
+        if "TG" not in out and eh.get("display_tg"):
+            out["TG"] = str(eh["display_tg"])[:500]
+
+    return out
+
+
+def _cftr_eh_risk_from_counts(poly_t_alleles: List[int], tg_alleles: List[int]) -> Tuple[str, List[str]]:
+    """
+    Laboratory-facing flags for IVS9 EH REPCN (poly-T count per allele, TG repeat count per allele).
+
+    Flags **high** when any allele is **5T**, **TG12**, or **TG≥13** (per internal CFTR-RD/CBAVD context).
+    """
+    reasons: List[str] = []
+    for x in poly_t_alleles:
+        if x == 5:
+            reasons.append("5T allele (elevated CFTR-RD/CBAVD context per Cuppens/Groman)")
+    for x in tg_alleles:
+        if x >= 13:
+            reasons.append(f"TG repeat ×{x} (high-penetrance context)")
+        elif x == 12:
+            reasons.append(f"TG repeat ×{x} (low–moderate penetrance; flagged for review)")
+    if reasons:
+        return "high", reasons
+    return "low", []
+
+
+def parse_cftr_expansion_hunter_ivs9(text: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse Expansion Hunter style lines, e.g.::
+
+        Raw EH REPCN  : CFTR_TG=11/11  CFTR_polyT=7/7
+
+    Returns structured counts, display strings, and risk assessment; ``None`` if no EH keys.
+    """
+    raw = text or ""
+    mpt = re.search(r"(?i)\bCFTR_polyT\s*=\s*(\d+)\s*/\s*(\d+)", raw)
+    if not mpt:
+        mpt = re.search(r"(?i)\bCFTR\s+poly[-_\s]*T\s*=\s*(\d+)\s*/\s*(\d+)", raw)
+    mtg = re.search(r"(?i)\bCFTR_TG\s*=\s*(\d+)\s*/\s*(\d+)", raw)
+    if not mtg:
+        mtg = re.search(r"(?i)\bCFTR\s+_?\s*TG\s*=\s*(\d+)\s*/\s*(\d+)", raw)
+    if not mpt and not mtg:
+        return None
+    t1 = int(mpt.group(1)) if mpt else None
+    t2 = int(mpt.group(2)) if mpt else None
+    g1 = int(mtg.group(1)) if mtg else None
+    g2 = int(mtg.group(2)) if mtg else None
+    t_list = [x for x in (t1, t2) if x is not None]
+    g_list = [x for x in (g1, g2) if x is not None]
+    risk_level, risk_reasons = _cftr_eh_risk_from_counts(t_list, g_list)
+    per_allele_m = re.search(r"(?im)^\s*Per-allele\s*:\s*(.+)$", raw)
+    out: Dict[str, Any] = {
+        "source": "expansion_hunter_ivs9",
+        "poly_t_rep_cn": [t1, t2] if mpt else None,
+        "tg_rep_cn": [g1, g2] if mtg else None,
+        "raw_poly_t": f"{t1}/{t2}" if mpt else None,
+        "raw_tg": f"{g1}/{g2}" if mtg else None,
+        "display_t": f"{t1}T/{t2}T" if mpt else None,
+        "display_tg": f"TG{g1}/TG{g2}" if mtg else None,
+        "risk_level": risk_level,
+        "risk_reasons": risk_reasons,
+        "per_allele_summary": (per_allele_m.group(1) or "").strip()[:2000] if per_allele_m else None,
+    }
+    if re.search(r"117\s*,\s*548\s*,\s*607|117548607", raw):
+        out["locus_note"] = "Locus chr7:117,548,607-117,548,635 (GRCh38); ref (TG)11(T)7"
+    return out
+
+
+def _cftr_section_molecular_risk_level(sec: Optional[Dict[str, Any]]) -> Optional[str]:
+    """
+    IVS poly-T / TG **molecular** tier for **CFTR supplementary** sections only (same detection as
+    ``cftr_supplementary_section_excludes_low_risk_auto_approve``).
+
+    Returns ``high`` / ``low``, or ``None`` when the section is not a CFTR adjunct (core loci
+    unchanged). Customer PDF uses this to **omit benign EH / negative tracts** even if the
+    reviewer checked **approved**.
+    """
+    if not cftr_supplementary_section_excludes_low_risk_auto_approve(sec):
+        return None
+    blob = f"{str(sec.get('title') or '')}\n{str(sec.get('body') or '')}"
+    eh = parse_cftr_expansion_hunter_ivs9(blob)
+    if eh:
+        return _coerce_risk_level(eh.get("risk_level"))
+    calls = extract_cftr_poly_tract_calls(blob)
+    t_str = str(calls.get("T") or "").strip()
+    tg_str = str(calls.get("TG") or "").strip()
+    if not t_str and not tg_str:
+        return "low"
+    t_ints = [int(x) for x in re.findall(r"(\d+)(?=\s*T\b)", t_str, re.I)]
+    tg_ints = [int(x) for x in re.findall(r"(?i)tg\s*(\d+)", tg_str)]
+    if not t_ints and not tg_ints:
+        return "low"
+    risk, _ = _cftr_eh_risk_from_counts(t_ints, tg_ints)
+    return risk
+
+
+def cftr_tract_call_is_actionable(call: str) -> bool:
+    """True if ``call`` looks like an allele / genotype (not ``negative``, ``N/A``, etc.)."""
+    s = (call or "").strip().lower()
+    if not s or len(s) > 200:
+        return False
+    if s in {
+        "negative",
+        "neg",
+        "n/a",
+        "na",
+        "nd",
+        "normal",
+        "wildtype",
+        "wt",
+        "ref",
+        "reference",
+        "pass",
+        "fail",
+        "not_detected",
+        "not detected",
+        "not tested",
+        "not_tested",
+        "none",
+        "no",
+    }:
+        return False
+    if re.match(r"^(negative|no\b|n/?a\b|none|not\s+(?:detected|found|tested))\b", s):
+        return False
+    return True
+
+
+def extract_cftr_poly_tract_calls_from_dark_genes(dark_genes_block: Dict[str, Any]) -> Dict[str, str]:
+    """
+    Merge poly-T / poly-TG calls from ``summary_text``, ``detailed_text``, and **each**
+    ``detailed_sections`` block (same source as the Dark genes tab — any section may carry CFTR
+    adjunct lines even when the title omits ``CFTR``).
+    """
+    if not isinstance(dark_genes_block, dict):
+        return {}
+    merged: Dict[str, str] = {}
+    parts: List[str] = []
+    for key in ("summary_text", "detailed_text"):
+        t = dark_genes_block.get(key)
+        if isinstance(t, str) and t.strip():
+            parts.append(t)
+    blob = "\n".join(parts)
+    if blob.strip():
+        merged.update(extract_cftr_poly_tract_calls(blob))
+
+    sections = dark_genes_block.get("detailed_sections")
+    if isinstance(sections, list):
+        for sec in sections:
+            if not isinstance(sec, dict):
+                continue
+            title = str(sec.get("title") or "")
+            body = str(sec.get("body") or "")
+            chunk = f"{title}\n{body}".strip()
+            if not chunk:
+                continue
+            sub = extract_cftr_poly_tract_calls(chunk)
+            for k, v in sub.items():
+                if not (v and str(v).strip()):
+                    continue
+                if not cftr_tract_call_is_actionable(str(v)):
+                    continue
+                if k not in merged or not (merged.get(k) or "").strip():
+                    merged[k] = v
+
+    return {k: v for k, v in merged.items() if cftr_tract_call_is_actionable(str(v))}
+
+
 def align_section_reviews(
     prev: Optional[List[Any]],
     n: int,
@@ -572,34 +1129,60 @@ def align_section_reviews(
     """Align portal ``section_reviews`` to ``detailed_sections`` length (index-matched).
 
     ``risk`` defaults from the pipeline when missing: **low** unless the section has a
-    ``WARNING:`` line or warning-kind title; reviewer-stored ``risk`` always wins.
+    ``WARNING:`` line, warning-kind title, or (CAH / CYP21A2) uncertain-deletion / paralog
+    call language. A previously saved **low** is upgraded to **high** when inference says so
+    (reprocess / corrected body text); ``approved`` is cleared whenever inference is **high**
+    but the stored row never set **high** risk, so high-priority blocks are not implicitly
+    approved for report. **Low** final risk is auto-``approved`` **only** for the five core loci
+    (``dark_genes_section_always_on_customer_pdf``); other sections keep saved ``approved`` or
+    default to unapproved for new rows. **CFTR** IVS8/9 / EH adjunct blocks skip low-risk
+    auto-approve even if misclassified (always need explicit approval for benign/negative calls).
     """
     out: List[Dict[str, Any]] = []
     for i in range(n):
         sec_i = sections[i] if sections and i < len(sections) else None
+        inferred_high = bool(sec_i and _infer_pipeline_section_high_risk(sec_i))
         if prev and i < len(prev) and isinstance(prev[i], dict):
             p = prev[i]
             pr = p.get("risk")
             if pr is not None and str(pr).strip() != "":
                 risk = _coerce_risk_level(pr)
             else:
-                risk = (
-                    "high"
-                    if (sec_i and _infer_pipeline_section_high_risk(sec_i))
-                    else "low"
-                )
+                risk = "high" if inferred_high else "low"
+            approved = _coerce_approved_bool(p.get("approved"))
+            if inferred_high and risk == "low":
+                risk = "high"
+                approved = False
+            stored_explicit_high = (
+                pr is not None
+                and str(pr).strip() != ""
+                and _coerce_risk_level(pr) == "high"
+            )
+            if inferred_high and not stored_explicit_high:
+                approved = False
+            if (
+                risk == "low"
+                and sec_i is not None
+                and dark_genes_section_always_on_customer_pdf(sec_i)
+                and not cftr_supplementary_section_excludes_low_risk_auto_approve(sec_i)
+            ):
+                approved = True
             out.append(
                 {
-                    "approved": _coerce_approved_bool(p.get("approved")),
+                    "approved": approved,
                     "notes": str(p.get("notes") or "")[:8000],
                     "risk": risk,
                 }
             )
         else:
-            risk = (
-                "high" if (sec_i and _infer_pipeline_section_high_risk(sec_i)) else "low"
+            risk = "high" if inferred_high else "low"
+            core_low = (
+                risk == "low"
+                and sec_i is not None
+                and dark_genes_section_always_on_customer_pdf(sec_i)
+                and not cftr_supplementary_section_excludes_low_risk_auto_approve(sec_i)
             )
-            out.append({"approved": False, "notes": "", "risk": risk})
+            out.append({"approved": core_low, "notes": "", "risk": risk})
     return out
 
 
@@ -681,6 +1264,20 @@ def _section_lab_review_only(sec: Dict[str, Any]) -> bool:
     return False
 
 
+def _section_is_apoe_pgx_supplement(sec: Dict[str, Any]) -> bool:
+    """
+    APOE (ε2/ε3/ε4, PharmCAT adj.) is reviewed under PGx, not the Dark genes tab / PDF supplement.
+    """
+    t = (sec.get("title") or "").strip().lower()
+    if re.search(r"\bapoe\b", t):
+        return True
+    body = str(sec.get("body") or "")
+    head = "\n".join(body.splitlines()[:8]).lower()
+    if re.search(r"(?im)^\s*apoe\s*[:=]", head):
+        return True
+    return False
+
+
 def _section_is_entire_duplicate_summary_row(sec: Dict[str, Any]) -> bool:
     """One-line body that is the same dense summary row as *_summary_report.txt — omit from PDF."""
     body = (sec.get("body") or "").strip()
@@ -699,20 +1296,49 @@ def _section_review_at(
     return x if isinstance(x, dict) else {}
 
 
+# Shared label width across all supplementary KV tables so values line up between SMA / HBA / FX / DMD.
+_PDF_DG_KV_LABEL_WIDTH = "42%"
+_PDF_DG_KV_LABEL_PAD_RIGHT = "10px"
+# Second column begins after the first fixed-width column (padding is inside that width).
+_PDF_DG_KV_VALUE_START = _PDF_DG_KV_LABEL_WIDTH
+
+
 def _dl_kv_pdf_rows(rows: List[Tuple[str, str]]) -> str:
     """Portal-style label/value rows for WeasyPrint (inline styles; no portal CSS)."""
     parts: List[str] = []
+    lab_style = (
+        f"width:{_PDF_DG_KV_LABEL_WIDTH};max-width:{_PDF_DG_KV_LABEL_WIDTH};"
+        f"padding:4px {_PDF_DG_KV_LABEL_PAD_RIGHT} 4px 0;box-sizing:border-box;"
+        "font-size:8pt;color:#64748b;vertical-align:top;"
+        "word-wrap:break-word;overflow-wrap:break-word;"
+    )
+    val_style = (
+        "width:auto;padding:4px 0;font-size:8pt;color:#0f172a;"
+        "vertical-align:top;text-align:left;font-variant-numeric:tabular-nums;"
+    )
     for lab, val in rows:
         parts.append(
             "<tr>"
-            f'<td style="padding:3px 12px 3px 0;font-size:8pt;color:#64748b;'
-            f'vertical-align:top;white-space:nowrap;">{html.escape(lab)}</td>'
-            f'<td style="padding:3px 0;font-size:8pt;color:#0f172a;">{html.escape(val)}</td>'
+            f'<td style="{lab_style}">{html.escape(lab)}</td>'
+            f'<td style="{val_style}">{html.escape(val)}</td>'
             "</tr>"
         )
     return (
-        '<table style="margin:4px 0 0;border-collapse:collapse;width:100%;">'
+        '<table style="margin:4px 0 0;border-collapse:collapse;'
+        'table-layout:fixed;width:100%;">'
         f'{"".join(parts)}</table>'
+    )
+
+
+def _dark_genes_pdf_prose_in_value_column(inner_html: str) -> str:
+    """Indent narrative-only analysis text to align with the KV value column."""
+    esc = (inner_html or "").strip()
+    if not esc:
+        return ""
+    return (
+        f'<div style="margin:6px 0 0;padding-left:{_PDF_DG_KV_VALUE_START};'
+        'box-sizing:border-box;">'
+        f"{esc}</div>"
     )
 
 
@@ -838,6 +1464,10 @@ def _is_cyp21_cah_dosage_title(title: Optional[str]) -> bool:
     if re.search(r"CYP21A2", u, re.I) and re.search(r"hotspot", u, re.I):
         return True
     if re.search(r"CAH", u, re.I) and re.search(r"hotspot", u, re.I):
+        return True
+    if re.search(r"\bCAH\b", u, re.I) and re.search(r"Dosage", u, re.I):
+        return True
+    if re.search(r"congenital\s+adrenal\s+hyperplasia", u, re.I):
         return True
     return dark_genes_display_title(title) == "Congenital Adrenal Hyperplasia (CAH)"
 
@@ -1316,17 +1946,17 @@ def _try_generic_pipeline_kv_html(body: str) -> Optional[str]:
     if rows and not leftover:
         return _dl_kv_pdf_rows(rows)
     if rows and leftover:
-        return _dl_kv_pdf_rows(rows) + (
-            '<p style="white-space:pre-wrap;font-size:8pt;margin:6px 0 0;line-height:1.45;'
+        return _dl_kv_pdf_rows(rows) + _dark_genes_pdf_prose_in_value_column(
+            '<p style="white-space:pre-wrap;font-size:8pt;margin:0;line-height:1.45;'
             f'color:#334155;">{html.escape(chr(10).join(leftover))}</p>'
         )
     if len(lines) == 1:
-        return (
-            f'<p style="font-size:8pt;color:#334155;margin:8px 0 0;line-height:1.45;">'
+        return _dark_genes_pdf_prose_in_value_column(
+            f'<p style="font-size:8pt;margin:0;line-height:1.45;color:#334155;">'
             f"{html.escape(lines[0])}</p>"
         )
-    return (
-        '<p style="white-space:pre-wrap;font-size:8pt;margin:8px 0 0;line-height:1.45;'
+    return _dark_genes_pdf_prose_in_value_column(
+        '<p style="white-space:pre-wrap;font-size:8pt;margin:0;line-height:1.45;'
         f'color:#334155;">{html.escape(chr(10).join(lines))}</p>'
     )
 
@@ -1347,8 +1977,46 @@ def _section_body_portal_html_for_pdf(sec: Dict[str, Any]) -> str:
     h = _try_cah_hotspot_standalone_kv_html(title, body)
     if h:
         return h
+    h = _try_cftr_ivs9_eh_pdf_kv_html(title, body)
+    if h:
+        return h
     gh = _try_generic_pipeline_kv_html(body)
     return gh or ""
+
+
+def _eh_slash_allele_display(slash_val: Optional[str], *, tg: bool) -> Optional[str]:
+    """Format ``7/7`` as ``7 / 7 (T repeats per allele)`` for PDF (match portal EH labels)."""
+    if not slash_val or not str(slash_val).strip():
+        return None
+    parts = [p.strip() for p in str(slash_val).split("/") if p.strip() != ""]
+    if len(parts) != 2:
+        return None
+    suffix = "(TG repeats per allele)" if tg else "(T repeats per allele)"
+    return f"{parts[0]} / {parts[1]} {suffix}"
+
+
+def _try_cftr_ivs9_eh_pdf_kv_html(title: str, body: str) -> Optional[str]:
+    """
+    Customer PDF: for Expansion Hunter IVS9 lines (``CFTR_polyT=``, ``CFTR_TG=``), emit **only**
+    Poly-T and TG REPCN rows — omit locus, per-allele narrative, risk text, and raw ``Raw EH REPCN`` dump.
+    """
+    raw = (body or "").strip()
+    if not raw:
+        return None
+    blob = f"{(title or '').strip()}\n{raw}"
+    eh = parse_cftr_expansion_hunter_ivs9(blob)
+    if not eh:
+        return None
+    rows: List[Tuple[str, str]] = []
+    pt = _eh_slash_allele_display(eh.get("raw_poly_t"), tg=False)
+    if pt:
+        rows.append(("Poly-T", pt))
+    tg_disp = _eh_slash_allele_display(eh.get("raw_tg"), tg=True)
+    if tg_disp:
+        rows.append(("TG", tg_disp))
+    if not rows:
+        return None
+    return _dl_kv_pdf_rows(rows)
 
 
 def _dark_genes_finding_card_html(
@@ -1360,8 +2028,9 @@ def _dark_genes_finding_card_html(
     risk_level: str = "high",
 ) -> str:
     """
-    Match ``carrier_EN.html`` Detailed Interpretations: left accent bar (green if ``risk_level``
-    is ``low``, red if ``high`` — reviewer-set), uppercase sub-labels, dashed separator.
+    Match ``carrier_EN.html`` detailed blocks: left accent bar (green if ``risk_level``
+    is ``low``, red if ``high``), dashed separator. Customer PDF omits a separate **Test analysis**
+    sub-heading so the condition title flows directly into the results.
     """
     border, bg = _risk_heading_colors(_coerce_risk_level(risk_level))
     head = (
@@ -1372,13 +2041,8 @@ def _dark_genes_finding_card_html(
     analysis_wrap = ""
     inner = (analysis_inner_html or "").strip()
     if inner:
-        sub_test = (
-            '<div style="font-size:8pt;font-weight:500;color:#64748b;text-transform:uppercase;'
-            'letter-spacing:0.02em;margin-top:10px;">Test analysis</div>'
-        )
         analysis_wrap = (
-            f'<div style="margin-bottom:12px;">{sub_test}'
-            f'<div style="margin-top:2px;">{analysis_inner_html}</div></div>'
+            f'<div style="margin-bottom:12px;margin-top:4px;">{analysis_inner_html}</div>'
         )
     notes_block = ""
     notes = (notes_plain or "").strip()
@@ -1413,12 +2077,13 @@ def detailed_sections_to_pdf_html(
     The **Overview** block is omitted from the customer PDF (keep it in the portal for audit only).
     One-line duplicate summary rows are omitted.
 
-    When ``filter_by_approval=True`` (customer PDF), only sections with
-    ``section_reviews[i].approved`` are included. Title accent is **green** if
-    effective risk is ``low``, **red** if ``high`` (reviewer override, or pipeline
-    ``WARNING:`` / warning-kind section). Each block
-    matches **Detailed Interpretations** layout (**Test analysis** + **Interpretation**
-    sub-labels, dashed separators).
+    When ``filter_by_approval=True`` (customer PDF), a section is included **only** if
+    ``effective_approved_for_dark_genes_section`` is true (including: five core loci at **low**
+    effective risk are auto-approved; **high** core loci such as CAH with possible deletion require
+    explicit approval first). **High** risk unapproved blocks—core or not—are omitted. Title accent
+    is **green** if effective risk is ``low``, **red** if ``high``.
+    Each included block uses the condition title bar, results body, optional **Interpretation**
+    (reviewer notes) sub-label, and dashed separators — without a separate **Test analysis** line.
     When ``filter_by_approval=False``, every eligible section includes full body text and
     optional **Notes** lines beneath.
     """
@@ -1434,8 +2099,10 @@ def detailed_sections_to_pdf_html(
         title_l = (sec.get("title") or "").strip().lower()
         if title_l == "overview":
             continue
+        if _section_is_apoe_pgx_supplement(sec):
+            continue
         rev = _section_review_at(section_reviews, i)
-        if filter_by_approval and not _coerce_approved_bool(rev.get("approved")):
+        if filter_by_approval and not effective_approved_for_dark_genes_section(rev, sec):
             continue
         notes = (rev.get("notes") or "").strip()
 
@@ -1486,6 +2153,97 @@ def detailed_sections_to_pdf_html(
             f"{notes_html}</div>"
         )
     return "\n".join(parts)
+
+
+def _dark_gene_pdf_disorder_gene_inheritance(
+    sec: Dict[str, Any], disp_title: str
+) -> Tuple[str, str, str]:
+    """
+    Map supplementary dark-gene section → CONDITION / GENE / inheritance line for carrier PDF table.
+    """
+    blob = f"{sec.get('title') or ''}\n{sec.get('body') or ''}"
+    blob_l = blob.lower()
+    dt = (disp_title or "").strip()
+    dt_l = dt.lower()
+
+    if "spinal muscular" in dt_l or re.search(r"\bsmn\b|smaca|paraphase", blob_l):
+        return ("Spinal muscular atrophy", "SMN1", "Autosomal recessive")
+    if "fragile" in dt_l or re.search(r"\bfmr1\b", blob_l):
+        return ("Fragile X syndrome", "FMR1", "X-linked")
+    if ("alpha" in dt_l and "thal" in dt_l) or re.search(r"\bhba\b|alpha[-\s]*thal", blob_l):
+        return ("Alpha-thalassemia", "HBA1/HBA2", "Autosomal recessive")
+    if "adrenal hyperplasia" in dt_l or re.search(r"\bcah\b|cyp21", blob_l):
+        return ("Congenital adrenal hyperplasia", "CYP21A2", "Autosomal recessive")
+    if "duchenne" in dt_l or re.search(r"\bdmd\b", blob_l):
+        return ("Duchenne muscular dystrophy", "DMD", "X-linked")
+    if re.search(r"\bcftr\b|cystic fibrosis", blob_l) or (
+        "cftr" in dt_l or "cystic" in dt_l
+    ):
+        return ("Cystic fibrosis", "CFTR", "Autosomal recessive")
+    if "structural" in dt_l or "cnv" in blob_l or "large sv" in dt_l or "manta" in blob_l:
+        return (dt if dt else "Structural variant / CNV (supplementary)", "", "—")
+
+    return (dt if dt else "Supplementary analysis finding", "", "—")
+
+
+def dark_genes_supplemental_high_risk_summary_findings(
+    sections: List[Dict[str, Any]],
+    section_reviews: Optional[List[Dict[str, Any]]],
+) -> List[Dict[str, Any]]:
+    """
+    Build ``primary_patient.findings``-shaped rows for the carrier PDF summary table when any
+    **approved** supplementary section has effective risk **high** (reviewer or pipeline warning).
+
+    **Approval is always required** (including for SMA, HBA, CAH, Fragile X, DMD): unapproved
+    high-risk blocks do not flip the PDF to POSITIVE via this path.
+    """
+    out: List[Dict[str, Any]] = []
+    if not sections:
+        return out
+    for i, sec in enumerate(sections):
+        if _section_lab_review_only(sec):
+            continue
+        if _section_is_entire_duplicate_summary_row(sec):
+            continue
+        title_l = (sec.get("title") or "").strip().lower()
+        if title_l == "overview":
+            continue
+        if _section_is_apoe_pgx_supplement(sec):
+            continue
+        rev = _section_review_at(section_reviews, i)
+        if not effective_approved_for_dark_genes_section(rev, sec):
+            continue
+        if effective_risk_for_section(rev, sec) != "high":
+            continue
+
+        disp_title = dark_genes_display_title(sec.get("title"))
+        disorder, gene, inh = _dark_gene_pdf_disorder_gene_inheritance(sec, disp_title)
+        notes = (rev.get("notes") or "").strip()
+        summary = (
+            notes
+            if notes
+            else (
+                "Supplementary hard-to-sequence region analysis: reviewer marked this block as high "
+                "priority. See the Supplementary analysis section for technical detail."
+            )
+        )
+        gene_bit = gene or "target locus"
+        out.append(
+            {
+                "finding_source": "dark_genes_supplemental",
+                "gene": gene,
+                "mutation": "Supplementary finding — see Supplementary analysis section",
+                "disorder": disorder,
+                "inheritance": inh,
+                "classification": "High priority (supplementary review)",
+                "gene_description": (
+                    f"This result comes from the supplementary analysis block “{disp_title}” "
+                    f"({gene_bit}) included with this carrier screen."
+                ),
+                "variant_summary": summary,
+            }
+        )
+    return out
 
 
 def collect_dark_genes_from_analysis_dir(
@@ -1547,6 +2305,19 @@ def collect_dark_genes_from_analysis_dir(
         except Exception as e:
             logger.warning("[dark_genes] parse_detailed_report_sections: %s", e)
 
+    cftr_eh_meta: Optional[Dict[str, Any]] = None
+    for blob in (summary_text, detailed_excerpt):
+        if blob and blob.strip():
+            cftr_eh_meta = parse_cftr_expansion_hunter_ivs9(blob)
+            if cftr_eh_meta:
+                break
+    if not cftr_eh_meta and detailed_sections:
+        for sec in detailed_sections:
+            chunk = f"{sec.get('title') or ''}\n{sec.get('body') or ''}"
+            cftr_eh_meta = parse_cftr_expansion_hunter_ivs9(chunk)
+            if cftr_eh_meta:
+                break
+
     return {
         "status": status,
         "sample_name": (sample_name or "").strip(),
@@ -1558,6 +2329,7 @@ def collect_dark_genes_from_analysis_dir(
         "detailed_text": detailed_excerpt,
         "detailed_sections": detailed_sections,
         "visual_evidence": discover_dark_gene_visual_evidence(base),
+        **({"cftr_ivs9_eh": cftr_eh_meta} if cftr_eh_meta else {}),
         **(
             {"smaca_ct_sidecar": smaca_ct_sidecar}
             if smaca_ct_sidecar
@@ -1578,6 +2350,9 @@ def dark_genes_for_pdf(report_block: Dict[str, Any]) -> Dict[str, Any]:
     then **reviewer notes** — not a raw monospaced pipeline block.
 
     Only ``report_detailed_html`` is emitted. ``status == error`` returns a short ``report_summary``.
+    When approved sections exist, also emits ``supplemental_summary_findings`` (and
+    ``supplemental_review_high_risk``) for merging into the carrier PDF results table when any
+    approved block has effective **high** risk.
     """
     if not report_block or report_block.get("status") == "not_found":
         return {}
@@ -1642,6 +2417,9 @@ def dark_genes_for_pdf(report_block: Dict[str, Any]) -> Dict[str, Any]:
         if sections
         else ""
     )
+    supplemental_findings = dark_genes_supplemental_high_risk_summary_findings(
+        sections, section_reviews
+    )
 
     if not (report_detailed_html or "").strip():
         if sections and isinstance(section_reviews, list) and len(section_reviews) == len(sections):
@@ -1658,7 +2436,10 @@ def dark_genes_for_pdf(report_block: Dict[str, Any]) -> Dict[str, Any]:
                 report_block.get("status"),
             )
         return {}
-    return {
+    out_pdf: Dict[str, Any] = {
         "status": report_block.get("status"),
         "report_detailed_html": report_detailed_html,
+        "supplemental_review_high_risk": bool(supplemental_findings),
+        "supplemental_summary_findings": supplemental_findings,
     }
+    return out_pdf

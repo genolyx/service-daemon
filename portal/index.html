@@ -690,6 +690,42 @@
     .qc-fail{color:var(--err);font-weight:600}
     .qc-warn{color:#f59e0b;font-weight:600}
 
+    /* Review — persistent QC panel (all subtabs) */
+    .review-qc-panel{margin:0 0 14px;padding:14px 16px;border-radius:14px;border:1px solid var(--line);background:var(--card)}
+    .review-qc-panel.hidden{display:none}
+    .review-qc-title{margin:0 0 12px;font-size:16px;font-weight:700;color:var(--text)}
+    .review-qc-grid{display:grid;grid-template-columns:1.15fr 1fr;gap:14px;align-items:start}
+    @media(max-width:960px){.review-qc-grid{grid-template-columns:1fr}}
+    .review-qc-section{border:1px solid var(--line);border-radius:12px;background:var(--card-2);overflow:hidden}
+    .review-qc-section summary{cursor:pointer;font-weight:600;font-size:13px;padding:10px 12px;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--text);user-select:none}
+    .review-qc-section summary::-webkit-details-marker{display:none}
+    .review-qc-section summary::after{content:'▲';font-size:10px;opacity:.65;transition:transform .15s}
+    .review-qc-section[open] summary::after{transform:rotate(180deg)}
+    .review-qc-section[open] summary{border-bottom:1px solid var(--line)}
+    .review-qc-right{display:flex;flex-direction:column;gap:12px}
+    .review-qc-table-wrap{overflow-x:auto;max-height:48vh}
+    .review-qc-table{width:100%;border-collapse:collapse;font-size:12px}
+    .review-qc-table th,.review-qc-table td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+    .review-qc-table th{color:var(--muted);font-weight:600;white-space:nowrap}
+    .review-qc-table tbody tr:last-child td{border-bottom:none}
+    .qc-pill{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;text-transform:capitalize}
+    .qc-pill.pass{background:rgba(34,197,94,.22);color:var(--ok)}
+    .qc-pill.warn{background:rgba(234,179,8,.22);color:#f59e0b}
+    .qc-pill.fail{background:rgba(239,68,68,.22);color:var(--err)}
+    .review-qc-reports{padding:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .btn-qc-report{
+      display:inline-flex;align-items:center;justify-content:center;padding:8px 14px;border-radius:10px;font-size:12px;font-weight:600;
+      border:1px solid rgba(0,0,0,.18);
+      background:linear-gradient(180deg,#c86f52,#a84838);
+      color:#fff;text-decoration:none;cursor:pointer;box-sizing:border-box
+    }
+    .btn-qc-report:hover{filter:brightness(1.08)}
+    body.light .btn-qc-report{border-color:rgba(0,0,0,.12)}
+
+    .pgx-extended-panel-guide summary::-webkit-details-marker{display:none}
+    .pgx-extended-panel-guide summary::after{content:'▲';font-size:9px;opacity:.55;margin-left:auto;transition:transform .15s}
+    .pgx-extended-panel-guide[open] summary::after{transform:rotate(180deg)}
+
     /* Create Order — service picker (single-line labels) */
     .create-service-pick{
       display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;max-width:min(840px,100%)
@@ -1730,17 +1766,45 @@
       <!-- Carrier Status Banner -->
       <div id="carrierBanner" class="hidden"></div>
 
+      <!-- QC: visible on every review sub-tab -->
+      <div id="reviewQcPanel" class="review-qc-panel hidden">
+        <h3 class="review-qc-title">Quality Control Results</h3>
+        <div class="review-qc-grid">
+          <details class="review-qc-section" open>
+            <summary>Sequencing metrics</summary>
+            <div class="review-qc-table-wrap">
+              <table class="review-qc-table">
+                <thead><tr><th>Metric</th><th>Value</th><th>Unit</th><th>Threshold</th><th>Status</th></tr></thead>
+                <tbody id="reviewQcSequencingBody"></tbody>
+              </table>
+            </div>
+          </details>
+          <div class="review-qc-right">
+            <details class="review-qc-section" open>
+              <summary>Analysis quality control</summary>
+              <div class="review-qc-table-wrap">
+                <table class="review-qc-table">
+                  <thead><tr><th>Parameter</th><th>Value</th><th>Unit</th><th>Threshold</th><th>Status</th></tr></thead>
+                  <tbody id="reviewQcAnalysisBody"></tbody>
+                </table>
+              </div>
+            </details>
+            <details class="review-qc-section" open>
+              <summary>QC reports</summary>
+              <div id="reviewQcReportButtons" class="review-qc-reports"></div>
+            </details>
+          </div>
+        </div>
+      </div>
+
       <!-- Review sub-tabs -->
       <div class="sub-tabs" id="reviewSubTabs">
         <div class="sub-tab active" data-tab="variants" onclick="showReviewTab('variants')">Variants</div>
-        <div class="sub-tab" data-tab="coverage" onclick="showReviewTab('coverage')">Coverage</div>
-        <div class="sub-tab" data-tab="diseases" onclick="showReviewTab('diseases')">Disease Summary</div>
-        <div class="sub-tab" data-tab="qc" onclick="showReviewTab('qc')">QC Summary</div>
         <div class="sub-tab" data-tab="darkgenes" onclick="showReviewTab('darkgenes')">Dark genes</div>
         <div class="sub-tab" data-tab="pgx" onclick="showReviewTab('pgx')">PGx</div>
-        <div class="sub-tab" data-tab="stats" onclick="showReviewTab('stats')">Statistics</div>
         <div class="sub-tab" data-tab="report" onclick="showReviewTab('report')">Review Case</div>
         <div class="sub-tab" data-tab="genedb" onclick="showReviewTab('genedb')">Gene database</div>
+        <div class="sub-tab" data-tab="coverage" onclick="showReviewTab('coverage')">Coverage</div>
       </div>
 
       <!-- Variants Tab -->
@@ -1797,9 +1861,6 @@
 
       <!-- Coverage tab: gene search + stats + IGV -->
       <div id="reviewCoverage" class="hidden">
-        <p class="muted" style="margin:0 0 10px;font-size:12px;line-height:1.5">
-          Search any HGNC symbol (panel / interpretation list + free text). Coverage stats use the same API as the variant-row <strong>Coverage</strong> button. IGV uses this order’s indexed exome-style BAM; <strong>Jump to variant</strong>, <strong>Lookup coverage</strong>, or <strong>Locus</strong> + <strong>Go</strong> — at whole-chromosome zoom alignments stay blank until you zoom to a gene or coordinates.
-        </p>
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px">
           <input id="coverageGeneInput" placeholder="Gene symbol (e.g. BRCA1)" style="max-width:200px" autocomplete="off" />
           <button type="button" class="btn primary" id="coverageLookupBtn">Lookup coverage</button>
@@ -1818,23 +1879,17 @@
           <label class="muted" style="margin:0;font-size:12px">Locus</label>
           <input id="coverageLocusInput" placeholder="chr13:32315474-32400266 or BRCA1" style="max-width:280px;font-family:monospace;font-size:12px" />
           <button type="button" class="btn" id="coverageGotoLocusBtn">Go</button>
+          <button type="button" class="btn" id="coverageCftrIvs9Btn" title="GRCh38 — adds BED layers for IVS9 TG vs poly-T span; zoom to pileup">
+            CFTR IVS9 (poly-T / TG)
+          </button>
         </div>
-        <div id="coverageReportBody" class="card" style="margin:0 0 14px;padding:12px 14px"></div>
-        <p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.45">
-          IGV only draws reads/coverage when zoomed to a narrow region (on the order of tens of kb). If you see an empty track, pick a variant or enter a locus and click <strong>Go</strong>.
+        <p class="muted" style="margin:0 0 12px;font-size:11px;line-height:1.45;max-width:56rem">
+          <strong>CFTR IVS9:</strong> Click the button above (or open from a CFTR tract variant) to load a small <strong>BED track</strong> on
+          <strong>chr7:117,548,607–635</strong> (EH-style span) with separate features for the <strong>TG</strong> and <strong>poly-T</strong> stretches
+          (GRCh38, ref layout (TG)<sub>11</sub>(T)<sub>7</sub>). The alignment track is set to <strong>show all bases</strong> (not only mismatches). Use the track’s gear menu for “full” vs “expanded” if the pileup is dense. Homopolymer tracts may still appear as gaps/deletions in CIGAR — counts are best from Expansion Hunter REPCN when available.
         </p>
-        <div id="coverageIgvHost"><p class="muted">Click <strong>Load / refresh IGV</strong> to open alignments for this order’s BAM, then lookup a gene or pick a variant.</p></div>
-      </div>
-
-      <!-- Disease Summary Tab -->
-      <div id="reviewDiseases" class="hidden">
-        <div id="diseaseSummaryContent"></div>
-      </div>
-
-      <!-- QC Summary Tab -->
-      <div id="reviewQc" class="hidden">
-        <div class="stat-grid" id="qcStats"></div>
-        <div id="qcDetailTable" style="margin-top:12px"></div>
+        <div id="coverageReportBody" class="card" style="margin:0 0 14px;padding:12px 14px"></div>
+        <div id="coverageIgvHost"></div>
       </div>
 
       <!-- Dark genes (supplementary Nextflow summary/) -->
@@ -1849,15 +1904,6 @@
         <div id="pgxReviewContent" class="card" style="margin:0;padding:14px"></div>
       </div>
 
-      <!-- Statistics Tab -->
-      <div id="reviewStats" class="hidden">
-        <div class="row">
-          <div class="col-4"><div id="statsByClass" class="card" style="margin:0"><h3 style="font-size:14px">By Classification</h3><div id="statsClassBody"></div></div></div>
-          <div class="col-4"><div id="statsByGene" class="card" style="margin:0"><h3 style="font-size:14px">By Gene (Top 20)</h3><div id="statsGeneBody"></div></div></div>
-          <div class="col-4"><div id="statsByDisease" class="card" style="margin:0"><h3 style="font-size:14px">By Disease</h3><div id="statsDiseaseBody"></div></div></div>
-        </div>
-      </div>
-
       <!-- Variant Detail Panel -->
       <div id="variantDetail" class="variant-detail hidden"></div>
 
@@ -1867,21 +1913,6 @@
           <div class="col-12">
             <div class="card" style="margin:0">
               <h3 style="font-size:14px">Selected Variants for Report</h3>
-              <p class="muted" style="font-size:12px;line-height:1.55;margin:0 0 10px">
-                <strong>When narratives fill:</strong> Values are built when this panel is shown from (1) the server <strong>gene_knowledge</strong> SQLite row for that gene when present, else (2) simple <strong>templates</strong> from panel disease + ClinVar/HGVS — that is <em>not</em> a live web search in the browser.
-                <strong>Gemini</strong> runs on the server only when the cache row is missing or incomplete (<strong>Gene database → Fetch missing from Gemini</strong>) or during report generation. If you see one-line “The GENE gene is associated with …” text, the cache is empty or not configured yet. Use <strong>New search / write-up</strong> on a variant card to re-run Gemini for that gene only.
-              </p>
-              <div class="muted" style="font-size:12px;line-height:1.55;margin:0 0 12px;padding:10px 12px;border-radius:12px;border:1px solid rgba(130,160,255,.28);background:rgba(130,160,255,.07)">
-                <strong style="display:block;margin-bottom:6px">Gemini gene cache — field definitions (same as daemon extraction prompt)</strong>
-                <span style="opacity:.92">Search step: prioritize OMIM, GeneReviews, UniProt, GTEx; name the primary disorder. Extraction maps search text into SQLite <code>gene_data</code> (genetic_reporter_lookup–compatible).</span>
-                <ul style="margin:8px 0 0;padding-left:1.25em">
-                  <li><code>disorder_name</code> — Specific name of the primary disorder associated with this gene.</li>
-                  <li><code>disease_association</code> — 1–3 sentences on how pathogenic variants in this gene relate to that disorder (clinical/genetic mechanism), not just repeating the disorder name.</li>
-                  <li><code>function_summary</code> — 1–3 sentences on normal gene product function / pathway role.</li>
-                  <li><code>inheritance</code> — Pattern if known (e.g. AR, AD, XL).</li>
-                  <li><code>omim_number</code> — Digits only when cited in the text.</li>
-                </ul>
-              </div>
               <div id="selectedVariantsList" class="muted">No variants selected</div>
             </div>
           </div>
@@ -1912,7 +1943,7 @@
               <div class="row">
                 <div class="col-12">
                   <label>Report language (from order)</label>
-                  <div id="reportOrderLangDisplay" class="muted" style="margin-top:4px">Load an order to check PDF eligibility.</div>
+                  <div id="reportOrderLangDisplay" class="muted" style="margin-top:4px">—</div>
                   <div id="reportPdfDisabledMsg" style="display:none;margin-top:8px;color:var(--err);font-size:13px"></div>
                   <div id="reportLangCheckboxesWrap" class="hidden" aria-hidden="true">
                     <label>Languages</label>
@@ -1934,23 +1965,7 @@
         </div>
       </div>
 
-      <!-- Gene database: SQLite gene_knowledge (same cache as report-time Gemini merge) -->
       <div id="reviewGeneDb" class="hidden">
-        <p class="muted" style="margin:0 0 12px;font-size:13px">
-          Shows <strong>checked variants only</strong> (Variants tab): <strong>one row per variant</strong>. <strong>Gene-level</strong> text (disorder, function, disease association) is shared in SQLite <code>gene_data</code> and reused when the same gene appears again. <strong>Variant-level</strong> notes (same HGVS across orders) live in <code>variant_knowledge</code>.
-          Use <strong>Fetch missing from Gemini</strong> for gene-level fill (requires API key).
-        </p>
-        <div class="muted" style="font-size:12px;line-height:1.55;margin:0 0 12px;padding:10px 12px;border-radius:12px;border:1px solid rgba(130,160,255,.28);background:rgba(130,160,255,.07)">
-          <strong style="display:block;margin-bottom:6px">Gemini gene cache — field definitions (same as daemon extraction prompt)</strong>
-          <span style="opacity:.92">Search step: prioritize OMIM, GeneReviews, UniProt, GTEx; name the primary disorder. Extraction maps search text into SQLite <code>gene_data</code> (genetic_reporter_lookup–compatible).</span>
-          <ul style="margin:8px 0 0;padding-left:1.25em">
-            <li><code>disorder_name</code> — Specific name of the primary disorder associated with this gene.</li>
-            <li><code>disease_association</code> — 1–3 sentences on how pathogenic variants in this gene relate to that disorder (clinical/genetic mechanism), not just repeating the disorder name.</li>
-            <li><code>function_summary</code> — 1–3 sentences on normal gene product function / pathway role.</li>
-            <li><code>inheritance</code> — Pattern if known (e.g. AR, AD, XL).</li>
-            <li><code>omim_number</code> — Digits only when cited in the text.</li>
-          </ul>
-        </div>
         <p id="geneDbHint" class="muted" style="margin:0 0 10px;font-size:12px"></p>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
           <input id="geneDbSearch" type="search" placeholder="Filter gene or text..." style="max-width:320px" oninput="renderGeneDatabase()" />
@@ -1987,7 +2002,7 @@
   <div id="geneDbEditModal" class="modal-overlay hidden" aria-hidden="true" onclick="if(event.target===this)geneDbEditClose()">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="geneDbEditTitle" onclick="event.stopPropagation()">
       <h3 id="geneDbEditTitle" style="margin:0 0 8px;font-size:16px">Edit gene cache</h3>
-      <p class="muted" style="margin:0 0 12px;font-size:12px;line-height:1.5">Saves to the shared <code>gene_knowledge</code> SQLite on the server (same data as reports / Review Case).</p>
+      <p class="muted" style="margin:0 0 12px;font-size:12px;line-height:1.5">Saves to server <code>gene_knowledge</code> SQLite.</p>
       <div><strong id="geneDbEditGeneLabel" style="font-size:15px;letter-spacing:.02em"></strong></div>
       <label for="geneDbEditDisorder">Disorder</label>
       <textarea id="geneDbEditDisorder" rows="2" autocomplete="off"></textarea>
@@ -2009,7 +2024,7 @@
   <div id="variantDbEditModal" class="modal-overlay hidden" aria-hidden="true" style="z-index:10051" onclick="if(event.target===this)variantDbEditClose()">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="variantDbEditTitle" onclick="event.stopPropagation()">
       <h3 id="variantDbEditTitle" style="margin:0 0 8px;font-size:16px">Edit variant cache</h3>
-      <p class="muted" style="margin:0 0 12px;font-size:12px;line-height:1.5">Stored by stable key <code>GENE|HGVSc</code> (or protein if no cDNA). Same variant in a future order reuses this row; gene-level text stays in <code>gene_data</code>.</p>
+      <p class="muted" style="margin:0 0 12px;font-size:12px;line-height:1.5">Key: <code>GENE|HGVSc</code> (or protein). Reused across orders.</p>
       <div class="muted" style="font-size:11px;margin-bottom:10px;word-break:break-all"><code id="variantDbEditKeyDisplay"></code></div>
       <label for="variantDbEditNotes">Variant notes</label>
       <textarea id="variantDbEditNotes" rows="6" autocomplete="off" placeholder="Interpretation, literature, or lab notes specific to this HGVS…"></textarea>
@@ -3669,6 +3684,7 @@
       if (name === 'review') {
         stopOrdersListPolling();
         if (!opt.skipReviewRefresh) refreshReviewOrderList();
+        renderReviewQC();
       }
       if (name === 'literature') {
         stopOrdersListPolling();
@@ -6270,9 +6286,7 @@
       if (reviewData._service_code === 'sgnipt') renderSgNIPTBanner();
       else renderCarrierBanner();
       renderVariantsTable();
-      renderDiseaseSummary();
       renderReviewQC();
-      renderReviewStats();
       renderReviewDarkGenes();
       renderGeneDatabase();
       updateReviewResultMeta();
@@ -6530,7 +6544,7 @@
 
       try {
         const quietToast = !!opt.quietToast;
-        reviewData = await apiGet(`/order/${orderId}/result?debug=1`);
+        reviewData = await apiGet(`/order/${orderId}/result`);
 
         // ── sgNIPT 감지 및 정규화 ──────────────────────────────────────────
         const isSgNIPT = reviewData.service_code === 'sgnipt'
@@ -6614,9 +6628,7 @@
         renderReviewQC();
         renderReviewDarkGenes();
         renderReviewPgx();
-        renderReviewStats();
         renderVariantsTable();
-        renderDiseaseSummary();
         renderGeneDatabase();
         const validTabs = applyReviewTabVisibility(reviewData);
         const savedSub = getSavedReviewSubTab();
@@ -6645,7 +6657,7 @@
     function carrierReportEligible(orderParams) {
       const flat = carrierOrderMetaFlat(orderParams);
       if (!flat || typeof flat !== 'object') {
-        return { ok: false, reason: 'Order parameters were not returned (save/load order with metadata).' };
+        return { ok: false, reason: 'Order metadata missing.' };
       }
       const tc = String(flat.test_category || '').trim();
       const ot = String(flat.other_test_type || '').trim();
@@ -6678,13 +6690,13 @@
         return {
           ok: false,
           reason:
-            'PDF is only generated for carrier (standard/couples), whole exome, proactive, or PGx orders with a supported package.',
+            'PDF needs carrier, exome, proactive, or PGx order type.',
         };
       }
       if (!langOk) {
         return {
           ok: false,
-          reason: 'Report language must be EN, CN, or KO on the order to match carrier_*.html templates.',
+          reason: 'Report language must be EN, CN, or KO.',
         };
       }
       return { ok: true, kind, reportLang: rl };
@@ -6718,7 +6730,7 @@
       if (el.ok) {
         const stemMap = { standard: 'carrier', couples: 'carrier_couples', exome: 'exome', proactive: 'proactive', pgx: 'pgx' };
         const stem = stemMap[el.kind] || el.kind;
-        langDisp.textContent = `${el.reportLang} (from order) — template: ${stem}_${el.reportLang.toLowerCase()}.html`;
+        langDisp.textContent = `${el.reportLang} · ${stem}_${el.reportLang.toLowerCase()}.html`;
       } else {
         const rlRaw = flat && flat.report_language != null && String(flat.report_language).trim() !== ''
           ? String(flat.report_language).trim()
@@ -6743,7 +6755,7 @@
       });
     }
 
-    const REVIEW_SUB_TAB_KEYS = ['variants', 'coverage', 'diseases', 'qc', 'darkgenes', 'pgx', 'stats', 'report', 'genedb'];
+    const REVIEW_SUB_TAB_KEYS = ['variants', 'darkgenes', 'pgx', 'report', 'genedb', 'coverage'];
 
     /** Visible tabs for the loaded order; updated by applyReviewTabVisibility */
     let reviewVisibleTabKeys = REVIEW_SUB_TAB_KEYS.slice();
@@ -6796,9 +6808,9 @@
       const hide = new Set();
       const kind = reviewOrderKind(rd);
       if (kind === 'sgnipt') {
-        ['diseases', 'darkgenes', 'pgx'].forEach(t => hide.add(t));
+        ['darkgenes', 'pgx'].forEach(t => hide.add(t));
       } else if (kind === 'pgx') {
-        ['variants', 'coverage', 'diseases', 'darkgenes', 'genedb'].forEach(t => hide.add(t));
+        ['variants', 'coverage', 'darkgenes', 'genedb'].forEach(t => hide.add(t));
       } else if (kind === 'proactive') {
         hide.add('darkgenes');
       } else if (kind === 'carrier') {
@@ -6842,11 +6854,8 @@
       const tabMap = {
         variants: 'reviewVariants',
         coverage: 'reviewCoverage',
-        diseases: 'reviewDiseases',
-        qc: 'reviewQc',
         darkgenes: 'reviewDarkGenes',
         pgx: 'reviewPgx',
-        stats: 'reviewStats',
         report: 'reviewReport',
         genedb: 'reviewGeneDb',
       };
@@ -6963,7 +6972,7 @@
       h +=
         'Tag SNPs <strong>rs429358</strong> (Cys112Arg) and <strong>rs7412</strong> (Arg158Cys) define <strong>ε2 / ε3 / ε4</strong> in standard nomenclature. ';
       h +=
-        'For proactive orders, interpret <strong>APOE</strong> here for <strong>ε2/ε3/ε4</strong> and preventive-health context; rows in the table below may still show <strong>ClinPGx drug-gene</strong> text—use <strong>Case review</strong> notes for clinical framing if needed.';
+        'For proactive orders, interpret <strong>APOE</strong> here for <strong>ε2/ε3/ε4</strong> and preventive-health context; rows in the table below may still show <strong>ClinPGx drug-gene</strong> text.';
       h += '</p>';
       h += '<div class="table-wrap" style="max-height:none;margin:0 0 8px">';
       h += '<table style="font-size:12px;width:100%;border-collapse:collapse">';
@@ -7027,13 +7036,13 @@
         if (apoeIgvRel) {
           h += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(59,130,246,.28)">';
           h += `<button type="button" onclick="openApoeIgvModal('${apoeIgvRel.replace(/'/g, "\\'")}')" style="display:inline-block;padding:6px 14px;background:#7c3aed;color:#fff;border:1px solid #6d28d9;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-right:8px">APOE IGV — Cis/Trans Review</button>`;
-          h += '<span class="muted" style="font-size:11px;line-height:1.45">Opens IGV viewer for read-pair phasing at the APOE locus.</span>';
+          h += '<span class="muted" style="font-size:11px;line-height:1.45">IGV phasing view.</span>';
           h += '</div>';
         }
       }
       h += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(59,130,246,.28)">';
-      h += '<p style="margin:0 0 6px;font-size:11px"><strong>Quick reference (ε2/ε3/ε4 diplotype)</strong></p>';
-      h += '<ul style="margin:0 0 10px;padding-left:18px;font-size:11px;line-height:1.5" class="muted">';
+      h += '<p style="margin:0 0 6px;font-size:11px"><strong>APOE diplotype (ε2/ε3/ε4)</strong></p>';
+      h += '<ul style="margin:0 0 10px;padding-left:18px;font-size:10px;line-height:1.45" class="muted">';
       h += '<li>ε2/ε2 → Reduced risk</li>';
       h += '<li>ε2/ε3 → Slightly reduced</li>';
       h += '<li>ε3/ε3 → Baseline</li>';
@@ -7045,7 +7054,7 @@
         '<label style="display:flex;align-items:flex-start;gap:8px;margin:0;cursor:pointer;font-size:12px;line-height:1.45">';
       h += `<input type="checkbox" id="pgxIncludeApoeProactivePdf" style="margin-top:3px;width:16px;height:16px;flex-shrink:0" ${includePdfChk ? 'checked' : ''} />`;
       h +=
-        '<span>Include <strong>APOE ε2/ε3/ε4</strong> summary (population risk estimates, clinical summary, disclaimer) in the <strong>customer PDF</strong> when you generate the report. Saves with <strong>Save PGx review</strong> below.</span>';
+        '<span>Include APOE summary in the <strong>customer PDF</strong> (saved with <strong>Save PGx review</strong>).</span>';
       h += '</label></div>';
       h += '</div>';
       return h;
@@ -7069,11 +7078,8 @@
       const orderId = reviewLoadedOrderId || reviewData.order_id || '';
       const pgx = reviewData.pgx;
       if (!pgx || typeof pgx !== 'object') {
-        const msg =
-          'No <code>pgx</code> block in <code>result.json</code>. The review UI needs pipeline output under <strong>…/pgx/</strong> (PharmCAT + optional <code>pgx_custom_result.json</code>). ' +
-          'If that folder does not exist yet, <strong>reprocess alone cannot create it</strong> — run the analysis pipeline (gx-exome PGx step) first, then use «Reprocess only» to refresh <code>result.json</code>.';
-        hint.textContent = 'No PGx block in result.json — pipeline pgx/ output required (reprocess alone cannot create it).';
-        box.innerHTML = `<p class="muted" style="font-size:13px;line-height:1.55;margin:0">${msg}</p>`;
+        hint.textContent = 'No PGx data in result.json.';
+        box.innerHTML = '<p class="muted" style="margin:0">Pipeline must produce <code>pgx/</code> (PharmCAT); reprocess only refreshes from disk.</p>';
         return;
       }
       const pr =
@@ -7083,17 +7089,11 @@
         pgx.status === 'ok' ||
         pgx.status === 'error' ||
         ((pgx.summary_text || '').trim().length > 0);
-      if (pgx.status === 'not_found' && !hasPipeline && !pr.reviewed && !hasNotes) {
+      if (pgx.status === 'not_found' && !hasPipeline && !hasNotes) {
         const diskMsg = (pgx.message && String(pgx.message)) ||
           'No PharmCAT PGx output found on disk.';
-        const msg =
-          `<strong>${escapeHtml(diskMsg)}</strong><br /><br />` +
-          'Expected layout: <code>&lt;analysis_or_output&gt;/pgx/pgx_summary.txt</code> (and usually <code>pgx_result.json</code>, <code>pgx_meta.json</code>). ' +
-          'Extended panel (APOE, etc.) needs <code>pgx/pgx_custom_result.json</code> from the pipeline. ' +
-          '<br /><br />«Reprocess only» only re-reads what is already there — it does not run PharmCAT. ' +
-          'If <code>pgx/</code> is missing, run the full sequencing pipeline with PGx enabled, then reprocess.';
-        hint.textContent = diskMsg + ' Reprocess only refreshes result.json from disk; it does not run PharmCAT.';
-        box.innerHTML = `<p class="muted" style="font-size:13px;line-height:1.55;margin:0">${msg}</p>`;
+        hint.textContent = diskMsg;
+        box.innerHTML = `<p class="muted" style="margin:0">${escapeHtml(diskMsg)}. Run the pipeline with PGx; reprocess does not run PharmCAT.</p>`;
         return;
       }
 
@@ -7121,19 +7121,9 @@
         const u = orderArtifactFileUrl(orderId, rel);
         if (u) links.push(`<a href="${escapeHtml(u)}" target="_blank" rel="noopener">pgx_result.json</a>`);
       }
-      hint.textContent = pgx.pgx_dir
-        ? `PGx directory (pipeline): ${String(pgx.pgx_dir)}`
-        : '';
+      hint.textContent = '';
 
-      const st = escapeHtml(pgx.status || '');
-      let html = `<p style="margin:0 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">`;
-      html += `<span class="badge">${st}</span>`;
-      html += `<span class="muted" style="font-size:11px">PharmCAT / pharmacogenomics</span>`;
-      if (pr.reviewed) {
-        html +=
-          '<span class="badge" style="background:rgba(22,101,52,0.12);color:#166534">Reviewed</span>';
-      }
-      html += '</p>';
+      let html = `<p class="muted" style="margin:0 0 10px;font-size:11px">PharmCAT / pharmacogenomics</p>`;
       if (aph && typeof aph === 'object' && aph.show_alert) {
         const sw = escapeHtml(aph.short_warning != null ? String(aph.short_warning) : '');
         const det = escapeHtml(aph.detail != null ? String(aph.detail) : '');
@@ -7164,41 +7154,15 @@
         if (meta.exit_status != null) bits.push(`Exit: ${escapeHtml(String(meta.exit_status))}`);
         html += `<p class="muted" style="font-size:12px;margin:0 0 10px">${bits.join(' · ')}</p>`;
       }
-      if (links.length) {
-        html += `<p class="muted" style="font-size:12px;margin:0 0 10px">Open files: ${links.join(' · ')}</p>`;
-      }
       if (pgx.message && pgx.status === 'error') {
         html += `<p style="color:#b91c1c;font-size:13px;margin:0 0 10px">${escapeHtml(String(pgx.message))}</p>`;
       }
 
       const genes = Array.isArray(pgx.gene_results) ? pgx.gene_results : [];
-      html += '<h4 style="font-size:13px;margin:12px 0 8px">PharmCAT Gene Results</h4>';
-      const panelFiltered = !!pgx.gene_results_interpretation_filter_applied;
-      const confirmedPharmcat = genes.filter(r => r.reviewer_confirmed);
-      html += `<p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.45">` +
-        `${genes.length} gene(s) from PharmCAT (CPIC/DPWG).` +
-        (panelFiltered ? ' Filtered to interpretation panel genes.' : '') +
-        `</p>`;
-
-      html += '<div style="margin:0 0 12px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:11px;line-height:1.6">';
-      html += '<strong style="font-size:12px">Column guide</strong><br>';
-      html += '<b>Category</b> \u2014 <span class="badge" style="background:rgba(180,83,9,0.15);color:#b45309;font-size:10px">Actionable</span> = non-normal phenotype that may affect drug prescribing; ';
-      html += '<span class="badge" style="opacity:0.6;font-size:10px">Normal</span> = normal metabolizer / no clinical action needed.<br>';
-      html += '<b>Source</b> \u2014 Guideline source (e.g. CPIC, DPWG).<br>';
-      html += '<b>Allele Functions</b> \u2014 Predicted functional impact of each allele.';
-      html += '</div>';
-
-      html += `<p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.45">` +
-        `Check <strong>\u2713 Include</strong> to add a gene to the PDF report. ` +
-        (confirmedPharmcat.length
-          ? `<strong>${confirmedPharmcat.length}</strong> selected for report.`
-          : 'None selected yet \u2014 only checked genes will appear on the PDF.') +
-        `</p>`;
       if (genes.length) {
-        html += '<div style="display:flex;gap:8px;align-items:center;margin:0 0 8px">';
-        html += '<input id="pgxGenesFilter" type="text" placeholder="Filter by gene, phenotype, diplotype\u2026" ' +
-          'style="flex:1;max-width:360px;padding:6px 10px;font-size:12px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)" />';
-        html += '<label style="font-size:11px;white-space:nowrap;cursor:pointer"><input type="checkbox" id="pgxGenesFilterActionable" style="margin-right:4px" />Actionable only</label>';
+        html += '<div style="margin:0 0 8px">';
+        html += '<input id="pgxGenesFilter" type="text" placeholder="Filter by gene, phenotype, diplotype, actionable\u2026" ' +
+          'style="max-width:360px;width:100%;padding:6px 10px;font-size:12px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)" />';
         html += '</div>';
         html += '<div class="table-wrap" style="max-height:55vh;margin-bottom:14px">';
         html += '<table id="tblPgxGenes" style="font-size:12px">';
@@ -7240,23 +7204,13 @@
       // ── Extended PGx Panel (custom non-PharmCAT genes) ──
       const customGenes = customGenesEarly;
       if (customGenes.length) {
-        const customVariants = customGenes.filter(r => r.is_variant || (r.zygosity && r.zygosity !== 'homozygous_ref'));
-        const rkPh = reviewOrderKind(reviewData);
-        const hasApoe = customGenes.some(r => (String(r.gene || '').trim().toUpperCase() === 'APOE'));
-        html += '<h4 style="font-size:13px;margin:18px 0 8px">Extended PGx Panel — Curated Variant Genotyping</h4>';
-        html += `<p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.45">` +
-          `${customGenes.length} positions across non-PharmCAT pharmacogenes queried from the VCF. ` +
-          `<strong>${customVariants.length}</strong> variant(s) detected. Source: ClinPGx curated annotations.</p>`;
-        if (rkPh === 'proactive' && hasApoe) {
-          html += '<div style="margin:0 0 12px;padding:10px 14px;border-radius:12px;border:1px solid rgba(130,200,160,.45);background:rgba(130,200,160,.08);font-size:12px;line-height:1.55">';
-          html += '<strong>Proactive health — extended panel (incl. APOE)</strong><br />';
-          html += '<span class="muted">The <strong>APOE result</strong> summary above lists tag-SNP genotypes and phase notes. ';
-          html +=
-            'In this table, <strong>Significance</strong> / <strong>Affected drug(s)</strong> come from <strong>ClinPGx</strong> and may read as pharmacogenomic even when your clinical question is ε2/ε3/ε4 or preventive health—use <strong>Case review</strong> notes below if needed.</span>';
-          html += '</div>';
-        }
+        html += '<h4 style="font-size:13px;margin:18px 0 8px">Extended PGx Panel</h4>';
 
-        html += '<div style="margin:0 0 12px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:11px;line-height:1.6">';
+        html += '<details style="margin:0 0 12px" class="pgx-extended-panel-guide">';
+        html += '<summary style="font-size:12px;cursor:pointer;user-select:none;color:var(--muted);font-weight:600;list-style:none;display:flex;align-items:center;gap:6px">';
+        html += '<span>Column guide &amp; evidence levels</span><span class="muted" style="font-size:10px;font-weight:400">(show reference)</span>';
+        html += '</summary>';
+        html += '<div style="margin-top:10px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:11px;line-height:1.6">';
         html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 24px">';
         html += '<div>';
         html += '<strong style="font-size:12px">Column guide</strong><br>';
@@ -7273,19 +7227,11 @@
         html += '<b>Level 2B</b> — Moderate evidence; limited replication<br>';
         html += '<b>Level 3</b> — Low evidence; single study or small sample<br>';
         html += '<b>Level 4</b> — Preliminary; case reports or in-vitro only';
-        html += '</div></div></div>';
+        html += '</div></div></div></details>';
 
-        const confirmedCustom = customGenes.filter(r => r.reviewer_confirmed);
-        html += `<p class="muted" style="font-size:11px;margin:0 0 8px;line-height:1.45">` +
-          `Check <strong>\u2713 Include</strong> to add a variant to the PDF report. ` +
-          (confirmedCustom.length
-            ? `<strong>${confirmedCustom.length}</strong> selected for report.`
-            : 'None selected yet \u2014 only checked variants will appear on the PDF.') +
-          `</p>`;
-        html += '<div style="display:flex;gap:8px;align-items:center;margin:0 0 8px">';
-        html += '<input id="pgxCustomFilter" type="text" placeholder="Filter by gene, rsID, drug, significance\u2026" ' +
-          'style="flex:1;max-width:360px;padding:6px 10px;font-size:12px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)" />';
-        html += '<label style="font-size:11px;white-space:nowrap;cursor:pointer"><input type="checkbox" id="pgxCustomFilterVariant" style="margin-right:4px" />Variants only</label>';
+        html += '<div style="margin:0 0 8px">';
+        html += '<input id="pgxCustomFilter" type="text" placeholder="Filter by gene, rsID, drug, significance, variant\u2026" ' +
+          'style="max-width:360px;width:100%;padding:6px 10px;font-size:12px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)" />';
         html += '</div>';
         html += '<div class="table-wrap" style="max-height:50vh;margin-bottom:14px">';
         html += '<table id="tblPgxCustomGenes" style="font-size:12px">';
@@ -7319,68 +7265,53 @@
         html += '</tbody></table></div>';
       }
 
-      const sum = (pgx.summary_text || '').trim();
-      if (sum) {
-        html +=
-          '<details style="margin:12px 0"><summary class="muted" style="font-size:12px;cursor:pointer">Raw summary text (PDF source)</summary>';
-        html += `<pre style="white-space:pre-wrap;font-size:11px;line-height:1.45;max-height:40vh;overflow:auto;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);margin:8px 0 0">${escapeHtml(sum)}</pre>`;
-        html += '</details>';
-      } else if (hasPipeline && pgx.status !== 'not_found') {
-        html += '<p class="muted" style="font-size:12px">Summary text was empty.</p>';
-      }
-
-      html += '<h4 style="font-size:13px;margin:16px 0 8px">Case review</h4>';
-      html +=
-        '<label class="muted" style="font-size:12px;display:flex;align-items:center;gap:8px;margin-bottom:8px">';
-      html += `<input type="checkbox" id="pgxReviewedChk" ${pr.reviewed ? 'checked' : ''} /> Mark PGx case as reviewed</label>`;
-      html +=
-        '<textarea id="pgxReviewerNotesTa" rows="3" style="width:100%;max-width:52rem;font-family:inherit;font-size:12px;padding:10px;border-radius:12px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text)" placeholder="Case-level internal notes (not shown on customer PDF by default)">';
-      html += escapeHtml(pr.reviewer_notes || '');
-      html += '</textarea>';
-      html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
+      html += '<div style="margin-top:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
       html +=
         '<button type="button" class="btn primary" id="btnSavePgxReview">Save PGx review</button>';
       html +=
-        '<span class="muted" style="font-size:11px;max-width:40rem;line-height:1.45">Stores <code>pgx.portal_review</code>, PharmCAT <code>gene_results</code> (include on PDF per gene), and extended panel <code>custom_gene_results</code> (include per rsID). «Reprocess only» preserves review fields when pipeline data is regenerated.</span>';
+        '<span class="muted" style="font-size:11px;max-width:40rem;line-height:1.45">Saves PharmCAT and extended-panel <strong>Include</strong> choices into <code>result.json</code>. «Reprocess only» preserves these when pipeline data is regenerated.</span>';
       html += '</div>';
+
+      if (pgx.pgx_dir || links.length) {
+        html += '<details style="margin-top:12px"><summary class="muted" style="font-size:11px;cursor:pointer;user-select:none">Pipeline output — path &amp; files</summary>';
+        html += '<div style="margin-top:8px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);font-size:11px;line-height:1.55">';
+        if (pgx.pgx_dir) {
+          html += `<div class="muted" style="margin:0 0 10px;word-break:break-all">${escapeHtml(String(pgx.pgx_dir))}</div>`;
+        }
+        if (links.length) {
+          html += `<div class="muted">Open: ${links.join(' · ')}</div>`;
+        }
+        html += '</div></details>';
+      }
+
       box.innerHTML = html;
       const btn = qs('btnSavePgxReview');
       if (btn) btn.onclick = () => savePgxReview();
 
       // ── PharmCAT table filter ──
       const gfInput = document.getElementById('pgxGenesFilter');
-      const gfAction = document.getElementById('pgxGenesFilterActionable');
       if (gfInput) {
         const applyGeneFilter = () => {
           const q = gfInput.value.trim().toLowerCase();
-          const actionOnly = gfAction && gfAction.checked;
           document.querySelectorAll('#tblPgxGenesBody tr[data-pgx-gene]').forEach(tr => {
             const text = tr.textContent.toLowerCase();
-            const matchesQ = !q || text.includes(q);
-            const matchesAction = !actionOnly || text.includes('actionable');
-            tr.style.display = (matchesQ && matchesAction) ? '' : 'none';
+            tr.style.display = (!q || text.includes(q)) ? '' : 'none';
           });
         };
         gfInput.addEventListener('input', applyGeneFilter);
-        if (gfAction) gfAction.addEventListener('change', applyGeneFilter);
       }
 
       // ── Extended PGx table filter ──
       const cfInput = document.getElementById('pgxCustomFilter');
-      const cfVariant = document.getElementById('pgxCustomFilterVariant');
       if (cfInput) {
         const applyCustomFilter = () => {
           const q = cfInput.value.trim().toLowerCase();
-          const varOnly = cfVariant && cfVariant.checked;
           document.querySelectorAll('#tblPgxCustomGenesBody tr[data-pgx-custom-gene]').forEach(tr => {
             const text = tr.textContent.toLowerCase();
-            const matchesQ = !q || text.includes(q);
-            const matchesVar = !varOnly || text.includes('variant');
-            tr.style.display = (matchesQ && matchesVar) ? '' : 'none';
+            tr.style.display = (!q || text.includes(q)) ? '' : 'none';
           });
         };
         cfInput.addEventListener('input', applyCustomFilter);
-        if (cfVariant) cfVariant.addEventListener('change', applyCustomFilter);
       }
 
       delete _pgxTableSortState.tblPgxGenes;
@@ -7395,10 +7326,11 @@
         toast('Load an order first', false);
         return;
       }
-      const notesEl = qs('pgxReviewerNotesTa');
-      const chk = qs('pgxReviewedChk');
-      const reviewer_notes = notesEl ? String(notesEl.value || '') : '';
-      const reviewed = !!(chk && chk.checked);
+      const prPrev =
+        reviewData.pgx && reviewData.pgx.portal_review && typeof reviewData.pgx.portal_review === 'object'
+          ? reviewData.pgx.portal_review
+          : {};
+      const reviewer_notes = String(prPrev.reviewer_notes || '');
       const gene_reviews = [];
       document.querySelectorAll('#tblPgxGenesBody tr[data-pgx-gene]').forEach(tr => {
         const gene = tr.getAttribute('data-pgx-gene');
@@ -7442,7 +7374,7 @@
         }
         const res = await apiPost(`/order/${encodeURIComponent(orderId)}/pgx-review`, {
           reviewer_notes,
-          reviewed,
+          reviewed: false,
           gene_reviews,
           custom_gene_reviews,
           include_apoe_proactive_pdf: incApoePdf,
@@ -7630,9 +7562,9 @@
         if (!meta) {
           hintEl.textContent = '';
         } else if (meta.configured === false) {
-          hintEl.textContent = 'Daemon has no gene_knowledge database configured — narratives use panel disease names only until an operator sets gene_knowledge_db and optionally runs populate_gene_knowledge_db.';
+          hintEl.textContent = 'No gene_knowledge DB — narratives use panel disease names only. Configure gene_knowledge_db on the daemon.';
         } else if (meta.geminiAvailable === false) {
-          hintEl.textContent = 'No Gemini API key on the daemon — only rows already in SQLite appear. Use “Fetch missing from Gemini” after configuring the key, or pre-populate the cache.';
+          hintEl.textContent = 'No Gemini API key — only existing SQLite rows load. Configure the key to use Fetch missing from Gemini.';
         } else {
           hintEl.textContent = '';
         }
@@ -7648,7 +7580,7 @@
         return;
       }
       if (!selectedVariants.size) {
-        tbody.innerHTML = '<tr><td colspan="10" class="muted">Select one or more variants on the <strong>Variants</strong> tab — each checked row appears here (gene text is shared; variant notes are per HGVS).</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="muted">Select variants on the Variants tab.</td></tr>';
         if (countEl) countEl.textContent = '0 variant(s)';
         return;
       }
@@ -7715,24 +7647,16 @@
         : rk === 'sgnipt' ? 'sgNIPT'
         : (reviewData.service_code || 'WES');
       const parts = [];
-      if (ga) parts.push(`Snapshot (result.json): ${ga}`);
-      parts.push(`${kindLabel} · ${n} variant row(s)`);
+      if (ga) parts.push(`Generated ${ga}`);
+      parts.push(`${kindLabel} · ${n} rows`);
       if (isReviewOrderMismatch()) {
         const selId = (qs('reviewOrderSelect') && qs('reviewOrderSelect').value || '').trim();
-        parts.push(`Loaded: ${reviewLoadedOrderId} — selected: ${selId} (click Load to refresh)`);
+        parts.push(`Showing ${reviewLoadedOrderId} — click Load for ${selId}`);
       }
-      const dbg = reviewData._review_debug;
-      if (dbg && typeof dbg === 'object') {
-        el.textContent = parts.join(' · ') + '\n\n_review_debug:\n' + JSON.stringify(dbg, null, 2);
-        el.style.whiteSpace = 'pre-wrap';
-        el.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
-        el.style.fontSize = '11px';
-      } else {
-        el.textContent = parts.join(' · ');
-        el.style.whiteSpace = '';
-        el.style.fontFamily = '';
-        el.style.fontSize = '';
-      }
+      el.textContent = parts.join(' · ');
+      el.style.whiteSpace = '';
+      el.style.fontFamily = '';
+      el.style.fontSize = '';
       el.classList.remove('hidden');
     }
 
@@ -7747,7 +7671,7 @@
         <div class="banner-icon">↻</div>
         <div>
           <div class="banner-text">Order selection changed</div>
-          <div class="banner-detail">Click <strong>Load</strong> to load results for the selected order. (Summary below is still for <strong>${escapeHtml(String(reviewLoadedOrderId))}</strong>.)</div>
+          <div class="banner-detail">Click <strong>Load</strong> for the selected order. Data is still for <strong>${escapeHtml(String(reviewLoadedOrderId))}</strong>.</div>
         </div>`;
         banner.classList.remove('hidden');
         return;
@@ -7817,7 +7741,7 @@
         <div class="banner-icon">↻</div>
         <div>
           <div class="banner-text">Order selection changed</div>
-          <div class="banner-detail">Click <strong>Load</strong> to load results for the selected order. (Summary below is still for <strong>${escapeHtml(String(reviewLoadedOrderId))}</strong>.)</div>
+          <div class="banner-detail">Click <strong>Load</strong> for the selected order. Data is still for <strong>${escapeHtml(String(reviewLoadedOrderId))}</strong>.</div>
         </div>`;
         banner.classList.remove('hidden');
         return;
@@ -7871,200 +7795,287 @@
       banner.classList.remove('hidden');
     }
 
-    // ── Disease Summary Tab ──
-    function renderDiseaseSummary() {
-      const container = qs('diseaseSummaryContent');
-      if (!reviewData) { container.innerHTML = '<div class="muted">No data loaded</div>'; return; }
-
-      if (isReviewOrderMismatch()) {
-        container.innerHTML = '<div class="muted" style="padding:20px;text-align:center">Order selection changed — click <strong>Load</strong> to refresh this tab.</div>';
-        return;
-      }
-
-      const diseaseGroups = reviewData.disease_groups || {};
-      const variants = reviewData.variants || [];
-
-      // Build disease-variant mapping from variants if disease_groups is empty
-      const diseaseMap = {};
-      if (Object.keys(diseaseGroups).length > 0) {
-        Object.entries(diseaseGroups).forEach(([disease, info]) => {
-          diseaseMap[disease] = info;
-        });
-      } else {
-        // Fallback: build from variant diseases
-        variants.forEach(v => {
-          (v.diseases || []).forEach(d => {
-            const name = d.name || d.disease_name || 'Unknown';
-            if (!diseaseMap[name]) {
-              diseaseMap[name] = {
-                inheritance: d.inheritance || '-',
-                carrier_frequency: d.carrier_frequency || '-',
-                severity: d.severity || '-',
-                variants: []
-              };
-            }
-            diseaseMap[name].variants.push(v);
-          });
-          // Also use ClinVar disease
-          if ((!v.diseases || v.diseases.length === 0) && v.clinvar_dn && v.clinvar_dn !== '-' && v.clinvar_dn !== 'not_provided') {
-            const dn = v.clinvar_dn.split('|')[0].split(';')[0].trim();
-            if (!diseaseMap[dn]) {
-              diseaseMap[dn] = { inheritance: v.inheritance || '-', variants: [] };
-            }
-            diseaseMap[dn].variants.push(v);
-          }
-        });
-      }
-
-      if (Object.keys(diseaseMap).length === 0) {
-        container.innerHTML = '<div class="muted" style="padding:20px;text-align:center">No disease associations found</div>';
-        return;
-      }
-
-      container.innerHTML = Object.entries(diseaseMap)
-        .sort((a, b) => {
-          // Sort: diseases with P/LP variants first
-          const aPath = (a[1].variants || []).some(v => ['pathogenic', 'likely pathogenic'].includes((v.acmg_classification || '').toLowerCase()));
-          const bPath = (b[1].variants || []).some(v => ['pathogenic', 'likely pathogenic'].includes((v.acmg_classification || '').toLowerCase()));
-          if (aPath && !bPath) return -1;
-          if (!aPath && bPath) return 1;
-          return a[0].localeCompare(b[0]);
-        })
-        .map(([disease, info]) => {
-          const dvariants = info.variants || [];
-          const hasPathogenic = dvariants.some(v => ['pathogenic', 'likely pathogenic'].includes((v.acmg_classification || '').toLowerCase()));
-
-          return `
-            <div class="disease-card" style="${hasPathogenic ? 'border-color:var(--pill-err-bd)' : ''}">
-              <div class="disease-name">
-                ${hasPathogenic ? '<span style="color:var(--err)">●</span> ' : ''}${escapeHtml(disease)}
-              </div>
-              <div class="disease-meta">
-                ${info.inheritance ? pill(info.inheritance, 'new') : ''}
-                ${info.carrier_frequency ? `<span class="muted">Carrier freq: ${escapeHtml(info.carrier_frequency)}</span>` : ''}
-                ${info.severity ? pill(info.severity, info.severity === 'severe' || info.severity === 'lethal' ? 'err' : info.severity === 'moderate-severe' ? 'warn' : 'done') : ''}
-                ${info.category ? `<span class="muted">${escapeHtml(info.category)}</span>` : ''}
-              </div>
-              <div style="display:flex;flex-wrap:wrap;gap:4px">
-                ${dvariants.map(v => `
-                  <div class="variant-chip" onclick="showVariantDetail('${escapeAttr(v.variant_id)}')" style="cursor:pointer">
-                    <span style="font-weight:600">${escapeHtml(v.gene || '-')}</span>
-                    <span class="muted">${escapeHtml(v.hgvsp || v.hgvsc || v.variant_id)}</span>
-                    <span class="${acmgClass(v.acmg_classification)}">${escapeHtml(v.acmg_classification || '-')}</span>
-                    <input type="checkbox" ${selectedVariants.has(v.variant_id) ? 'checked' : ''} onclick="event.stopPropagation();toggleVariant('${escapeAttr(v.variant_id)}', this.checked)" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent);vertical-align:middle;flex-shrink:0" />
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          `;
-        }).join('');
+    // ── Quality control panel (all review tabs) ──
+    function wireReviewQcPanelOnce() {
+      const panel = qs('reviewQcPanel');
+      if (!panel || panel.dataset.qcDelegation) return;
+      panel.dataset.qcDelegation = '1';
+      panel.addEventListener('click', ev => {
+        const btn = ev.target.closest('button[data-qc-paths]');
+        if (!btn) return;
+        try {
+          const paths = JSON.parse(decodeURIComponent(btn.getAttribute('data-qc-paths') || '%5B%5D'));
+          openQcMetricImages(paths);
+        } catch (err) {
+          console.warn('QC paths parse', err);
+        }
+      });
     }
 
-    // ── QC Summary ──
-    function renderReviewQC() {
-      if (!reviewData) return;
+    function qcPillStatus(st) {
+      if (st === 'pass') return '<span class="qc-pill pass">Pass</span>';
+      if (st === 'warn') return '<span class="qc-pill warn">Warn</span>';
+      if (st === 'fail') return '<span class="qc-pill fail">Fail</span>';
+      return '<span class="muted">—</span>';
+    }
 
-      if (isReviewOrderMismatch()) {
-        qs('qcStats').innerHTML = '<p class="muted" style="grid-column:1/-1;margin:0">Order selection changed — click <strong>Load</strong> to refresh QC.</p>';
-        const wrap = qs('qcDetailTable');
-        if (wrap) wrap.innerHTML = '';
+    function qcEvalMin(v, passAt, warnAt) {
+      if (v == null || v === '') return 'na';
+      const n = Number(v);
+      if (Number.isNaN(n)) return 'na';
+      if (n >= passAt) return 'pass';
+      if (warnAt != null && n >= warnAt) return 'warn';
+      return 'fail';
+    }
+
+    function qcEvalMax(v, passBelow, warnBelow) {
+      if (v == null || v === '') return 'na';
+      const n = Number(v);
+      if (Number.isNaN(n)) return 'na';
+      if (n <= passBelow) return 'pass';
+      if (warnBelow != null && n <= warnBelow) return 'warn';
+      return 'fail';
+    }
+
+    function qcEvalRange(v, lo, hi) {
+      if (v == null || v === '') return 'na';
+      const n = Number(v);
+      if (Number.isNaN(n)) return 'na';
+      if (n >= lo && n <= hi) return 'pass';
+      return 'warn';
+    }
+
+    function qcFmtValue(v, decimals) {
+      if (v == null || v === '') return '—';
+      const n = Number(v);
+      if (Number.isNaN(n)) return escapeHtml(String(v));
+      if (decimals != null) {
+        return Number.isInteger(n) && decimals === 0 ? String(n) : n.toFixed(decimals);
+      }
+      if (Number.isInteger(n) || Math.abs(n - Math.round(n)) < 1e-9) return n.toLocaleString();
+      return escapeHtml(String(n));
+    }
+
+    function qcNormPct(x) {
+      if (x == null || x === '') return null;
+      const n = Number(x);
+      if (Number.isNaN(n)) return null;
+      if (n >= 0 && n <= 1) return n * 100;
+      return n;
+    }
+
+    function qcMetricLabel(key) {
+      return String(key || '').replace(/_/g, ' ');
+    }
+
+    function isSgniptReview(rd) {
+      if (!rd) return false;
+      if (reviewOrderKind(rd) === 'sgnipt') return true;
+      return String(rd.service_code || '').trim() === 'sgnipt';
+    }
+
+    function collectReviewQcReportLinks(rd) {
+      const out = [];
+      const seen = new Set();
+      const qc = rd.qc_summary || {};
+      const mi = qc.metric_images && typeof qc.metric_images === 'object' ? qc.metric_images : {};
+      function add(label, path) {
+        if (!path || seen.has(path)) return;
+        seen.add(path);
+        out.push({ label, path: String(path) });
+      }
+      for (const paths of Object.values(mi)) {
+        if (!Array.isArray(paths)) continue;
+        for (const p of paths) {
+          const low = String(p).toLowerCase();
+          if (!low.endsWith('.html')) continue;
+          if (low.includes('fastqc')) {
+            const isR2 = /_r2|_2\.|fastqc_r2|r2_fastqc|_r2_/.test(low);
+            add(isR2 ? 'FastQC R2 Report' : 'FastQC R1 Report', p);
+          } else if (low.includes('qualimap')) {
+            add('Qualimap Report', p);
+          }
+        }
+      }
+      const extra = qc.qc_report_files;
+      if (Array.isArray(extra)) {
+        for (const x of extra) {
+          if (typeof x === 'string') add((x.split('/').pop() || 'Report').replace(/\.[^.]+$/, '') || 'Report', x);
+          else if (x && x.path) add(x.label || 'Report', x.path);
+        }
+      }
+      return out;
+    }
+
+    function buildSgniptSequencingRows(rd) {
+      const fq = rd.fastq_qc && typeof rd.fastq_qc === 'object' ? rd.fastq_qc : {};
+      const bq = rd.bam_qc && typeof rd.bam_qc === 'object' ? rd.bam_qc : {};
+      const tr = fq.total_reads ?? bq.total_reads;
+      const mapRate = qcNormPct(bq.mapping_rate);
+      const dupRate = qcNormPct(fq.duplication_rate ?? fq.duplicate_rate ?? bq.duplicate_rate ?? bq.duplication_rate);
+      const gc = qcNormPct(fq.gc_content);
+      const meanQ = bq.mean_mapping_quality ?? bq.average_quality ?? fq.average_quality;
+      const meanCov = bq.mean_coverage;
+      const mapped = bq.mapped_reads;
+      return [
+        { metric: 'total_reads', valueHtml: qcFmtValue(tr), unit: 'reads', threshold: '>10M', status: qcEvalMin(tr, 10e6, 5e6) },
+        {
+          metric: 'mapped_reads',
+          valueHtml: qcFmtValue(mapped),
+          unit: 'reads',
+          threshold: '—',
+          status: mapped != null && tr != null && tr > 0 ? qcEvalMin(mapped / tr, 0.85, 0.75) : 'na',
+        },
+        { metric: 'mapping_rate', valueHtml: mapRate != null ? qcFmtValue(mapRate, 2) : '—', unit: '%', threshold: '>85%', status: mapRate != null ? qcEvalMin(mapRate, 85, 75) : 'na' },
+        { metric: 'duplication_rate', valueHtml: dupRate != null ? qcFmtValue(dupRate, 2) : '—', unit: '%', threshold: '<40%', status: dupRate != null ? qcEvalMax(dupRate, 40, 50) : 'na' },
+        { metric: 'mean_mapping_quality', valueHtml: meanQ != null ? qcFmtValue(meanQ, 4) : '—', unit: 'score', threshold: '>20', status: qcEvalMin(meanQ, 20, 15) },
+        { metric: 'mean_coverage', valueHtml: meanCov != null ? `${qcFmtValue(meanCov, 4)}×` : '—', unit: '×', threshold: '>0.1×', status: qcEvalMin(meanCov, 0.1, 0.05) },
+        { metric: 'gc_content', valueHtml: gc != null ? qcFmtValue(gc, 2) : '—', unit: '%', threshold: '33–55%', status: gc != null ? qcEvalRange(gc, 33, 55) : 'na' },
+      ];
+    }
+
+    function buildCarrierSequencingRows(rd) {
+      const qc = rd.qc_summary || {};
+      const cov = qc.coverage || {};
+      const aln = qc.alignment || {};
+      const tr = aln.total_reads ?? aln.raw_total_sequences;
+      const mr = qcNormPct(aln.mapping_rate);
+      const dr = qcNormPct(aln.duplicate_rate);
+      const meanCov = cov.mean_coverage;
+      const avgQ = aln.average_quality;
+      const mapped = aln.mapped_reads;
+      const gc = qcNormPct(aln.gc_fraction ?? aln.gc_content ?? cov.gc_content);
+      return [
+        { metric: 'total_reads', valueHtml: qcFmtValue(tr), unit: 'reads', threshold: '>10M', status: qcEvalMin(tr, 10e6, 5e6) },
+        {
+          metric: 'mapped_reads',
+          valueHtml: qcFmtValue(mapped),
+          unit: 'reads',
+          threshold: '—',
+          status: mapped != null && tr != null && tr > 0 ? qcEvalMin(mapped / tr, 0.85, 0.75) : 'na',
+        },
+        { metric: 'mapping_rate', valueHtml: mr != null ? qcFmtValue(mr, 2) : '—', unit: '%', threshold: '>85%', status: mr != null ? qcEvalMin(mr, 85, 75) : 'na' },
+        { metric: 'duplication_rate', valueHtml: dr != null ? qcFmtValue(dr, 2) : '—', unit: '%', threshold: '<40%', status: dr != null ? qcEvalMax(dr, 40, 50) : 'na' },
+        { metric: 'mean_mapping_quality', valueHtml: avgQ != null ? qcFmtValue(avgQ, 2) : '—', unit: 'score', threshold: '>20', status: qcEvalMin(avgQ, 20, 15) },
+        { metric: 'mean_coverage', valueHtml: meanCov != null ? `${qcFmtValue(meanCov, 2)}×` : '—', unit: '×', threshold: '>20×', status: meanCov != null ? qcEvalMin(meanCov, 20, 15) : 'na' },
+        { metric: 'gc_content', valueHtml: gc != null ? qcFmtValue(gc, 2) : '—', unit: '%', threshold: '33–55%', status: gc != null ? qcEvalRange(gc, 33, 55) : 'na' },
+      ];
+    }
+
+    function buildSgniptAnalysisRows(rd) {
+      const ff = rd.fetal_fraction_detail && typeof rd.fetal_fraction_detail === 'object' ? rd.fetal_fraction_detail : {};
+      const rows = [];
+      const addPctMin4 = (metric, val) => {
+        if (val == null || val === '') return;
+        const p = qcNormPct(val);
+        const n = p != null ? p : Number(val);
+        if (Number.isNaN(n)) return;
+        rows.push({ metric, valueHtml: qcFmtValue(n, 2), unit: '%', threshold: '>4.0%', status: qcEvalMin(n, 4, 3) });
+      };
+      addPctMin4('fetal_fraction_y', ff.fetal_fraction_y ?? ff.y_chromosome_ff ?? ff.ff_y);
+      addPctMin4('fetal_fraction_s', ff.fetal_fraction_s ?? ff.seq_ff ?? ff.autosomal_ff);
+      if (ff.ff_ratio != null && ff.ff_ratio !== '') {
+        const n = Number(ff.ff_ratio);
+        if (!Number.isNaN(n)) {
+          rows.push({ metric: 'ff_ratio', valueHtml: qcFmtValue(n, 2), unit: '%', threshold: '<2.5', status: qcEvalMax(n, 2.5, 3) });
+        }
+      }
+      if (ff.sample_bias_qc != null && ff.sample_bias_qc !== '') {
+        const n = Number(ff.sample_bias_qc);
+        if (!Number.isNaN(n)) {
+          rows.push({ metric: 'sample_bias_qc', valueHtml: qcFmtValue(n, 3), unit: '', threshold: '<4.0', status: qcEvalMax(n, 4, 5) });
+        }
+      }
+      if (!rows.length) {
+        for (const [k, v] of Object.entries(ff)) {
+          if (v == null || typeof v === 'object') continue;
+          const n = Number(v);
+          if (Number.isNaN(n)) continue;
+          rows.push({ metric: k, valueHtml: qcFmtValue(n, 4), unit: '', threshold: '—', status: 'na' });
+        }
+      }
+      return rows;
+    }
+
+    function buildCarrierAnalysisRows(rd) {
+      const qc = rd.qc_summary || {};
+      const cov = qc.coverage || {};
+      const vc = qc.variant_calling && typeof qc.variant_calling === 'object' ? qc.variant_calling : {};
+      const rows = [];
+      Object.entries(vc).forEach(([k, v]) => {
+        if (v == null || typeof v === 'object') return;
+        rows.push({ metric: k, valueHtml: qcFmtValue(v), unit: '', threshold: '—', status: 'na' });
+      });
+      const pct20 = cov.pct_bases_20x;
+      if (pct20 != null) {
+        const p = qcNormPct(pct20) ?? Number(pct20);
+        if (!Number.isNaN(p)) {
+          rows.push({ metric: 'pct_bases_20x', valueHtml: qcFmtValue(p, 2), unit: '%', threshold: '>95%', status: qcEvalMin(p, 95, 90) });
+        }
+      }
+      const otrRaw = cov.on_target_rate;
+      if (otrRaw != null) {
+        const otr = qcNormPct(otrRaw) ?? Number(otrRaw);
+        if (!Number.isNaN(otr)) {
+          rows.push({ metric: 'on_target_rate', valueHtml: qcFmtValue(otr, 2), unit: '%', threshold: '>60%', status: qcEvalMin(otr, 60, 50) });
+        }
+      }
+      return rows;
+    }
+
+    function renderReviewQcTableRows(rows) {
+      if (!rows.length) {
+        return '<tr><td colspan="5" class="muted">No metrics in <code>result.json</code></td></tr>';
+      }
+      return rows.map(r => `<tr>
+          <td>${escapeHtml(qcMetricLabel(r.metric))}</td>
+          <td>${r.valueHtml}</td>
+          <td>${escapeHtml(r.unit || '—')}</td>
+          <td>${escapeHtml(r.threshold || '—')}</td>
+          <td>${qcPillStatus(r.status)}</td>
+        </tr>`).join('');
+    }
+
+    function renderReviewQC() {
+      wireReviewQcPanelOnce();
+      const panel = qs('reviewQcPanel');
+      const seqBody = qs('reviewQcSequencingBody');
+      const anaBody = qs('reviewQcAnalysisBody');
+      const repBox = qs('reviewQcReportButtons');
+      if (!panel || !seqBody || !anaBody || !repBox) return;
+
+      if (!reviewData) {
+        panel.classList.add('hidden');
         return;
       }
 
-      const qc = reviewData.qc_summary || {};
-      const cov = qc.coverage || {};
-      const aln = qc.alignment || {};
+      panel.classList.remove('hidden');
 
-      // Dynamic depth-threshold cards from pct_bases_Nx keys (e.g. pct_bases_20x)
-      const depthCards = Object.keys(cov)
-        .filter(k => /^pct_bases_\d+x$/.test(k))
-        .sort((a, b) => {
-          const na = parseInt(a.match(/\d+/)[0]);
-          const nb = parseInt(b.match(/\d+/)[0]);
-          return na - nb;
-        })
-        .map(k => {
-          const threshold = k.match(/\d+/)[0];
-          return { label: `≥${threshold}x`, value: cov[k], fmt: v => v.toFixed(1) + '%', key: null };
-        });
-
-      const metrics = [
-        { label: 'Mean Coverage', value: cov.mean_coverage, fmt: v => v.toFixed(1) + 'x', key: 'mean_coverage' },
-        ...depthCards,
-        { label: 'Total Reads', value: aln.total_reads || aln.raw_total_sequences, fmt: v => (v / 1e6).toFixed(1) + 'M', key: null },
-        { label: 'Mapping Rate', value: aln.mapping_rate, fmt: v => v.toFixed(1) + '%', key: 'mapping_rate' },
-        { label: 'Properly Paired', value: aln.properly_paired_rate, fmt: v => v.toFixed(1) + '%', key: 'properly_paired_rate' },
-        { label: 'Duplicates', value: aln.duplicates, fmt: v => v.toLocaleString(), key: null },
-        { label: 'Avg Quality', value: aln.average_quality, fmt: v => v.toFixed(1), key: 'average_quality' },
-      ];
-
-      const hasAnyMetric = metrics.some(m => m.value !== null && m.value !== undefined);
-      qs('qcStats').innerHTML = metrics.map(m => {
-        const val = m.value;
-        const display = val !== null && val !== undefined ? m.fmt(val) : '-';
-        const status = m.key ? qcLabel(m.key, val) : '';
-        const cardClass = m.key ? qcStatus(m.key, val).replace('qc-', '') : '';
-        return `<div class="stat-card ${cardClass}">
-          <div class="stat-value">${display}</div>
-          <div class="stat-label">${m.label}</div>
-          ${status ? `<div style="margin-top:4px">${status}</div>` : ''}
-        </div>`;
-      }).join('') + (!hasAnyMetric
-        ? `<p class="muted" style="grid-column:1/-1;margin-top:8px">No QC metrics in <code>result.json</code> yet. Re-run analysis after updating the daemon, or confirm the pipeline analysis folder is mounted at the expected path.</p>`
-        : '');
-
-      // Detailed QC table (metric_images: backend maps metric key → qc/foo.png paths)
-      const allQcEntries = [];
-      Object.entries(cov).forEach(([k, v]) => allQcEntries.push({ metric: k, value: v }));
-      Object.entries(aln).forEach(([k, v]) => allQcEntries.push({ metric: k, value: v }));
-      if (qc.variant_calling) {
-        Object.entries(qc.variant_calling).forEach(([k, v]) => allQcEntries.push({ metric: k, value: v }));
+      if (isReviewOrderMismatch()) {
+        seqBody.innerHTML = '<tr><td colspan="5" class="muted">Order selection changed — click <strong>Load</strong> to refresh.</td></tr>';
+        anaBody.innerHTML = '<tr><td colspan="5" class="muted">—</td></tr>';
+        repBox.innerHTML = '';
+        return;
       }
 
-      const metricImages = qc.metric_images && typeof qc.metric_images === 'object' ? qc.metric_images : {};
+      const sgnipt = isSgniptReview(reviewData);
+      const seqRows = sgnipt ? buildSgniptSequencingRows(reviewData) : buildCarrierSequencingRows(reviewData);
+      let anaRows = sgnipt ? buildSgniptAnalysisRows(reviewData) : buildCarrierAnalysisRows(reviewData);
+      seqBody.innerHTML = renderReviewQcTableRows(seqRows);
+      if (!anaRows.length) {
+        anaRows = [{ metric: '—', valueHtml: '—', unit: '', threshold: '—', status: 'na' }];
+      }
+      anaBody.innerHTML = renderReviewQcTableRows(anaRows);
 
-      if (allQcEntries.length > 0) {
-        const wrap = qs('qcDetailTable');
-        wrap.innerHTML = `
-          <div class="card" style="margin:0">
-            <h3 style="font-size:14px">Detailed QC Metrics</h3>
-            <div class="table-wrap" style="max-height:40vh">
-              <table>
-                <thead><tr><th>Metric</th><th>Value</th><th style="width:44px;text-align:center" title="Chart / image when available"> </th></tr></thead>
-                <tbody>
-                  ${allQcEntries.map(e => {
-                    const paths = metricImages[e.metric];
-                    const hasImg = Array.isArray(paths) && paths.length > 0;
-                    const imgCell = hasImg
-                      ? `<button type="button" class="btn-icon-qc" title="View chart" aria-label="View chart" data-qc-paths="${encodeURIComponent(JSON.stringify(paths))}" style="padding:4px 8px;font-size:16px;line-height:1;background:transparent;border:1px solid var(--line);border-radius:8px;cursor:pointer">🖼</button>`
-                      : '<span class="muted">—</span>';
-                    const valStr = typeof e.value === 'number'
-                      ? (Number.isInteger(e.value) ? e.value.toLocaleString() : e.value.toFixed(4))
-                      : e.value;
-                    return `<tr>
-                    <td>${e.metric.replace(/_/g, ' ')}</td>
-                    <td>${valStr}</td>
-                    <td style="text-align:center">${imgCell}</td>
-                  </tr>`;
-                  }).join('')}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        `;
-        if (wrap && !wrap.dataset.qcImgDelegation) {
-          wrap.dataset.qcImgDelegation = '1';
-          wrap.addEventListener('click', ev => {
-            const btn = ev.target.closest('button[data-qc-paths]');
-            if (!btn) return;
-            try {
-              const paths = JSON.parse(decodeURIComponent(btn.getAttribute('data-qc-paths') || '%5B%5D'));
-              openQcMetricImages(paths);
-            } catch (err) {
-              console.warn('QC paths parse', err);
-            }
-          });
-        }
+      const oid = reviewLoadedOrderId || reviewData.order_id || '';
+      const links = collectReviewQcReportLinks(reviewData);
+      if (!links.length) {
+        repBox.innerHTML = '<span class="muted" style="font-size:12px">No HTML reports in <code>qc_summary.metric_images</code>.</span>';
+      } else {
+        repBox.innerHTML = links.map(l => {
+          const u = orderArtifactFileUrl(oid, l.path);
+          return u ? `<a class="btn-qc-report" href="${escapeHtml(u)}" target="_blank" rel="noopener">${escapeHtml(l.label)}</a>` : '';
+        }).filter(Boolean).join('');
       }
     }
 
@@ -8516,6 +8527,8 @@
       if (/CAH/i.test(u) && /Dosage/i.test(u) && /CYP21/i.test(u)) return true;
       if (/CYP21A2/i.test(u) && /hotspot/i.test(u)) return true;
       if (/CAH/i.test(u) && /hotspot/i.test(u)) return true;
+      if (/\bCAH\b/i.test(u) && /Dosage/i.test(u)) return true;
+      if (/congenital\s+adrenal\s+hyperplasia/i.test(u)) return true;
       return darkGenesDisplayTitle(t) === 'Congenital Adrenal Hyperplasia (CAH)';
     }
 
@@ -8880,6 +8893,133 @@
       return `<dl class="dark-genes-kv">${inner}</dl>`;
     }
 
+    /** IVS9 Expansion Hunter: CFTR_polyT / CFTR_TG REPCN + lab risk flags (5T, TG12, TG13+). */
+    function cftrEhIvs9RiskFromCounts(pt, tg) {
+      const reasons = [];
+      for (const x of pt) {
+        if (x === 5) reasons.push('5T allele (elevated CFTR-RD/CBAVD context)');
+      }
+      for (const x of tg) {
+        if (x >= 13) reasons.push(`TG repeat ×${x} (high-penetrance context)`);
+        else if (x === 12)
+          reasons.push(`TG repeat ×${x} (low–moderate penetrance; flagged for review)`);
+      }
+      return { level: reasons.length ? 'high' : 'low', reasons };
+    }
+
+    /** Parse REPCN ints from ``7/7`` slash alleles (Expansion Hunter style). */
+    function cftrEhSlashAllelesToInts(s) {
+      const out = [];
+      if (!s || typeof s !== 'string') return out;
+      for (const part of s.split(/\s*\/\s*/)) {
+        const n = parseInt(part.trim(), 10);
+        if (!Number.isNaN(n)) out.push(n);
+      }
+      return out;
+    }
+
+    /**
+     * Always-visible CFTR IVS9 EH card from ``dark_genes.cftr_ivs9_eh`` (set at result.json build).
+     * Section bodies may omit or bury REPCN lines; the structured field is authoritative.
+     */
+    function renderCftrIvs9EhBannerFromPayload(eh) {
+      if (!eh || typeof eh !== 'object') return '';
+      const rpt = eh.raw_poly_t != null ? String(eh.raw_poly_t).trim() : '';
+      const rtg = eh.raw_tg != null ? String(eh.raw_tg).trim() : '';
+      const dispT = eh.display_t != null ? String(eh.display_t).trim() : '';
+      const dispG = eh.display_tg != null ? String(eh.display_tg).trim() : '';
+      if (!rpt && !rtg && !dispT && !dispG) return '';
+      const pt = cftrEhSlashAllelesToInts(rpt);
+      const tg = cftrEhSlashAllelesToInts(rtg);
+      const computed = cftrEhIvs9RiskFromCounts(pt, tg);
+      let riskLevel = eh.risk_level === 'high' ? 'high' : eh.risk_level === 'low' ? 'low' : computed.level;
+      let riskReasons = Array.isArray(eh.risk_reasons) ? eh.risk_reasons.filter(Boolean).map(String) : [];
+      if (riskLevel === 'high' && !riskReasons.length) riskReasons = computed.reasons;
+      if (riskLevel !== 'high' && riskLevel !== 'low') {
+        riskLevel = computed.level;
+        riskReasons = computed.reasons;
+      }
+      /* Dark genes review: omit benign IVS8/IVS9 EH card — only high-risk context needs scrutiny */
+      if (riskLevel !== 'high') return '';
+      const riskLabel =
+        riskLevel === 'high'
+          ? `High-risk context — ${riskReasons.join('; ') || 'Review IVS9 poly-T / TG together.'}`
+          : 'No 5T / TG12 / TG13+ pattern on this call — commonly benign with 7T/9T + TG11 (confirm against lab SOP)';
+      const rows = [];
+      const ln = eh.locus_note ? String(eh.locus_note).trim() : '';
+      if (ln) rows.push(['Locus', ln.slice(0, 600)]);
+      else
+        rows.push([
+          'Locus (typical IVS9 EH)',
+          'chr7:117,548,607-117,548,635 (GRCh38) — ref (TG)11(T)7',
+        ]);
+      if (rpt) rows.push(['Poly-T (EH REPCN)', `${rpt} (T repeats per allele)${dispT ? ` — ${dispT}` : ''}`]);
+      if (rtg) rows.push(['TG (EH REPCN)', `${rtg} (TG repeats per allele)${dispG ? ` — ${dispG}` : ''}`]);
+      rows.push(['Risk assessment', riskLabel]);
+      const pa = eh.per_allele_summary ? String(eh.per_allele_summary).trim() : '';
+      if (pa) rows.push(['Per-allele', pa.slice(0, 600)]);
+      const inner = rows
+        .map(([lab, val]) => `<dt>${escapeHtml(lab)}</dt><dd>${escapeHtml(val)}</dd>`)
+        .join('');
+      const badge =
+        riskLevel === 'high'
+          ? '<span class="badge err" style="margin-left:8px">Review IVS9 context</span>'
+          : '<span class="badge done" style="margin-left:8px;opacity:0.85">Benign pattern likely</span>';
+      return (
+        `<div class="dark-genes-cftr-eh-banner" data-dg-cftr-eh-banner="1" style="margin:0 0 14px">` +
+        `<div class="muted" style="font-size:11px;line-height:1.5;margin:0 0 10px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:rgba(59,130,246,.08)"><strong>CFTR IVS9 (Expansion Hunter)</strong> — Poly-T and TG REPCN from pipeline summary (structured). Interpret per-allele haplotypes together. References: Cuppens 1998; Groman 2004; CFF/ACMG.${badge}</div>` +
+        `<dl class="dark-genes-kv">${inner}</dl></div>`
+      );
+    }
+
+    function tryRenderCftrIvs9EhSection(sec, ehOpts) {
+      const raw = String(sec.body || '');
+      const mpt =
+        raw.match(/\bCFTR_polyT\s*=\s*(\d+)\s*\/\s*(\d+)/i) ||
+        raw.match(/\bCFTR\s+poly[-_\s]*T\s*=\s*(\d+)\s*\/\s*(\d+)/i);
+      const mtg =
+        raw.match(/\bCFTR_TG\s*=\s*(\d+)\s*\/\s*(\d+)/i) ||
+        raw.match(/\bCFTR\s+_?\s*TG\s*=\s*(\d+)\s*\/\s*(\d+)/i);
+      if (!mpt && !mtg) return null;
+      const pt = [];
+      const tg = [];
+      if (mpt) {
+        pt.push(parseInt(mpt[1], 10), parseInt(mpt[2], 10));
+      }
+      if (mtg) {
+        tg.push(parseInt(mtg[1], 10), parseInt(mtg[2], 10));
+      }
+      const risk = cftrEhIvs9RiskFromCounts(pt, tg);
+      if (ehOpts && ehOpts.suppressBenignCftrEh && risk.level !== 'high') return null;
+      const pa = raw.match(/^\s*Per-allele\s*:\s*(.+)$/im);
+      const rows = [];
+      const locHint = raw.match(/117[\s,]*548[\s,]*607|117548607/i);
+      if (locHint)
+        rows.push([
+          'Locus (typical IVS9 EH)',
+          'chr7:117,548,607-117,548,635 (GRCh38) — ref (TG)11(T)7',
+        ]);
+      if (mpt) rows.push(['Poly-T (EH REPCN)', `${mpt[1]} / ${mpt[2]} (T repeats per allele)`]);
+      if (mtg) rows.push(['TG (EH REPCN)', `${mtg[1]} / ${mtg[2]} (TG repeats per allele)`]);
+      const riskLabel =
+        risk.level === 'high'
+          ? `High-risk context — ${risk.reasons.join('; ')}`
+          : 'No 5T / TG12 / TG13+ pattern on this call — commonly benign with 7T/9T + TG11 (confirm against lab SOP)';
+      rows.push(['Risk assessment', riskLabel]);
+      if (pa) rows.push(['Per-allele', pa[1].trim().slice(0, 600)]);
+      const inner = rows
+        .map(([lab, val]) => `<dt>${escapeHtml(lab)}</dt><dd>${escapeHtml(val)}</dd>`)
+        .join('');
+      const badge =
+        risk.level === 'high'
+          ? '<span class="badge err" style="margin-left:8px">Review IVS9 context</span>'
+          : '<span class="badge done" style="margin-left:8px;opacity:0.85">Benign pattern likely</span>';
+      return (
+        `<div class="muted" style="font-size:11px;line-height:1.5;margin:0 0 10px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:rgba(59,130,246,.08)"><strong>CFTR IVS9 (Expansion Hunter)</strong> — Interpret poly-T and TG REPCN together (per-allele haplotypes). References: Cuppens 1998; Groman 2004; CFF/ACMG (pipeline text).${badge}</div>` +
+        `<dl class="dark-genes-kv">${inner}</dl>`
+      );
+    }
+
     /**
      * CAH hotspot row when the section is not matched by ``tryRenderDosageAnalysisSection`` but the
      * body contains a parseable hotspot call (e.g. supplementary block). Skips Overview (same as stack).
@@ -8899,6 +9039,79 @@
       return `<dl class="dark-genes-kv"><dt>Hotspot mutations (7)</dt><dd>${escapeHtml(h)}</dd></dl>`;
     }
 
+    /** Structured paralog / deletion lines — mirror server ``_cah_paralog_deletion_kv_actionable``. */
+    function cahParalogDeletionKvActionable(body) {
+      const raw = String(body || '');
+      if (!raw.trim()) return false;
+      const keys = [
+        'paralog_deletion',
+        'cyp21_paralog_deletion',
+        'paralog_deletion_call',
+        'deletion_paralog',
+      ];
+      const neg = new Set([
+        'no',
+        'none',
+        'false',
+        '0',
+        'negative',
+        'absent',
+        'undetected',
+        'normal',
+        'wt',
+        'wildtype',
+        'na',
+        'n/a',
+        'neg',
+      ]);
+      for (const key of keys) {
+        const esc = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const patterns = [
+          new RegExp(`^\\s*${esc}\\s*[:=]\\s*(.+)$`, 'im'),
+          new RegExp(`\\b${esc}\\s*[:=]\\s*(.+)`, 'i'),
+        ];
+        for (const re of patterns) {
+          const m = raw.match(re);
+          if (!m) continue;
+          const val = String(m[1] || '')
+            .trim()
+            .toLowerCase();
+          if (!val) continue;
+          const tok0 = val.split(/[,\s]+/)[0];
+          if (neg.has(val) || neg.has(tok0)) continue;
+          if (/^no\b/.test(val) || /^not\s/.test(val)) continue;
+          return true;
+        }
+      }
+      return false;
+    }
+
+    /** Uncertain CAH / CYP21 deletion or CNV language without ``WARNING:`` — mirror server rules. */
+    function cahBodyImpliesHighPriority(body) {
+      const raw = String(body || '');
+      if (!raw.trim()) return false;
+      if (cahParalogDeletionKvActionable(raw)) return true;
+      if (/\b(not|without)\s+(\S+\s+){0,3}(possible|likely|suspected)\s+deletion\b/i.test(raw)) {
+        return false;
+      }
+      if (
+        /\b(not|without)\s+(\S+\s+){0,2}(possible|likely|suspected)\s+gene\s+deletion\b/i.test(raw)
+      ) {
+        return false;
+      }
+      const prose = [
+        /\b(possible|likely|suspected)\s+deletion\b/i,
+        /\b(possible|likely|suspected)\s+gene\s+deletion\b/i,
+        /\bpossible\b[\s.,:;()—–\-]{0,24}\bdeletion\b/i,
+        /\b(possible|likely|suspected)\b[\s\S]{0,72}\bdeletion\b/i,
+        /\bpossible\s+partial\s+deletion\b/i,
+        /\bdeletion\s+(cannot\s+be\s+ruled\s+out|cannot\s+be\s+excluded)\b/i,
+        /\bcannot\s+(exclude|rule\s+out)\b[\s\S]{0,120}\bdeletion\b/i,
+        /\bindicat(es|ing|ed)\b[\s\S]{0,80}\b(possible|likely|suspected)\s+deletion\b/i,
+      ];
+      return prose.some(re => re.test(raw));
+    }
+
     /** Same rules as server ``_infer_pipeline_section_high_risk`` — default low unless pipeline warns. */
     function inferPipelineDangerForSection(sec) {
       if (!sec || typeof sec !== 'object') return false;
@@ -8909,6 +9122,7 @@
       const body = String(sec.body || '');
       if (/^\s*WARNING:\s*\S/im.test(body)) return true;
       if (/^\s*Status\s*:\s*WARNING\s*:/im.test(body)) return true;
+      if (cyp21CahDosageTitleMatches(sec.title) && cahBodyImpliesHighPriority(body)) return true;
       return false;
     }
 
@@ -8928,21 +9142,94 @@
       return map[k] || t;
     }
 
+    /** SMA, Alpha Thal, CAH, Fragile X, DMD — same set as server ``dark_genes_section_always_on_customer_pdf``. */
+    function darkGenesSectionAlwaysOnCustomerPdf(sec) {
+      const disp = darkGenesDisplayTitle(sec && sec.title);
+      const core = new Set([
+        'Spinal Muscular Atrophy',
+        'Alpha Thalassemia',
+        'Congenital Adrenal Hyperplasia (CAH)',
+        'Fragile X',
+        'Duchenne Muscular Dystrophy (DMD)',
+      ]);
+      return core.has(disp);
+    }
+
+    /** CFTR IVS8/9 / EH adjunct — never low-risk auto-approved (explicit review only). */
+    function darkGenesSectionExcludesLowRiskAutoApprove(sec) {
+      if (!sec || typeof sec !== 'object') return false;
+      const title = String(sec.title || '');
+      const body = String(sec.body || '');
+      if (/\bCFTR\b/i.test(title) || /cystic\s+fibrosis/i.test(title)) return true;
+      if (darkGenesSectionAlwaysOnCustomerPdf(sec)) return false;
+      const blob = `${title}\n${body}`;
+      if (/\bCFTR_(polyT|TG)\s*=/i.test(blob)) return true;
+      if (/\bCFTR\s+poly/i.test(blob)) return true;
+      if (/CFTR_IVS9|\(TG\)11\(T\)7|EH locus[^\n]{0,60}CFTR/i.test(blob)) return true;
+      if (/IVS\s*9.*\bCFTR\b|\bCFTR\b.*IVS\s*9/i.test(blob)) return true;
+      if (/expansion\s*hunter[^\n]{0,80}CFTR|CFTR[^\n]{0,80}expansion\s*hunter/i.test(blob))
+        return true;
+      if (/\bpoly_t\s*=/i.test(body) || /\bpoly[_\s]?tg\s*=/i.test(body)) return true;
+      if (/raw\s+eh\s+repcn/i.test(body)) return true;
+      return false;
+    }
+
+    /** APOE is handled under Review → PGx; hide standalone APOE blocks from Dark genes. */
+    function isDarkGenesApoePgxSection(sec) {
+      if (!sec || typeof sec !== 'object') return false;
+      if (/\bapoe\b/i.test(String(sec.title || ''))) return true;
+      const head = String(sec.body || '')
+        .split(/\n/)
+        .slice(0, 8)
+        .join('\n');
+      return /^\s*apoe\s*[:=]/im.test(head);
+    }
+
     function padDarkGenesSectionReviews(rev, n, sections) {
       const o = Array.isArray(rev) ? rev.slice() : [];
       while (o.length < n) o.push({ approved: false, notes: '' });
       return o.slice(0, n).map((e, i) => {
         const sec = sections && sections[i];
-        const approved = !!e.approved;
         const notes = String(e.notes || '');
+        const inferred = inferPipelineDangerForSection(sec);
         let risk;
-        if (e && Object.prototype.hasOwnProperty.call(e, 'risk') && e.risk != null && e.risk !== '') {
+        if (inferred) {
+          risk = 'high';
+        } else if (e && Object.prototype.hasOwnProperty.call(e, 'risk') && e.risk != null && e.risk !== '') {
           risk = e.risk === 'low' ? 'low' : 'high';
         } else {
-          risk = inferPipelineDangerForSection(sec) ? 'high' : 'low';
+          risk = 'low';
+        }
+        const storedExplicitHigh =
+          e && Object.prototype.hasOwnProperty.call(e, 'risk') && e.risk === 'high';
+        let approved = !!e.approved;
+        if (inferred && !storedExplicitHigh) {
+          approved = false;
+        }
+        if (
+          risk === 'low' &&
+          darkGenesSectionAlwaysOnCustomerPdf(sec) &&
+          !darkGenesSectionExcludesLowRiskAutoApprove(sec)
+        ) {
+          approved = true;
         }
         return { approved, notes, risk };
       });
+    }
+
+    /** True when this detailed section is CFTR IVS9 / poly-T / TG (EH) review — not the generic igv-reports bundle. */
+    function darkGenesSectionIsCftrIvs9Relevant(sec) {
+      if (!sec || typeof sec !== 'object') return false;
+      const title = String(sec.title || '');
+      const blob = `${title}\n${String(sec.body || '')}`;
+      if (/\bCFTR\b/i.test(title)) return true;
+      if (/\bCFTR_(polyT|TG)\s*=/i.test(blob)) return true;
+      if (/\bCFTR\s+poly/i.test(blob)) return true;
+      if (/CFTR_IVS9|\(TG\)11\(T\)7|EH locus[^\n]{0,60}CFTR/i.test(blob)) return true;
+      if (/IVS\s*9.*\bCFTR\b|\bCFTR\b.*IVS\s*9/i.test(blob)) return true;
+      if (/expansion\s*hunter[^\n]{0,80}CFTR|CFTR[^\n]{0,80}expansion\s*hunter/i.test(blob))
+        return true;
+      return false;
     }
 
     /**
@@ -8951,16 +9238,21 @@
      */
     function darkGenesSectionVisualTarget(sec, ve) {
       ve = ve || {};
+      const kind = sec.kind || 'normal';
+      if (kind === 'alert') return null;
+      const raw = String(sec.title || '');
+      if (/^overview$/i.test(raw.trim())) return null;
+
+      if (darkGenesSectionIsCftrIvs9Relevant(sec)) {
+        return { target: 'cftr_coverage', label: 'CFTR IGV (BAM)', igvHint: 'cftr' };
+      }
+
       const hasIgv = !!ve.igv_report_html;
       const hasRep = ve.repeat_svgs && ve.repeat_svgs.length;
       const hasPng = ve.snapshots_png && ve.snapshots_png.length;
       if (!hasIgv && !hasRep && !hasPng) return null;
 
-      const raw = String(sec.title || '');
       const tl = raw.toLowerCase();
-      const kind = sec.kind || 'normal';
-      if (kind === 'alert') return null;
-      if (/^overview$/i.test(raw.trim())) return null;
 
       if (/expansion\s*hunter|fragile|fmr1/i.test(raw)) {
         if (hasRep) return { target: 'repeat', label: 'Repeat plots', repeatFilter: 'fragile' };
@@ -9203,8 +9495,10 @@
     }
 
     /** Structured sections from backend (parse of *_detailed_report.txt) — lab-review layout */
-    function renderDarkGenesDetailedSections(sections, sectionReviews, ve, reviewVariants, reviewMeta) {
+    function renderDarkGenesDetailedSections(sections, sectionReviews, ve, reviewVariants, reviewMeta, opts) {
       if (!Array.isArray(sections) || !sections.length) return '';
+      const suppressCftrEhInSections = !!(opts && opts.suppressCftrEhInSections);
+      const suppressBenignCftrEhInSections = !!(opts && opts.suppressBenignCftrEhInSections);
       const rev = padDarkGenesSectionReviews(sectionReviews, sections.length, sections);
       const chunks = [];
       let firstRendered = true;
@@ -9212,6 +9506,7 @@
         const sec = sections[i];
         const rawTitle = String(sec.title || '').trim();
         if (/^overview$/i.test(rawTitle)) continue;
+        if (isDarkGenesApoePgxSection(sec)) continue;
 
         const title = escapeHtml(darkGenesDisplayTitle(sec.title));
         const kind = sec.kind || 'normal';
@@ -9224,6 +9519,9 @@
         const bodyNorm = normalizeDarkGenesSectionBody(sec.body || '');
         const kv =
           tryRenderSmacaCheckSection({ ...sec, body: bodyNorm }, reviewVariants, reviewMeta) ||
+          (suppressCftrEhInSections
+            ? null
+            : tryRenderCftrIvs9EhSection({ ...sec, body: bodyNorm }, { suppressBenignCftrEh: suppressBenignCftrEhInSections })) ||
           tryRenderDosageAnalysisSection({ ...sec, body: bodyNorm }) ||
           tryRenderCahHotspotStandaloneSection({ ...sec, body: bodyNorm });
         const bodyHtml = kv
@@ -9261,7 +9559,9 @@
         const skipAttr = skipReviewUi ? ' data-dg-skip-review="1"' : '';
         const vis = darkGenesSectionVisualTarget(sec, ve);
         const visTitle =
-          vis && vis.target === 'igv'
+          vis && vis.target === 'cftr_coverage'
+            ? 'Open Coverage tab — IGV.js BAM + CFTR IVS9 BED (pileup); unified pipeline HTML does not focus this locus'
+            : vis && vis.target === 'igv'
             ? 'Open unified IGV report (popup; use locus table inside the report)'
             : vis && vis.target === 'repeat'
               ? 'Open repeat expansion plots (REViewer) in popup'
@@ -9312,6 +9612,10 @@
         if (vb) {
           ev.preventDefault();
           const t = vb.getAttribute('data-dg-visual-target');
+          if (t === 'cftr_coverage') {
+            void jumpReviewCoverageCftrIvs9();
+            return;
+          }
           if (t === 'igv') {
             window._lastDgIgvHint = vb.getAttribute('data-dg-igv-hint') || 'generic';
             void openSmnIgvModal();
@@ -9383,12 +9687,12 @@
         if (res && res.dark_genes && typeof res.dark_genes === 'object') {
           reviewData.dark_genes = res.dark_genes;
         }
-        toast('Section reviews saved (Overview and quality-warning blocks are not in the customer PDF; optional notes may appear when set)');
+        toast('Section reviews saved.');
       } catch (e) {
         const msg = String((e && e.message) || e);
         const hint =
           msg === 'Not Found' || /\b404\b/.test(msg)
-            ? ' Reload the page (portal auto-detects /api behind a proxy). Set Daemon URL (gear) to scheme+host+port only — no /api or /portal. Restart the daemon after upgrades.'
+            ? ' Check Daemon URL (no /api suffix) and reload.'
             : '';
         toast(msg + hint, false);
       }
@@ -9417,19 +9721,21 @@
       if (dgMissing) {
         hint.textContent =
           (dg && dg.message) ||
-          'No supplementary dark-gene summary found. After the unified Nextflow run, expect files such as summary/*_summary_report.txt under the Nextflow outdir (usually analysis/<work>/<sample>/). Re-run «Reprocess only» or POST /order/{id}/reprocess-results after the pipeline finishes.';
+          'No dark-gene summary on disk. Run the pipeline, then reprocess.';
         box.innerHTML = '';
         return;
       }
       const files = [];
       if (dg.summary_file) files.push(dg.summary_file);
       if (dg.detailed_file) files.push(dg.detailed_file);
-      hint.textContent = files.length
-        ? `Sources: ${files.join(', ')} — detailed report below; use collapsible raw blocks for audit.`
-        : '';
+      hint.textContent = files.length ? `Sources: ${files.join(', ')}` : '';
       const st = escapeHtml(dg.status || '');
-      let html = `<p style="margin:0 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="badge">${st}</span><span class="muted" style="font-size:11px">Hard-to-sequence / supplementary pipeline</span></p>`;
+      let html = `<p style="margin:0 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="badge">${st}</span><span class="muted" style="font-size:11px">Dark genes</span></p>`;
       if (dg.message) html += `<p class="muted">${escapeHtml(dg.message)}</p>`;
+      const cftrEh =
+        dg.cftr_ivs9_eh && typeof dg.cftr_ivs9_eh === 'object' ? dg.cftr_ivs9_eh : null;
+      const cftrEhBannerHtml = cftrEh ? renderCftrIvs9EhBannerFromPayload(cftrEh) : '';
+      if (cftrEhBannerHtml) html += cftrEhBannerHtml;
       const txt = (dg.summary_text || '').trim();
       const det = (dg.detailed_text || '').trim();
       let detSec = Array.isArray(dg.detailed_sections) ? dg.detailed_sections : [];
@@ -9439,14 +9745,14 @@
       const ve = dg.visual_evidence || {};
       if (det || detSec.length) {
         html += `<details class="dg-report-details" open>
-          <summary class="dg-report-summary">Detailed report <span class="dg-report-summary-hint">Supplementary blocks · collapse to save space</span></summary>
+          <summary class="dg-report-summary">Detailed report</summary>
           <div class="dg-report-details-body">`;
         if (detSec.length) {
           const srv = dg.section_reviews;
-          html += `<div class="dark-genes-stack">${renderDarkGenesDetailedSections(detSec, srv, ve, reviewData.variants || [], reviewData.metadata || {})}</div>`;
+          html += `<div class="dark-genes-stack">${renderDarkGenesDetailedSections(detSec, srv, ve, reviewData.variants || [], reviewData.metadata || {}, { suppressCftrEhInSections: !!cftrEh, suppressBenignCftrEhInSections: true })}</div>`;
           html += `<div class="dark-genes-save-row">
             <button type="button" class="btn primary" id="btnSaveDarkGenesReviews">Save section reviews</button>
-            <span class="muted" style="font-size:11px;line-height:1.45;max-width:52rem">Persists approval, PDF tone, and notes. Default tone is low (green) unless the pipeline flagged a warning. Customer PDF uses the same labels as below. Overview / quality-alert blocks are excluded from the PDF.</span>
+            <span class="muted" style="font-size:11px;line-height:1.45;max-width:52rem">Saves section approval and notes for the report.</span>
           </div>`;
           if (det) html += darkGenesRawDetails('Raw detailed text (full, for audit)', det, 120000);
         } else {
@@ -9468,112 +9774,6 @@
       }
       box.innerHTML = html;
       wireDarkGenesSaveOnce();
-    }
-
-    // ── Statistics ──
-    function renderReviewStats() {
-      if (!reviewData) return;
-
-      if (isReviewOrderMismatch()) {
-        qs('statsClassBody').innerHTML = '<div class="muted">Order selection changed — click <strong>Load</strong> to refresh.</div>';
-        qs('statsGeneBody').innerHTML = '';
-        qs('statsDiseaseBody').innerHTML = '';
-        return;
-      }
-
-      // ── sgNIPT: summary + QC 정보 표시 ─────────────────────────────────
-      if (reviewData._service_code === 'sgnipt') {
-        const sum = reviewData.summary || {};
-        const va = reviewData.variant_analysis_summary || {};
-        const ff = reviewData.fetal_fraction_used
-          ?? reviewData.fetal_fraction_detail?.primary_ff;
-        const ffDet = reviewData.fetal_fraction_detail || {};
-        const fqc = reviewData.fastq_qc || {};
-        const bqc = reviewData.bam_qc || {};
-
-        const fmt = v => v != null ? escapeHtml(String(v)) : '<span class="muted">-</span>';
-        const fmtPct = v => v != null ? escapeHtml((v * 100).toFixed(2) + '%') : '<span class="muted">-</span>';
-        const fmtN = v => v != null ? escapeHtml(Number(v).toLocaleString()) : '<span class="muted">-</span>';
-        const row = (k, v) =>
-          `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line)">
-            <span class="muted" style="font-size:12px">${k}</span><span style="font-weight:600;font-size:12px">${v}</span>
-          </div>`;
-        const section = (title, rows) =>
-          `<div style="margin-bottom:16px"><div style="font-weight:700;font-size:13px;margin-bottom:6px;padding-bottom:4px;border-bottom:2px solid var(--line)">${title}</div>${rows}</div>`;
-
-        const summaryRows = [
-          row('Pipeline Status', fmt(reviewData.sgnipt_status)),
-          row('Status Flags', (reviewData.sgnipt_status_flags||[]).length ? escapeHtml((reviewData.sgnipt_status_flags||[]).join(', ')) : '<span class="muted">—</span>'),
-          row('Panel', fmt(reviewData.panel)),
-          row('Sample ID', fmt(reviewData.sample_id)),
-          row('Fetal Fraction', ff != null ? fmtPct(ff) : '<span class="muted">-</span>'),
-          row('FF Method', fmt(ffDet.primary_method)),
-          row('FF Confidence', fmt(ffDet.confidence)),
-          row('Informative SNPs', fmtN(ffDet.num_informative_snps)),
-        ].join('');
-
-        const varRows = [
-          row('Total Target Loci', fmtN(va.total_target_loci ?? sum.variants_in_target)),
-          row('Total Variants', fmtN(va.total_variants ?? sum.total_variants_analyzed)),
-          row('Fetal Variants', fmtN(va.fetal_variants ?? sum.fetal_specific_variants)),
-          row('Maternal Het', fmtN(sum.maternal_heterozygous_variants)),
-          row('Maternal Hom', fmtN(sum.maternal_homozygous_variants)),
-          row('Pathogenic Variants', fmtN(va.pathogenic_variants)),
-          row('Zero-Probe Variants', fmtN(sum.variants_in_zero_probe_regions)),
-        ].join('');
-
-        const fqcRows = [
-          row('Total Reads', fmtN(fqc.total_reads)),
-          row('Reads After Filter', fmtN(fqc.reads_after_filter)),
-          row('Q30 Rate', fqc.q30_rate != null ? fmtPct(fqc.q30_rate) : '<span class="muted">-</span>'),
-          row('GC Content', fqc.gc_content != null ? fmtPct(fqc.gc_content) : '<span class="muted">-</span>'),
-        ].join('');
-
-        const bqcRows = [
-          row('Mapped Reads', fmtN(bqc.mapped_reads)),
-          row('Mapping Rate', bqc.mapping_rate != null ? fmtPct(bqc.mapping_rate) : '<span class="muted">-</span>'),
-          row('Mean Coverage', bqc.mean_coverage != null ? fmt(bqc.mean_coverage) + 'x' : '<span class="muted">-</span>'),
-          row('Target Coverage', bqc.target_coverage != null ? fmt(bqc.target_coverage) + 'x' : '<span class="muted">-</span>'),
-          row('On-Target Rate', bqc.on_target_rate != null ? fmtPct(bqc.on_target_rate) : '<span class="muted">-</span>'),
-        ].join('');
-
-        qs('statsClassBody').innerHTML =
-          section('Run Summary', summaryRows) +
-          section('Variant Analysis', varRows);
-        qs('statsGeneBody').innerHTML = section('FASTQ QC', fqcRows);
-        qs('statsDiseaseBody').innerHTML = section('BAM QC', bqcRows);
-        return;
-      }
-
-      const stats = reviewData.variant_stats || {};
-      const variants = reviewData.variants || [];
-
-      // By classification
-      const byClass = stats.by_classification || {};
-      qs('statsClassBody').innerHTML = Object.entries(byClass)
-        .sort((a, b) => b[1] - a[1])
-        .map(([cls, cnt]) => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)"><span class="${acmgClass(cls)}">${cls}</span><span style="font-weight:600">${cnt}</span></div>`)
-        .join('') || '<div class="muted">No data</div>';
-
-      // By gene (top 20)
-      const byGene = stats.by_gene || {};
-      qs('statsGeneBody').innerHTML = Object.entries(byGene)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 20)
-        .map(([gene, cnt]) => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)"><span style="font-weight:600">${gene}</span><span>${cnt}</span></div>`)
-        .join('') || '<div class="muted">No data</div>';
-
-      // By disease
-      const byDisease = {};
-      variants.forEach(v => {
-        const d = getVariantDisease(v);
-        if (d && d !== '-') byDisease[d] = (byDisease[d] || 0) + 1;
-      });
-      qs('statsDiseaseBody').innerHTML = Object.entries(byDisease)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 20)
-        .map(([disease, cnt]) => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line);gap:8px"><span style="font-size:12px;white-space:normal">${disease}</span><span style="font-weight:600;flex-shrink:0">${cnt}</span></div>`)
-        .join('') || '<div class="muted">No data</div>';
     }
 
     // ── Variants Table ──
@@ -9733,6 +9933,7 @@
           (v.variant_id || '').toLowerCase().includes(q) ||
           (v.hgvsc || '').toLowerCase().includes(q) ||
           (v.hgvsp || '').toLowerCase().includes(q) ||
+          (v.effect || '').toLowerCase().includes(q) ||
           (v.clinical_nm || '').toLowerCase().includes(q) ||
           (v.transcript || '').toLowerCase().includes(q) ||
           (v.canonical_enst || '').toLowerCase().includes(q) ||
@@ -10027,6 +10228,14 @@
         }
         coverageIgvBrowser = null;
       }
+      if (window._coverageCftrBedBlobUrl) {
+        try {
+          URL.revokeObjectURL(window._coverageCftrBedBlobUrl);
+        } catch (e) {
+          /* ignore */
+        }
+        window._coverageCftrBedBlobUrl = null;
+      }
       const host = qs('coverageIgvHost');
       if (host) {
         host.innerHTML =
@@ -10059,6 +10268,65 @@
         s.onerror = () => reject(new Error('Could not load igv.js'));
         document.head.appendChild(s);
       });
+    }
+
+    /**
+     * GRCh38 — CFTR intron 9 Expansion Hunter span (poly-TG + poly-T), same interval as portal/dark_genes hints.
+     * Sub-features split ref (TG)11 vs (T)7 for orientation in IGV (approximate; count repeats in pileup).
+     */
+    const COVERAGE_CFTR_IVS9_GRCH38 = {
+      pileupLocus: 'chr7:117548560-117548680',
+      ehStart0: 117548606,
+      tgEnd0: 117548628,
+      ehEnd0: 117548635,
+    };
+
+    function coverageCftrIvs9BedTrackConfig() {
+      const genome = (reviewCoverageContext && reviewCoverageContext.genome_id) || 'hg38';
+      if (genome !== 'hg38') return null;
+      if (window._coverageCftrBedBlobUrl) {
+        try {
+          URL.revokeObjectURL(window._coverageCftrBedBlobUrl);
+        } catch (e) {
+          /* ignore */
+        }
+        window._coverageCftrBedBlobUrl = null;
+      }
+      const { ehStart0, tgEnd0, ehEnd0 } = COVERAGE_CFTR_IVS9_GRCH38;
+      const bed =
+        [
+          `chr7\t${ehStart0}\t${ehEnd0}\tCFTR_IVS9_EH_span`,
+          `chr7\t${ehStart0}\t${tgEnd0}\tCFTR_IVS9_TG_ref11`,
+          `chr7\t${tgEnd0}\t${ehEnd0}\tCFTR_IVS9_polyT_ref7`,
+        ].join('\n') + '\n';
+      const url = URL.createObjectURL(new Blob([bed], { type: 'text/plain' }));
+      window._coverageCftrBedBlobUrl = url;
+      return {
+        type: 'annotation',
+        format: 'bed',
+        url,
+        name: 'CFTR IVS9 — poly-TG / poly-T (GRCh38)',
+        indexed: false,
+        displayMode: 'EXPANDED',
+        color: '#1565c0',
+      };
+    }
+
+    /** Review → Coverage: jump to CFTR IVS9 with BAM + BED (reloads IGV so the tract track is present). */
+    async function jumpReviewCoverageCftrIvs9() {
+      showReviewTab('coverage');
+      const oid = (reviewLoadedOrderId || (qs('reviewOrderSelect') && qs('reviewOrderSelect').value) || '').trim();
+      if (oid && !reviewCoverageContext) {
+        try {
+          await refreshReviewCoverageTab();
+        } catch (e) {
+          /* startCoverageIgvBrowser will toast if BAM list is still unavailable */
+        }
+      }
+      const loc = COVERAGE_CFTR_IVS9_GRCH38.pileupLocus;
+      const locInp = qs('coverageLocusInput');
+      if (locInp) locInp.value = loc;
+      void startCoverageIgvBrowser(loc);
     }
 
     /** First indexed BAM from coverage-context (server already drops ancillary paraphase/SMN/FMR1/…). */
@@ -10139,14 +10407,29 @@
         name: meta.label || rel.split('/').pop(),
         height: th0,
         maxHeight: Math.max(th0 + 80, 720),
+        // Default IGV.js only draws non-reference bases unless showAllBases — reviewers expect letters in pileup.
+        displayMode: 'EXPANDED',
+        showAllBases: true,
+        showMismatches: true,
+        showSoftClips: true,
+        showInsertionText: true,
+        showDeletionText: true,
+        alignmentRowHeight: 15,
+        // Slightly deeper sampling over ~100bp windows so more reads render at IVS9-style loci (avoid empty-looking pileup).
+        samplingDepth: 400,
+        samplingWindowSize: 100,
       };
       const hdr = coverageTrackHeaders();
       if (hdr) track.headers = hdr;
+      const tracks = [];
+      const cftrBed = coverageCftrIvs9BedTrackConfig();
+      if (cftrBed) tracks.push(cftrBed);
+      tracks.push(track);
       try {
         coverageIgvBrowser = await igv.createBrowser(host, {
           genome: (reviewCoverageContext && reviewCoverageContext.genome_id) || 'hg38',
           locus,
-          tracks: [track],
+          tracks,
         });
         try {
           coverageIgvApplyTrackHeightFromHost();
@@ -10346,6 +10629,11 @@
           const loc = (qs('coverageLocusInput') && qs('coverageLocusInput').value.trim()) || '';
           void startCoverageIgvBrowser(loc);
         });
+      const cftrB = qs('coverageCftrIvs9Btn');
+      if (cftrB)
+        cftrB.addEventListener('click', () => {
+          jumpReviewCoverageCftrIvs9();
+        });
       const gb = qs('coverageGotoLocusBtn');
       if (gb)
         gb.addEventListener('click', () => {
@@ -10386,6 +10674,8 @@
             <button class="btn" style="padding:4px 12px;font-size:11px" onclick="qs('variantDetail').classList.add('hidden')">Close</button>
           </div>
         </div>
+        ${v.cftr_poly_tract ? `<div class="muted" style="font-size:12px;line-height:1.5;margin:0 0 12px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:rgba(59,130,246,.08)"><strong>CFTR poly-T / poly-TG</strong> — Tract genotype parsed from the <strong>dark-gene pipeline</strong> summary/detailed report (not a panel SNV/indel line). Values are shown in <strong>HGVSc</strong> here as a display shorthand for the tract call.<div style="margin-top:10px"><button type="button" class="btn" style="padding:6px 12px;font-size:11px" onclick="jumpReviewCoverageCftrIvs9()">Coverage — IGV at IVS9 (BED + BAM)</button><span class="muted" style="font-size:11px;margin-left:8px">GRCh38; zoom pileup to count T / TG-style runs</span></div></div>` : ''}
+        ${v.cftr_ivs9_eh && typeof v.cftr_ivs9_eh === 'object' ? `<div style="margin:0 0 12px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:${v.cftr_ivs9_eh.risk_level === 'high' ? 'rgba(239,68,68,.1)' : 'rgba(63,185,80,.08)'}"><div style="font-size:13px;font-weight:600;margin-bottom:6px">CFTR IVS9 (Expansion Hunter)</div><div class="muted" style="font-size:12px;line-height:1.55">${v.cftr_ivs9_eh.raw_poly_t ? `<div><strong>REPCN poly-T:</strong> ${escapeHtml(String(v.cftr_ivs9_eh.raw_poly_t))}</div>` : ''}${v.cftr_ivs9_eh.raw_tg ? `<div><strong>REPCN TG:</strong> ${escapeHtml(String(v.cftr_ivs9_eh.raw_tg))}</div>` : ''}${v.cftr_ivs9_eh.per_allele_summary ? `<div style="margin-top:6px"><strong>Per-allele:</strong> ${escapeHtml(String(v.cftr_ivs9_eh.per_allele_summary).slice(0, 800))}</div>` : ''}${Array.isArray(v.cftr_ivs9_eh.risk_reasons) && v.cftr_ivs9_eh.risk_reasons.length ? `<div style="margin-top:8px;color:var(--${v.cftr_ivs9_eh.risk_level === 'high' ? 'err' : 'muted'})"><strong>Risk flags:</strong> ${v.cftr_ivs9_eh.risk_reasons.map(x => escapeHtml(String(x))).join('; ')}</div>` : '<div class="muted" style="margin-top:8px">No 5T / TG12 / TG13+ automated flag on this call.</div>'}</div><div style="margin-top:10px"><button type="button" class="btn" style="padding:6px 12px;font-size:11px" onclick="jumpReviewCoverageCftrIvs9()">Coverage — IGV at IVS9 (BED + BAM)</button></div></div>` : ''}
         <div class="detail-grid">
           <div class="detail-item"><div class="detail-label">Position</div><div class="detail-value">${v.chrom}:${v.pos} ${v.ref}>${v.alt}</div></div>
           <div class="detail-item"><div class="detail-label">RefSeq (NM)</div><div class="detail-value">${v.clinical_nm || '-'}</div></div>
@@ -10535,15 +10825,15 @@
       const tier = geneNarrativeKnowledgeTier(v);
       const box = 'font-size:11px;line-height:1.45;margin:0 0 10px;padding:8px 10px;border-radius:8px';
       if (tier === 'disabled') {
-        return `<div class="muted" style="${box};background:rgba(255,120,80,.08);border:1px solid rgba(255,120,80,.28)"><strong>No gene_knowledge DB</strong> on the daemon — “Gene &amp; disease association” is a <strong>template</strong> from the panel disease name. Configure <code>gene_knowledge_db</code> and use <strong>Gene database → Fetch missing from Gemini</strong> for search-backed paragraphs.</div>`;
+        return `<div class="muted" style="${box};background:rgba(255,120,80,.08);border:1px solid rgba(255,120,80,.28)"><strong>No gene_knowledge DB</strong> — text below is templated from the panel. Configure the DB and use <strong>Gene database → Fetch missing from Gemini</strong>.</div>`;
       }
       if (tier === 'full') {
-        return `<div class="muted" style="${box};background:rgba(63,185,80,.07);border:1px solid rgba(63,185,80,.22)"><strong>Gene &amp; disease</strong> below comes from the <strong>gene_knowledge</strong> cache (filled via Gemini/search on the server when the row was created). <strong>Variant interpretation</strong> is still built from this variant’s HGVS + ClinVar (+ inheritance from cache if shown) — edit freely.</div>`;
+        return `<div class="muted" style="${box};background:rgba(63,185,80,.07);border:1px solid rgba(63,185,80,.22)"><strong>Gene &amp; disease</strong> from <strong>gene_knowledge</strong>. <strong>Variant interpretation</strong> uses HGVS + ClinVar — edit as needed.</div>`;
       }
       if (tier === 'partial') {
-        return `<div class="muted" style="${box};background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.22)">Cache has <strong>labels only</strong> (disorder/OMIM) — not full paragraphs yet. Open <strong>Gene database</strong> and click <strong>Fetch missing from Gemini</strong> to run search extraction into the cache, then return here (draft text refreshes).</div>`;
+        return `<div class="muted" style="${box};background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.22)">Cache has labels only — use <strong>Gene database → Fetch missing from Gemini</strong> for full paragraphs.</div>`;
       }
-      return `<div class="muted" style="${box};background:rgba(130,160,255,.07);border:1px solid rgba(130,160,255,.2)"><strong>Template text</strong> — not a live search. “The … gene is associated with …” is generated from your <strong>panel / result</strong> disease field. <strong>Variant interpretation</strong> is assembled from HGVS + ClinVar. To get long-form gene text, configure the cache and use <strong>Gene database → Fetch missing from Gemini</strong>.</div>`;
+      return `<div class="muted" style="${box};background:rgba(130,160,255,.07);border:1px solid rgba(130,160,255,.2)"><strong>Template</strong> — not live search. Use <strong>Gene database → Fetch missing from Gemini</strong> for longer gene text.</div>`;
     }
 
     function defaultGeneDescriptionFromKnowledge(v, gk) {

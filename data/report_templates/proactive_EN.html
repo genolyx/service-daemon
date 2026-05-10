@@ -350,7 +350,7 @@
 
     {% if data.dark_genes and (data.dark_genes.report_detailed_html or data.dark_genes.status == 'error') %}
     <div class="new-page">
-        <div class="section-title">Supplementary analysis (hard-to-sequence regions)</div>
+        <div class="section-title">Supplementary analysis</div>
         {% if data.dark_genes.status == 'error' %}
         <p class="detail-text" style="white-space:pre-wrap;font-size:8.5pt;">
             {{ data.dark_genes.report_summary }}

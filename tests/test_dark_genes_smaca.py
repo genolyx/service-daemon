@@ -73,3 +73,225 @@ def test_inject_smaca_ct_after_c_ratio():
 def test_inject_idempotent_when_c_t_present():
     body = "C_T=1,2\nC_Ratio=0.5\n"
     assert _inject_smaca_ct_line_into_detailed_text(body, "C_T=9,9") == body
+
+
+_infer_high = _dg._infer_pipeline_section_high_risk
+_align_rev = _dg.align_section_reviews
+
+
+def test_cah_possible_deletion_flags_pipeline_high_risk():
+    sec = {
+        "title": "CYP21A2 analysis (CAH - dosage)",
+        "body": "Dosage supports a possible deletion in the CYP21A2 / paralog region.\n",
+        "kind": "normal",
+    }
+    assert _infer_high(sec) is True
+
+
+def test_cah_negated_possible_deletion_not_flagged():
+    sec = {
+        "title": "CYP21A2 analysis (CAH - dosage)",
+        "body": "This pattern is not a possible deletion after re-check.\n",
+        "kind": "normal",
+    }
+    assert _infer_high(sec) is False
+
+
+def test_cah_paralog_deletion_kv_possible_flags_high_risk():
+    sec = {
+        "title": "CYP21A2 analysis (CAH - dosage)",
+        "body": "paralog_deletion=possible\n",
+        "kind": "normal",
+    }
+    assert _infer_high(sec) is True
+
+
+def test_possible_deletion_non_cah_section_not_flagged():
+    sec = {"title": "Large SVs (other)", "body": "possible deletion noted elsewhere\n", "kind": "normal"}
+    assert _infer_high(sec) is False
+
+
+def test_align_section_reviews_default_risk_high_for_cah_possible_deletion():
+    sections = [
+        {
+            "title": "CYP21A2 analysis (CAH - dosage)",
+            "body": "Summary: possible deletion\n",
+            "kind": "normal",
+        },
+    ]
+    out = _align_rev(None, 1, sections)
+    assert out[0]["risk"] == "high"
+    assert out[0]["approved"] is False
+
+
+def test_align_core_section_cftr_lines_in_body_still_low_auto_approved():
+    """CFTR EH lines inside an HBA core block must not disable core low-risk auto-approve."""
+    sections = [
+        {
+            "title": "HBA Analysis (Alpha Thalassemia - Dosage)",
+            "body": "CFTR_polyT=7/7 CFTR_TG=11/11\nhba1=2\n",
+            "kind": "normal",
+        },
+    ]
+    out = _align_rev(None, 1, sections)
+    assert out[0]["risk"] == "low"
+    assert out[0]["approved"] is True
+
+
+def test_cftr_negative_title_never_low_risk_auto_effective_approved():
+    sec = {
+        "title": "CFTR IVS9 adjunct",
+        "body": "CFTR_polyT=7/7 CFTR_TG=11/11\n",
+        "kind": "normal",
+    }
+    rev = {"approved": False, "risk": "low", "notes": ""}
+    assert _dg.cftr_supplementary_section_excludes_low_risk_auto_approve(sec) is True
+    assert _dg.effective_approved_for_dark_genes_section(rev, sec) is False
+
+
+def test_cftr_supplementary_detects_poly_t_body_without_cftr_title():
+    sec = {
+        "title": "Adjunct intronic repeats",
+        "body": "poly_t=9T/9T\n poly_tg=TG11/TG11\n",
+        "kind": "normal",
+    }
+    assert _dg.cftr_supplementary_section_excludes_low_risk_auto_approve(sec) is True
+
+
+def test_align_section_reviews_low_risk_auto_approved_core_only():
+    sections = [
+        {
+            "title": "CYP21A2 analysis (CAH - dosage)",
+            "body": "Normal copy-number result, no warnings.\n",
+            "kind": "normal",
+        },
+    ]
+    out = _align_rev(None, 1, sections)
+    assert out[0]["risk"] == "low"
+    assert out[0]["approved"] is True
+
+
+def test_align_section_reviews_low_risk_non_core_not_auto_approved():
+    sections = [
+        {
+            "title": "CFTR screening",
+            "body": "Poly T:\t9T/9T\n",
+            "kind": "normal",
+        },
+    ]
+    out = _align_rev(None, 1, sections)
+    assert out[0]["risk"] == "low"
+    assert out[0]["approved"] is False
+
+
+def test_effective_approved_true_when_effective_low_core_even_if_disk_flag_false():
+    sec = {
+        "title": "CYP21A2 analysis (CAH - dosage)",
+        "body": "Benign.\n",
+        "kind": "normal",
+    }
+    rev = {"approved": False, "risk": "low", "notes": ""}
+    assert _dg.effective_approved_for_dark_genes_section(rev, sec) is True
+
+
+def test_effective_approved_cftr_molecular_benign_never_customer_pdf_eligible():
+    """Benign CFTR tracts are not customer-PDF-eligible even when the portal marks approved."""
+    sec = {"title": "CFTR screening", "body": "Poly T:\t9T/9T\n", "kind": "normal"}
+    assert _dg.effective_approved_for_dark_genes_section(
+        {"approved": False, "risk": "low", "notes": ""}, sec
+    ) is False
+    assert _dg.effective_approved_for_dark_genes_section(
+        {"approved": True, "risk": "low", "notes": ""}, sec
+    ) is False
+
+
+def test_effective_approved_cftr_molecular_high_non_core_requires_portal_approved():
+    sec = {
+        "title": "CFTR screening",
+        "body": "CFTR_polyT=5/7 CFTR_TG=11/11\n",
+        "kind": "normal",
+    }
+    assert _dg.effective_approved_for_dark_genes_section(
+        {"approved": False, "risk": "low", "notes": ""}, sec
+    ) is False
+    assert _dg.effective_approved_for_dark_genes_section(
+        {"approved": True, "risk": "low", "notes": ""}, sec
+    ) is True
+
+
+def test_effective_risk_overrides_stale_disk_low_when_cah_prose_high():
+    sec = {
+        "title": "CYP21A2 analysis (CAH - dosage)",
+        "body": "Call: possible deletion on paralog background.\n",
+        "kind": "normal",
+    }
+    rev = {"approved": True, "notes": "", "risk": "low"}
+    assert _dg.effective_risk_for_section(rev, sec) == "high"
+
+
+def test_align_upgrades_stored_low_when_inference_high_and_clears_approval():
+    sections = [
+        {
+            "title": "CYP21A2 analysis (CAH - dosage)",
+            "body": "Interpretation suggests possible deletion.\n",
+            "kind": "normal",
+        },
+    ]
+    prev = [{"approved": True, "notes": "", "risk": "low"}]
+    out = _align_rev(prev, 1, sections)
+    assert out[0]["risk"] == "high"
+    assert out[0]["approved"] is False
+
+
+def test_align_clears_approval_when_inference_high_and_disk_risk_missing():
+    sections = [
+        {
+            "title": "CYP21A2 analysis (CAH - dosage)",
+            "body": "Possible deletion.\n",
+            "kind": "normal",
+        },
+    ]
+    prev = [{"approved": True, "notes": "", "risk": None}]
+    out = _align_rev(prev, 1, sections)
+    assert out[0]["risk"] == "high"
+    assert out[0]["approved"] is False
+
+
+def test_effective_approved_false_when_inferred_high_but_explicit_risk_not_high():
+    sec = {
+        "title": "CYP21A2 analysis (CAH - dosage)",
+        "body": "Possible deletion.\n",
+        "kind": "normal",
+    }
+    rev_lo = {"approved": True, "risk": "low", "notes": ""}
+    rev_miss = {"approved": True, "notes": ""}
+    assert _dg.effective_approved_for_dark_genes_section(rev_lo, sec) is False
+    assert _dg.effective_approved_for_dark_genes_section(rev_miss, sec) is False
+    rev_hi = {"approved": True, "risk": "high", "notes": ""}
+    assert _dg.effective_approved_for_dark_genes_section(rev_hi, sec) is True
+
+
+def test_supplemental_high_risk_skips_stale_approve_without_explicit_high_risk():
+    pdf = _dg.dark_genes_for_pdf(
+        {
+            "status": "found",
+            "detailed_sections": [
+                {
+                    "title": "CYP21A2 analysis (CAH - dosage)",
+                    "body": "Possible deletion.\n",
+                    "kind": "normal",
+                },
+            ],
+            "section_reviews": [{"approved": True, "risk": "low", "notes": ""}],
+        }
+    )
+    assert not pdf.get("supplemental_summary_findings")
+
+
+def test_cah_title_bare_cah_dosage_matches_for_deletion_prose():
+    sec = {
+        "title": "CAH — Dosage analysis",
+        "body": "Possible deletion.\n",
+        "kind": "normal",
+    }
+    assert _infer_high(sec) is True

@@ -1717,6 +1717,211 @@ def atomic_write_json_file(path: str, obj: Any) -> None:
         raise
 
 
+def _cftr_tract_already_in_variants(variants: List[Dict[str, Any]], tract: str) -> bool:
+    """True when a *panel VCF* row already describes the IVS8 poly-T or IVS9 poly-TG tract."""
+    t = tract.upper()
+    for v in variants:
+        if (v.get("gene") or "").strip().upper() != "CFTR":
+            continue
+        if v.get("cftr_poly_tract"):
+            continue
+        h = f"{v.get('hgvsc') or ''} {v.get('hgvsp') or ''} {v.get('effect') or ''}".lower()
+        if t == "T":
+            if re.search(r"\bivs[\s/-]*8\b|\bintron\s*8\b", h):
+                return True
+            if re.search(r"poly[-\s]?t\b|polythymidine|poly_thymidine", h):
+                return True
+        else:
+            if re.search(r"\bivs[\s/-]*9\b|\bintron\s*9\b", h):
+                return True
+            if re.search(r"poly[-\s]?tg\b", h):
+                return True
+            if re.search(r"\(tg\)", h) or re.search(r"\btg\d+\s*/\s*tg\d+", h):
+                return True
+    return False
+
+
+def _build_cftr_poly_tract_variant_entry(
+    tract: str,
+    call: str,
+    eh: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    tract_u = tract.upper()
+    variant_id = "VAR_CFTR_T_TRACT" if tract_u == "T" else "VAR_CFTR_TG_TRACT"
+    effect = (
+        "CFTR poly-T repeat (EH IVS9 locus)"
+        if tract_u == "T"
+        else "CFTR TG repeat (EH IVS9 locus)"
+    )
+    if eh and isinstance(eh, dict) and eh.get("risk_level") == "high":
+        rs = eh.get("risk_reasons") or []
+        if rs:
+            effect = f"{effect} — Flagged: {'; '.join(str(x) for x in rs[:4])}"
+    cf_disease = {
+        "name": "Cystic Fibrosis",
+        "disease_name": "Cystic Fibrosis",
+        "inheritance": "Autosomal recessive",
+        "carrier_frequency": "",
+        "severity": "",
+        "category": "",
+    }
+    out: Dict[str, Any] = {
+        "variant_id": variant_id,
+        "chrom": "chr7",
+        "pos": 117548621,
+        "ref": "",
+        "alt": "",
+        "gene": "CFTR",
+        "transcript": "",
+        "canonical_enst": "",
+        "clinical_nm": "NM_000492.4",
+        "hgvsc": call.strip()[:800],
+        "hgvsp": "",
+        "effect": effect,
+        "dp": None,
+        "ref_depth": None,
+        "alt_depth": None,
+        "vaf": None,
+        "gt": "",
+        "zygosity": "",
+        "gnomad_af": None,
+        "gnomad_exomes_af": None,
+        "gnomad_genomes_af": None,
+        "gnomad_source": "",
+        "clinvar_sig": "",
+        "clinvar_sig_primary": "",
+        "clinvar_conflicting": False,
+        "clinvar_conflict_detail": "",
+        "clinvar_revstat": "",
+        "clinvar_stars": 0,
+        "clinvar_dn": "",
+        "clinvar_variation_id": "",
+        "dbsnp_rsid": "",
+        "dbsnp_url": "",
+        "clingen_hi_score": None,
+        "clingen_ts_score": None,
+        "clingen_hi_desc": "",
+        "clingen_ts_desc": "",
+        "clingen_url": "",
+        "hgmd_class": "",
+        "hgmd_disease": "",
+        "hgmd_pmid": "",
+        "curated_classification": "",
+        "curated_source": "",
+        "curated_notes": "",
+        "diseases": [cf_disease],
+        "inheritance": "Autosomal recessive",
+        "hpo_phenotypes": [],
+        "acmg_classification": "",
+        "acmg_criteria": [],
+        "acmg_reasoning": "",
+        "acmg_rule_based": {},
+        "acmg_ai": None,
+        "acmg_literature_enhanced": False,
+        "literature": None,
+        "reviewer_classification": None,
+        "reviewer_comment": None,
+        "reviewer_confirmed": False,
+        "include_in_report": False,
+        "cftr_poly_tract": True,
+    }
+    if eh and isinstance(eh, dict):
+        snap = {
+            k: eh[k]
+            for k in (
+                "source",
+                "risk_level",
+                "risk_reasons",
+                "raw_poly_t",
+                "raw_tg",
+                "display_t",
+                "display_tg",
+                "per_allele_summary",
+                "locus_note",
+            )
+            if eh.get(k) is not None
+        }
+        if snap:
+            out["cftr_ivs9_eh"] = snap
+    return out
+
+
+def _append_cftr_poly_tract_variants(
+    variants_for_review: List[Dict[str, Any]],
+    dark_genes_block: Dict[str, Any],
+) -> None:
+    from .dark_genes import extract_cftr_poly_tract_calls_from_dark_genes
+
+    if not isinstance(dark_genes_block, dict):
+        return
+    calls = extract_cftr_poly_tract_calls_from_dark_genes(dark_genes_block)
+    if not calls:
+        return
+    eh_meta = dark_genes_block.get("cftr_ivs9_eh")
+    if not isinstance(eh_meta, dict) or eh_meta.get("source") != "expansion_hunter_ivs9":
+        from .dark_genes import parse_cftr_expansion_hunter_ivs9
+
+        eh_meta = None
+        for key in ("summary_text", "detailed_text"):
+            p = dark_genes_block.get(key)
+            if isinstance(p, str) and p.strip():
+                eh_meta = parse_cftr_expansion_hunter_ivs9(p)
+                if eh_meta:
+                    break
+        if not eh_meta:
+            secs = dark_genes_block.get("detailed_sections")
+            if isinstance(secs, list):
+                for sec in secs:
+                    if not isinstance(sec, dict):
+                        continue
+                    chunk = f"{sec.get('title') or ''}\n{sec.get('body') or ''}"
+                    eh_meta = parse_cftr_expansion_hunter_ivs9(chunk)
+                    if eh_meta:
+                        break
+    existing_ids = {v.get("variant_id") for v in variants_for_review if isinstance(v, dict)}
+    for key, tract in (("T", "T"), ("TG", "TG")):
+        if key not in calls:
+            continue
+        entry = _build_cftr_poly_tract_variant_entry(tract, calls[key], eh_meta)
+        vid = entry["variant_id"]
+        if vid in existing_ids:
+            continue
+        if _cftr_tract_already_in_variants(variants_for_review, tract):
+            continue
+        variants_for_review.append(entry)
+        existing_ids.add(vid)
+
+
+def _merge_cftr_poly_tract_reviewer_fields(
+    variants_for_review: List[Dict[str, Any]],
+    prev_variants: List[Any],
+) -> None:
+    by_id = {
+        str(v.get("variant_id")): v
+        for v in prev_variants
+        if isinstance(v, dict) and v.get("variant_id")
+    }
+    for v in variants_for_review:
+        vid = str(v.get("variant_id") or "")
+        if not vid.startswith("VAR_CFTR_"):
+            continue
+        p = by_id.get(vid)
+        if not isinstance(p, dict):
+            continue
+        for key in (
+            "reviewer_classification",
+            "reviewer_comment",
+            "reviewer_confirmed",
+            "include_in_report",
+        ):
+            if key not in p:
+                continue
+            pv = p.get(key)
+            if pv is None:
+                continue
+            v[key] = pv
+
+
 def generate_result_json(
     annotated_variants: List[Dict[str, Any]],
     acmg_results: List[Dict[str, Any]],
@@ -1991,6 +2196,18 @@ def generate_result_json(
             "include_in_report": False,
         }
         variants_for_review.append(entry)
+
+    try:
+        _append_cftr_poly_tract_variants(variants_for_review, dark_genes_block)
+        prev_merge_path = os.path.join(output_dir, "result.json")
+        if os.path.isfile(prev_merge_path):
+            with open(prev_merge_path, "r", encoding="utf-8") as rf:
+                prev_merge_doc = json.load(rf)
+            pv = prev_merge_doc.get("variants") if isinstance(prev_merge_doc, dict) else None
+            if isinstance(pv, list):
+                _merge_cftr_poly_tract_reviewer_fields(variants_for_review, pv)
+    except Exception as e:
+        logger.warning("[generate_result_json] CFTR poly-tract variants: %s", e)
 
     # 변이 통계
     variant_stats = _compute_variant_stats(variants_for_review)

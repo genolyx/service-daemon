@@ -1696,6 +1696,11 @@ def atomic_write_json_file(path: str, obj: Any) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
+        # Ensure group-readable so a different-UID daemon can merge on next run.
+        try:
+            os.chmod(tmp, 0o640)
+        except OSError:
+            pass
         os.replace(tmp, path)
     except PermissionError as e:
         try:

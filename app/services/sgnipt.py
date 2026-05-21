@@ -58,6 +58,16 @@ def apply_sgnipt_layout_directories(job: Job) -> bool:
     return changed
 
 
+def _normalize_ff(ff: dict | None) -> dict | None:
+    """Normalize fetal_fraction dict: map pipeline key primary_ff → primary_fetal_fraction."""
+    if not isinstance(ff, dict):
+        return ff
+    if "primary_fetal_fraction" not in ff and "primary_ff" in ff:
+        ff = dict(ff)
+        ff["primary_fetal_fraction"] = ff["primary_ff"]
+    return ff
+
+
 class SgNIPTPlugin(ServicePlugin):
     """sgNIPT 파이프라인 (Docker 또는 호스트 bash)."""
 
@@ -373,7 +383,7 @@ class SgNIPTPlugin(ServicePlugin):
             "sgnipt_status_flags": sample0.get("status_flags") or [],
             "fastq_qc": sample0.get("fastq_qc"),
             "bam_qc": sample0.get("bam_qc"),
-            "fetal_fraction_detail": sample0.get("fetal_fraction"),
+            "fetal_fraction_detail": _normalize_ff(sample0.get("fetal_fraction")),
             "variant_analysis_summary": sample0.get("variant_analysis"),
         }
 

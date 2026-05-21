@@ -1108,6 +1108,7 @@
                   <th class="sortable" data-key="status">Status</th>
                   <th>Progress</th>
                   <th class="sortable" data-key="created_at">Order created</th>
+                  <th class="sortable" data-key="completed_at" title="Time when analysis finished (success or failure)">Result updated</th>
                   <th class="sortable" data-key="updated_at" title="Time when report was generated (status became REPORT_READY)">Report generated</th>
                   <th>Message</th>
                   <th class="td-report-col" style="min-width:104px" title="Open PDF or HTML report in a new tab">Report</th>
@@ -5319,6 +5320,9 @@
       } else if (key === 'created_at') {
         va = new Date(a.created_at || 0).getTime();
         vb = new Date(b.created_at || 0).getTime();
+      } else if (key === 'completed_at') {
+        va = new Date(a.completed_at || a.updated_at || 0).getTime();
+        vb = new Date(b.completed_at || b.updated_at || 0).getTime();
       } else if (key === 'updated_at') {
         va = new Date(a.updated_at || 0).getTime();
         vb = new Date(b.updated_at || 0).getTime();
@@ -6315,6 +6319,12 @@
             <span class="muted">${o.progress ?? 0}%</span>
           </td>
           <td>${fmtDate(o.created_at)}</td>
+          <td style="white-space:nowrap">${(() => {
+            const TERMINAL = ['COMPLETED','REPORT_READY','FAILED','CANCELLED'];
+            if (!TERMINAL.includes(o.status)) return '<span class="muted">—</span>';
+            const t = o.completed_at || o.updated_at;
+            return t ? fmtDate(t) : '<span class="muted">—</span>';
+          })()}</td>
           <td style="white-space:nowrap">${(o.status === 'REPORT_READY' && o.updated_at) ? fmtDate(o.updated_at) : '<span class="muted">—</span>'}</td>
           <td class="muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${escapeHtml((o.error_log || o.message) || '')}</td>
           <td class="order-dl">${dlBtn}</td>

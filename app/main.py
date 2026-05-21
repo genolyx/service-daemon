@@ -24,7 +24,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from .config import settings
 from .datetime_kst import now_kst_iso, now_kst_date_compact
-from .logging_config import setup_logging, setup_middleware
+from .logging_config import setup_logging, setup_middleware, get_log_lines
 from .models import (
     OrderSubmitRequest, OrderSubmitResponse, OrderSaveResponse, OrderStatusResponse,
     OrderUpdateRequest, OrderUpdateResponse, StartOrderRequest,
@@ -547,6 +547,12 @@ async def health(
     return body
 
 
+@app.get("/daemon-log")
+async def daemon_log(lines: int = Query(default=200, ge=1, le=500)):
+    """Return recent in-memory daemon application log lines (newest last)."""
+    return {"lines": get_log_lines(last_n=lines)}
+
+
 # ─── Order Endpoints ──────────────────────────────────────
 
 def _pipeline_folder_label(order_id: str, sample_name: Optional[str]) -> str:
@@ -775,12 +781,22 @@ async def start_saved_order(
         scratch_dir = request.scratch_dir
     queue_manager = get_queue_manager()
     job_preview = queue_manager.get_job(order_id)
-    if job_preview and job_preview.service_code in _CARRIER_LIKE:
-        pl = get_plugin(job_preview.service_code)
-        if pl:
-            ok, err = pl.validate_params(job_preview.params or {})
-            if not ok:
-                raise HTTPException(status_code=400, detail=f"Invalid params: {err}")
+    if job_preview:
+        if not get_plugin(job_preview.service_code):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"This daemon ({settings.app_name}) does not support service_code "
+                    f"'{job_preview.service_code}'. Registered services: {list_service_codes()}. "
+                    f"Switch to a daemon that supports this service."
+                ),
+            )
+        if job_preview.service_code in _CARRIER_LIKE:
+            pl = get_plugin(job_preview.service_code)
+            if pl:
+                ok, err = pl.validate_params(job_preview.params or {})
+                if not ok:
+                    raise HTTPException(status_code=400, detail=f"Invalid params: {err}")
     try:
         job, queue_position = await queue_manager.start_saved_job(
             order_id,

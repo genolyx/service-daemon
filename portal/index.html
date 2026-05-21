@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>Genolyx Service Portal</title>
   <style>
     /* ===== THEME TOKENS (from index_v4.html) ===== */
@@ -1105,6 +1108,7 @@
                   <th class="sortable" data-key="status">Status</th>
                   <th>Progress</th>
                   <th class="sortable" data-key="created_at">Order created</th>
+                  <th class="sortable" data-key="updated_at" title="Time when report was generated (status became REPORT_READY)">Report generated</th>
                   <th>Message</th>
                   <th class="td-report-col" style="min-width:104px" title="Open PDF or HTML report in a new tab">Report</th>
                   <th style="width:52px">More</th>
@@ -1673,7 +1677,7 @@
       <h3 class="submit-page-title" style="margin-bottom:6px">Configuration</h3>
 
       <!-- ── Daemon Connection ─────────────────────────────── -->
-      <div class="form-section-card" style="max-width:700px;margin-bottom:18px">
+      <div class="form-section-card" style="max-width:1200px;margin-bottom:18px">
         <h4 style="margin:0 0 12px;font-size:14px">Daemon Connection</h4>
         <p class="muted" style="font-size:12px;margin:0 0 14px;line-height:1.5">
           Select which daemon this Portal talks to. The active daemon receives all API calls (Submit, Review, Report, etc.).
@@ -1682,17 +1686,17 @@
         <!-- Preset buttons -->
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px" id="cfgDaemonPresets">
           <button type="button" class="btn" id="cfgPresetSvc"
-            onclick="applyDaemonPreset('http://100.112.118.12:8003', 'service-daemon')"
+            onclick="applyDaemonPreset(daemonPresetUrl(8003), 'service-daemon')"
             style="font-size:12px;padding:6px 14px">
             service-daemon <span class="muted" style="font-size:11px">:8003</span>
           </button>
           <button type="button" class="btn" id="cfgPresetGx"
-            onclick="applyDaemonPreset('http://100.112.118.12:8010', 'gx-daemon')"
+            onclick="applyDaemonPreset(daemonPresetUrl(8010), 'gx-daemon')"
             style="font-size:12px;padding:6px 14px">
             gx-daemon <span class="muted" style="font-size:11px">:8010</span>
           </button>
           <button type="button" class="btn" id="cfgPresetNipt"
-            onclick="applyDaemonPreset('http://100.112.118.12:8000', 'nipt-daemon')"
+            onclick="applyDaemonPreset(daemonPresetUrl(8000), 'nipt-daemon')"
             style="font-size:12px;padding:6px 14px">
             nipt-daemon <span class="muted" style="font-size:11px">:8000</span>
           </button>
@@ -1718,10 +1722,37 @@
           <button type="button" class="btn" style="font-size:12px;padding:7px 14px" onclick="checkCfgDaemonHealth()">Test</button>
           <span id="cfgConnResult" class="muted" style="font-size:12px"></span>
         </div>
+
+        <!-- Daemon Log viewer -->
+        <div style="margin-top:18px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+            <span style="font-size:12px;font-weight:600">Daemon Log</span>
+            <button id="daemonLogPauseBtn" type="button" class="btn" style="font-size:11px;padding:3px 10px" onclick="toggleDaemonLogPause()">Pause</button>
+            <button type="button" class="btn" style="font-size:11px;padding:3px 10px" onclick="clearDaemonLog()">Clear</button>
+            <button type="button" class="btn" style="font-size:11px;padding:3px 10px" onclick="refreshDaemonLog()">Refresh</button>
+            <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
+              <input type="checkbox" id="daemonLogAutoScroll" checked style="accent-color:var(--brand)" />
+              Auto-scroll
+            </label>
+            <label style="font-size:11px;display:flex;align-items:center;gap:4px">
+              Fetch last
+              <select id="daemonLogLines" style="font-size:11px;padding:3px 6px;border-radius:6px;border:1px solid var(--line);background:var(--card-2);color:var(--text)" onchange="refreshDaemonLog()">
+                <option value="50">50 lines</option>
+                <option value="100">100 lines</option>
+                <option value="200" selected>200 lines</option>
+                <option value="500">500 lines</option>
+              </select>
+              from daemon
+            </label>
+            <span id="daemonLogStatus" class="muted" style="font-size:11px"></span>
+          </div>
+          <pre id="daemonLogBox"
+            style="background:#050810;color:#b0bec5;font-family:ui-monospace,'Fira Mono',monospace;font-size:11.5px;line-height:1.55;padding:12px 14px;border-radius:10px;border:1px solid var(--line);height:600px;min-height:120px;max-height:1200px;overflow-y:auto;overflow-x:auto;white-space:pre;margin:0;tab-size:2;resize:vertical"></pre>
+        </div>
       </div>
 
       <!-- ── Pipeline Options ──────────────────────────────── -->
-      <div class="form-section-card" style="max-width:560px">
+      <div class="form-section-card" style="max-width:1200px">
         <h4 style="margin:0 0 12px;font-size:14px">Pipeline Options</h4>
         <p class="muted" style="font-size:12px;margin:0 0 14px;line-height:1.5">
           Applied when you <strong>Submit</strong>, <strong>Force Run</strong>, or <strong>Force Run (Fresh)</strong>
@@ -2142,7 +2173,25 @@
     // ═══════════════════════════════════════════════════════════
     // Same-origin when served from daemon: /portal/, /api/portal/, or e.g. /prefix/portal/
     const isServedByDaemon = /\/(api\/)?portal(\/|$)/.test(window.location.pathname);
-    const DEFAULT_DAEMON = isServedByDaemon ? '' : 'http://100.112.118.12:8000';
+    /**
+     * Build a daemon preset URL using the **current page host**.
+     * Portal과 daemon이 같은 서버에 있으므로, 어떤 hostname(외부 도메인 / Tailscale IP /
+     * localhost)으로 portal에 접속하든 그 hostname을 그대로 쓰고 port만 바꾼다.
+     */
+    function daemonPresetUrl(port) {
+      try {
+        const proto = window.location.protocol || 'http:';
+        const host = window.location.hostname || '127.0.0.1';
+        return `${proto}//${host}:${port}`;
+      } catch (_) {
+        return `http://127.0.0.1:${port}`;
+      }
+    }
+    // Default to gx-daemon (final target). Even when the portal is served by
+    // service-daemon (isServedByDaemon=true), first-time visitors are routed to
+    // gx-daemon — it handles every service (carrier_screening, sgnipt, nipt …)
+    // and shares the same Orders DB. Users can switch via the Configuration tab.
+    const DEFAULT_DAEMON = daemonPresetUrl(8010);
     /** Order/report routes are normally `/order/...` at the daemon root; some proxies only forward `/api/*` (see ORDER_API_PREFIX). */
     function normalizeDaemonApiBase(raw) {
       if (raw == null || raw === '') return '';
@@ -2150,6 +2199,16 @@
       if (/\/api$/i.test(s)) s = s.replace(/\/api$/i, '');
       if (/\/portal$/i.test(s)) s = s.replace(/\/portal$/i, '');
       return s;
+    }
+    /**
+     * Tailscale CGNAT 대역 (100.64.0.0/10). Portal이 외부 도메인으로 열렸는데 저장된
+     * apiBase가 이 대역이면 그 브라우저는 daemon에 절대 도달할 수 없으므로 폐기한다.
+     */
+    function _hostInTailscaleCGNAT(host) {
+      const m = (host || '').match(/^(\d+)\.(\d+)\.\d+\.\d+$/);
+      if (!m) return false;
+      const a = parseInt(m[1], 10), b = parseInt(m[2], 10);
+      return a === 100 && b >= 64 && b <= 127;
     }
     function resolveApiBaseFromStorage() {
       const stored = localStorage.getItem('apiBase');
@@ -2159,9 +2218,18 @@
       if (!n) return '';
       try {
         const origin = window.location.origin;
-        if (new URL(n, origin).origin === origin) {
-          try { localStorage.removeItem('apiBase'); } catch (e) { /* ignore */ }
+        const target = new URL(n, origin);
+        // (a) 같은 origin이면 same-origin('')으로 단순화 — stored는 그대로 두어
+        // 사용자의 명시적 service-daemon 선택을 새로고침 시에도 유지한다.
+        if (target.origin === origin) {
           return '';
+        }
+        // (b) 외부에서 페이지를 열었는데 stale 하드코딩 IP가 박혀 있으면 폐기
+        const pageHost = window.location.hostname;
+        if (target.hostname !== pageHost && _hostInTailscaleCGNAT(target.hostname)
+            && !_hostInTailscaleCGNAT(pageHost)) {
+          try { localStorage.removeItem('apiBase'); } catch (e) { /* ignore */ }
+          return isServedByDaemon ? '' : daemonPresetUrl(target.port || 8003);
         }
       } catch (e) { /* keep n */ }
       return n;
@@ -2170,6 +2238,31 @@
     /** When set, Save sends PATCH `/order/{id}` instead of POST save */
     let editingOrderId = null;
     const qs = id => document.getElementById(id);
+
+    // ── Registered services on the currently connected daemon ────
+    // null = not yet known (allow all so we don't false-block before health responds);
+    // Set<string> = the daemon's actual support list (used to gate Submit/Start/Run + show badges).
+    let DAEMON_SERVICES = null;
+    function _updateRegisteredServices(arr) {
+      if (!Array.isArray(arr)) { DAEMON_SERVICES = null; return; }
+      const codes = arr.map(x => (x && typeof x === 'object') ? (x.code || x.service_code || '') : String(x))
+                        .map(s => String(s || '').trim()).filter(Boolean);
+      DAEMON_SERVICES = new Set(codes);
+    }
+    function isServiceSupported(code) {
+      if (!code) return true;
+      if (!DAEMON_SERVICES) return true;
+      return DAEMON_SERVICES.has(String(code));
+    }
+    /** Block action if the order's service_code is not registered on the active daemon. */
+    function guardServiceAction(serviceCode, actionLabel) {
+      if (isServiceSupported(serviceCode)) return true;
+      const supported = DAEMON_SERVICES ? Array.from(DAEMON_SERVICES).join(', ') : '(unknown)';
+      const msg = `'${serviceCode}' is not supported on the active daemon (${currentDaemonName()}). `
+        + `Supported services: ${supported}. Switch the daemon in Configuration to ${actionLabel}.`;
+      try { toast(msg, false); } catch (_) { alert(msg); }
+      return false;
+    }
 
     function getFServiceValue() {
       const el = qs('fServiceSelect');
@@ -2210,10 +2303,11 @@
     }
 
     // ── Daemon preset highlight ──────────────────────────────
+    // Host-relative: hostname follows window.location, only port differs per daemon.
     const DAEMON_PRESETS = {
-      'service-daemon': 'http://100.112.118.12:8003',
-      'gx-daemon':      'http://100.112.118.12:8010',
-      'nipt-daemon':    'http://100.112.118.12:8000',
+      'service-daemon': daemonPresetUrl(8003),
+      'gx-daemon':      daemonPresetUrl(8010),
+      'nipt-daemon':    daemonPresetUrl(8000),
     };
     const PRESET_BTN_IDS = {
       'service-daemon': 'cfgPresetSvc',
@@ -2273,6 +2367,7 @@
       if (res) res.textContent = 'Checking…';
       try {
         const h = await apiGet('/health');
+        _updateRegisteredServices(h.registered_services);
         const label = h.environment || 'ok';
         const info = h.registered_services
           ? ` · services: ${(h.registered_services || []).map(s => s.code || s).join(', ')}`
@@ -2280,9 +2375,71 @@
         if (res) res.innerHTML = `<span style="color:var(--ok)">●</span> Connected — ${escapeHtml(label)}${escapeHtml(info)}`;
         qs('connStatus').innerHTML = `<span class="conn-dot ok"></span><strong>${escapeHtml(currentDaemonName())}</strong> · ${escapeHtml(label)}${ORDER_API_PREFIX ? ' · /api' : ''}`;
       } catch (e) {
+        DAEMON_SERVICES = null;
         if (res) res.innerHTML = `<span style="color:var(--err)">●</span> Cannot connect — ${escapeHtml(e.message || String(e))}`;
         qs('connStatus').innerHTML = `<span class="conn-dot err"></span><strong>${escapeHtml(currentDaemonName())}</strong> · Disconnected`;
       }
+    }
+
+
+    // ─── Daemon Log Viewer ─────────────────────────────────────────────
+    let _daemonLogPaused = false;
+    let _daemonLogTimer = null;
+    const DAEMON_LOG_POLL_MS = 3000;
+
+    function _levelColor(line) {
+      if (/\bERROR\b|\bCRITICAL\b/.test(line)) return 'color:#f87171';
+      if (/\bWARNING\b|\bWARN\b/.test(line)) return 'color:#fbbf24';
+      if (/\bDEBUG\b/.test(line)) return 'color:#6b7280';
+      return '';
+    }
+
+    async function refreshDaemonLog() {
+      const box = qs('daemonLogBox');
+      const statusEl = qs('daemonLogStatus');
+      const linesEl = qs('daemonLogLines');
+      if (!box) return;
+      const n = linesEl ? parseInt(linesEl.value, 10) || 200 : 200;
+      try {
+        const data = await apiGet(`/daemon-log?lines=${n}`);
+        const rawLines = Array.isArray(data.lines) ? data.lines : [];
+        const html = rawLines.map(l => {
+          const esc = l.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+          const col = _levelColor(l);
+          return col ? `<span style="${col}">${esc}</span>` : esc;
+        }).join('\n');
+        box.innerHTML = html || '<span style="color:#4b5563">(no log lines yet)</span>';
+        const autoScroll = qs('daemonLogAutoScroll');
+        if (autoScroll && autoScroll.checked) box.scrollTop = box.scrollHeight;
+        if (statusEl) statusEl.textContent = `${rawLines.length} lines · ${new Date().toLocaleTimeString()}`;
+      } catch (e) {
+        if (statusEl) statusEl.textContent = 'unavailable';
+      }
+    }
+
+    function toggleDaemonLogPause() {
+      _daemonLogPaused = !_daemonLogPaused;
+      const btn = qs('daemonLogPauseBtn');
+      if (btn) {
+        btn.textContent = _daemonLogPaused ? 'Resume' : 'Pause';
+        btn.classList.toggle('primary', _daemonLogPaused);
+      }
+    }
+
+    function clearDaemonLog() {
+      const box = qs('daemonLogBox');
+      if (box) box.innerHTML = '<span style="color:#4b5563">(cleared)</span>';
+    }
+
+    function _startDaemonLogPoller() {
+      if (_daemonLogTimer) clearInterval(_daemonLogTimer);
+      _daemonLogTimer = setInterval(() => {
+        if (!_daemonLogPaused) refreshDaemonLog();
+      }, DAEMON_LOG_POLL_MS);
+    }
+
+    function _stopDaemonLogPoller() {
+      if (_daemonLogTimer) { clearInterval(_daemonLogTimer); _daemonLogTimer = null; }
     }
 
     function loadPortalPipelineConfigUi() {
@@ -3698,6 +3855,10 @@
       if (name === 'config') {
         stopOrdersListPolling();
         loadPortalPipelineConfigUi();
+        refreshDaemonLog();
+        _startDaemonLogPoller();
+      } else {
+        _stopDaemonLogPoller();
       }
 
       localStorage.setItem('activeTab', name);
@@ -4721,6 +4882,8 @@
 
         qs('connStatus').innerHTML = `<span class="conn-dot ok"></span><strong>${escapeHtml(currentDaemonName())}</strong> · ${escapeHtml(health.environment || 'Connected')}`;
 
+        _updateRegisteredServices(health.registered_services);
+
         const servicesList = services.services || [];
         const totalServices = services.total != null ? services.total : servicesList.length;
         dashSnapshot = { queue, servicesList, totalServices, health };
@@ -5156,6 +5319,9 @@
       } else if (key === 'created_at') {
         va = new Date(a.created_at || 0).getTime();
         vb = new Date(b.created_at || 0).getTime();
+      } else if (key === 'updated_at') {
+        va = new Date(a.updated_at || 0).getTime();
+        vb = new Date(b.updated_at || 0).getTime();
       } else {
         va = String(a[key] ?? '').toLowerCase();
         vb = String(b[key] ?? '').toLowerCase();
@@ -5266,8 +5432,20 @@
       return sc;
     }
 
+    function _unsupportedDaemonBadgeHtml(serviceCode) {
+      if (!serviceCode || isServiceSupported(serviceCode)) return '';
+      const supported = DAEMON_SERVICES ? Array.from(DAEMON_SERVICES).join(', ') : '(unknown)';
+      const title = `'${serviceCode}' is not registered on the active daemon (${currentDaemonName()}). `
+        + `Supported: ${supported}. Switch the daemon in Configuration to act on this order.`;
+      return `<span class="pill" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.45);color:#ffb4b4;margin-right:4px" title="${escapeAttr(title)}">⚠ this daemon</span>`;
+    }
+
     function orderTypePillHtml(o) {
       const sc = o.service_code || '';
+      return _orderTypePillInnerHtml(o, sc);
+    }
+
+    function _orderTypePillInnerHtml(o, sc) {
       const panelTitle = 'Primary (interpretation) panel';
       if (sc === 'carrier_screening' || sc === 'whole_exome' || sc === 'health_screening') {
         const pid = orderWesPanelIdFromOrder(o);
@@ -5300,7 +5478,7 @@
       return `<span class="pill muted">${escapeHtml(sc || '—')}</span>`;
     }
 
-    async function startSavedOrder(orderId) {
+    async function startSavedOrder(orderId, serviceCode) {
       closeAllMoreMenus();
       try {
         const res = await apiPost(`/order/${encodeURIComponent(orderId)}/start`, buildStartOrderBody({}));
@@ -6137,6 +6315,7 @@
             <span class="muted">${o.progress ?? 0}%</span>
           </td>
           <td>${fmtDate(o.created_at)}</td>
+          <td style="white-space:nowrap">${(o.status === 'REPORT_READY' && o.updated_at) ? fmtDate(o.updated_at) : '<span class="muted">—</span>'}</td>
           <td class="muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${escapeHtml((o.error_log || o.message) || '')}</td>
           <td class="order-dl">${dlBtn}</td>
           <td class="order-more"><div class="more-wrap">
@@ -6172,7 +6351,7 @@
               const act = b.getAttribute('data-act');
               if (act === 'edit') void openEditOrder(o);
               else if (act === 'new-from') void startFollowUpOrderFrom(o);
-              else if (act === 'submit') startSavedOrder(o.order_id);
+              else if (act === 'submit') startSavedOrder(o.order_id, o.service_code);
               else if (act === 'force-run') forceRunOrderRow(o);
               else if (act === 'force-run-fresh') freshRunOrderRow(o);
               else if (act === 'reprocess-only') reprocessOnlyOrderRow(o);

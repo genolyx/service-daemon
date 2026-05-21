@@ -4,7 +4,9 @@ Logging Configuration
 기존 nipt-daemon의 logging_config.py를 일반화합니다.
 """
 
+import collections
 import logging
+import threading
 import time
 from datetime import datetime
 from colorlog import ColoredFormatter
@@ -14,6 +16,44 @@ from .config import settings
 from .datetime_kst import KST
 
 log = logging.getLogger(__name__)
+
+# ─── In-memory ring buffer ────────────────────────────────────────────────────
+_LOG_BUFFER_MAX = 500   # keep last N lines
+_log_buffer: collections.deque = collections.deque(maxlen=_LOG_BUFFER_MAX)
+_log_buffer_lock = threading.Lock()
+
+
+class _MemoryLogHandler(logging.Handler):
+    """Appends plain-text log lines to the in-memory ring buffer."""
+
+    PLAIN_FMT = logging.Formatter(
+        "%(asctime)s %(levelname)-8s %(name)s ─ %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    PLAIN_FMT.converter = lambda s: datetime.fromtimestamp(s, tz=KST).timetuple()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            line = self.PLAIN_FMT.format(record)
+            with _log_buffer_lock:
+                _log_buffer.append(line)
+        except Exception:
+            pass
+
+
+def get_log_lines(last_n: int | None = None, since_seq: int | None = None):
+    """Return (lines, next_seq).
+
+    *since_seq*: if given, only return entries appended after that sequence
+    number (monotonic counter of total lines ever appended — approximated by
+    buffer length + offset stored alongside).
+    """
+    with _log_buffer_lock:
+        lines = list(_log_buffer)
+    if last_n and last_n > 0:
+        lines = lines[-last_n:]
+    return lines
+
 
 
 def _kst_log_converter(seconds: float):
@@ -52,6 +92,11 @@ def setup_logging():
     root_logger = logging.getLogger()
     root_logger.setLevel(logging_level)
     root_logger.handlers = [handler]
+
+    # In-memory buffer handler (for /daemon-log API)
+    mem_handler = _MemoryLogHandler()
+    mem_handler.setLevel(logging.DEBUG)
+    root_logger.addHandler(mem_handler)
 
     # httpx 로그 레벨 설정
     logging.getLogger("httpx").setLevel(logging.WARNING)

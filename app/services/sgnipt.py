@@ -312,10 +312,14 @@ class SgNIPTPlugin(ServicePlugin):
         return parts
 
     async def get_pipeline_command(self, job: Job) -> str:
-        # SGNIPT_ROOT_DIR must be available as an env var when the command runs
-        # (set in .env.docker and inherited by the subprocess).
         parts = self._pipeline_command_parts(job)
-        return shlex.join(parts)
+        cmd = shlex.join(parts)
+        # Explicitly pin SGNIPT_ROOT_DIR to the daemon's job root so run_sgnipt.sh always
+        # writes analysis/output/log under the same tree that job.output_dir points to.
+        # This prevents mismatches when SGNIPT_ROOT_DIR in the shell env differs from
+        # SGNIPT_WORK_ROOT (e.g. after a config change or clone-root vs work-root split).
+        root = shlex.quote(settings.sgnipt_job_root)
+        return f"SGNIPT_ROOT_DIR={root} {cmd}"
 
     async def check_completion(self, job: Job) -> bool:
         path = self._order_result_json(job)

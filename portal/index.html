@@ -1417,6 +1417,23 @@
           </div>
         </div>
 
+        <div id="carrierBamSection" class="col-12" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
+          <div class="muted" style="font-weight:600;margin-bottom:6px">
+            BAM Direct Input <span class="muted" style="font-weight:400;font-size:12px">(optional — skips alignment)</span>
+          </div>
+          <p class="muted" style="margin:0 0 10px;font-size:12px">
+            Pre-aligned, sorted, duplicate-marked BAM (<code>--input-bam</code> mode).
+            FASTQ → alignment → MarkDup 단계를 건너뜁니다. 테스트용 spiked BAM 입력에 사용.
+            지정 시 FASTQ 필드는 무시됩니다.
+          </p>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button type="button" class="btn" id="btnBrowseCarrierBam">Browse BAM…</button>
+            <input id="carrierBamPath" placeholder="절대 경로 직접 입력 (예: /data/gx-exome/data/test/sim_bam/carrier_spiked_NA12878.bam)"
+                   style="flex:1;min-width:0" oninput="updateCarrierBamClearBtn()" />
+            <button type="button" class="btn" id="btnClearCarrierBam" style="display:none">Clear</button>
+          </div>
+        </div>
+
         <div class="col-12" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
           <div class="muted" style="font-weight:600;margin-bottom:6px">BAM Simulation <span class="muted" style="font-weight:400;font-size:12px">(optional)</span></div>
           <p class="muted" style="margin:0 0 10px;font-size:12px">
@@ -3772,7 +3789,132 @@
       if (goBtn) goBtn.onclick = (e) => { e.stopPropagation(); bamCsvBrowseGoToPath(); };
       const pi = qs('bamCsvBrowsePathInput');
       if (pi) pi.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.stopPropagation(); bamCsvBrowseGoToPath(); } });
+
+      // Carrier BAM direct input browse (reuses bamCsvBrowseModal in bam mode)
+      function updateCarrierBamClearBtn() {
+        const inp = qs('carrierBamPath');
+        const btn2 = qs('btnClearCarrierBam');
+        if (btn2) btn2.style.display = (inp && inp.value.trim()) ? '' : 'none';
+      }
+      window.updateCarrierBamClearBtn = updateCarrierBamClearBtn;
+      const carrierBamBtn = qs('btnBrowseCarrierBam');
+      if (carrierBamBtn) carrierBamBtn.onclick = () => openCarrierBamBrowse();
+      const carrierBamClear = qs('btnClearCarrierBam');
+      if (carrierBamClear) carrierBamClear.onclick = () => {
+        const inp = qs('carrierBamPath');
+        if (inp) inp.value = '';
+        updateCarrierBamClearBtn();
+      };
     }
+
+    // ── Carrier BAM browse: reuse bamCsvBrowseModal with file_ext=bam ──────
+    let _carrierBamBrowseMode = false;
+
+    function openCarrierBamBrowse() {
+      _carrierBamBrowseMode = true;
+      bamCsvBrowseServiceCode = 'carrier_screening';
+      const m = qs('bamCsvBrowseModal');
+      const title = qs('bamCsvBrowseTitle');
+      if (title) title.textContent = 'Select BAM File';
+      if (m) m.classList.remove('hidden');
+      const pi = qs('bamCsvBrowsePathInput');
+      if (pi) pi.value = '';
+      renderBamCsvBrowse('');
+    }
+
+    function closeBamCsvBrowseAndReset() {
+      _carrierBamBrowseMode = false;
+      const title = qs('bamCsvBrowseTitle');
+      if (title) title.textContent = 'Select BAM Samplesheet CSV';
+      closeBamCsvBrowse();
+    }
+
+    // Patch renderBamCsvBrowse to pass file_ext=bam when in carrier BAM mode
+    const _origRenderBamCsvBrowse = renderBamCsvBrowse;
+    renderBamCsvBrowse = async function(rel, absOverride) {
+      if (!_carrierBamBrowseMode) return _origRenderBamCsvBrowse(rel, absOverride);
+      const errEl = qs('bamCsvBrowseErr');
+      const listEl = qs('bamCsvBrowseList');
+      const bcEl = qs('bamCsvBrowseBreadcrumb');
+      if (!listEl || !bcEl || !errEl) return;
+      errEl.textContent = '';
+      bcEl.innerHTML = '';
+      listEl.innerHTML = '<div class="muted" style="padding:12px">Loading…</div>';
+      try {
+        const sc = encodeURIComponent('carrier_screening');
+        let apiUrl;
+        if (absOverride) {
+          apiUrl = `/api/portal/bam-csv/browse?abs_path=${encodeURIComponent(absOverride)}&service_code=${sc}&file_ext=bam`;
+        } else {
+          apiUrl = `/api/portal/bam-csv/browse?path=${encodeURIComponent(rel||'')}&service_code=${sc}&file_ext=bam`;
+        }
+        const r = await fetch(`${API_BASE || ''}${apiUrl}`, { headers: apiFetchHeaders() });
+        if (!r.ok) { const err = await r.json().catch(()=>({})); throw new Error(err.detail || `${r.status}`); }
+        const data = await r.json();
+        if (data.root) bamCsvBrowseRoot = data.root;
+        const pi = qs('bamCsvBrowsePathInput');
+        if (pi) pi.value = data.current_abs || data.root || '';
+        listEl.innerHTML = '';
+        if (data.hint || !data.root_exists) errEl.textContent = data.hint || `Root not found: ${data.root}`;
+        const norm = data.rel_path || '';
+        const rootLink = document.createElement('span');
+        rootLink.className = 'fb-crumb-link';
+        rootLink.textContent = '[root]';
+        rootLink.onclick = () => renderBamCsvBrowse('');
+        bcEl.appendChild(rootLink);
+        const parts2 = norm ? norm.split('/').filter(Boolean) : [];
+        let acc = '';
+        for (const p of parts2) {
+          acc = acc ? `${acc}/${p}` : p;
+          bcEl.appendChild(document.createTextNode(' / '));
+          const sp = document.createElement('span');
+          sp.className = 'fb-crumb-link';
+          sp.textContent = p;
+          const snapAcc = acc;
+          sp.onclick = () => renderBamCsvBrowse(snapAcc);
+          bcEl.appendChild(sp);
+        }
+        let hasItems = false;
+        if (data.parent_rel !== undefined || absOverride) {
+          const row = document.createElement('div');
+          row.className = 'fb-row';
+          row.textContent = '📁 ..';
+          row.onclick = () => absOverride ? renderBamCsvBrowse('', data.parent_abs) : renderBamCsvBrowse(data.parent_rel || '');
+          listEl.appendChild(row);
+          hasItems = true;
+        }
+        for (const it of (data.items || [])) {
+          hasItems = true;
+          const row = document.createElement('div');
+          row.className = 'fb-row';
+          row.style.cursor = 'pointer';
+          if (it.kind === 'dir') {
+            row.textContent = '📁 ' + it.name;
+            row.onclick = () => absOverride ? renderBamCsvBrowse('', it.abs_path) : renderBamCsvBrowse(it.rel_path);
+          } else {
+            row.textContent = '🧬 ' + it.name;
+            row.title = it.abs_path;
+            row.onclick = () => {
+              const inp = qs('carrierBamPath');
+              if (inp) { inp.value = it.abs_path; }
+              if (window.updateCarrierBamClearBtn) window.updateCarrierBamClearBtn();
+              closeBamCsvBrowseAndReset();
+            };
+          }
+          listEl.appendChild(row);
+        }
+        if (!hasItems) {
+          const empty = document.createElement('div');
+          empty.className = 'muted';
+          empty.style.padding = '12px';
+          empty.textContent = 'No subfolders or BAM files here.';
+          listEl.appendChild(empty);
+        }
+      } catch(e) {
+        listEl.innerHTML = '';
+        errEl.textContent = e.message || String(e);
+      }
+    };
 
     // ═══════════════════════════════════════════════════════════
     // View Navigation
@@ -3796,6 +3938,8 @@
         setFServiceValue('carrier_screening');
         setFormInput('bamCsvPath', '');
         updateBamCsvClearBtn();
+        setFormInput('carrierBamPath', '');
+        if (window.updateCarrierBamClearBtn) window.updateCarrierBamClearBtn();
         if (qs('cr_carrier_program')) qs('cr_carrier_program').value = 'standard_carrier';
         if (qs('cr_extended_program')) qs('cr_extended_program').value = '';
         setFormInput('cr_prior_order_id', '');
@@ -3874,9 +4018,11 @@
       const extWrap = qs('cr_extended_program_wrap');
       const wesWrap = qs('cr_wes_panel_wrap');
       const couplesWrap = qs('cr_couples_report_wrap');
+      const carrierBamSection = qs('carrierBamSection');
       if (carrierBlock) carrierBlock.classList.toggle('hidden', !isCarrierFlow);
       if (sgniptBlock) sgniptBlock.classList.toggle('hidden', ui !== 'sgnipt');
       if (carrierParams) carrierParams.style.display = isCarrierFlow ? 'block' : 'none';
+      if (carrierBamSection) carrierBamSection.style.display = isCarrierFlow ? '' : 'none';
       if (extWrap) extWrap.classList.toggle('hidden', ui !== 'extended_services');
       if (wesWrap) wesWrap.classList.toggle('hidden', ui === 'extended_services' || ui === 'sgnipt');
       if (couplesWrap) couplesWrap.classList.toggle('hidden', ui !== 'carrier_screening');
@@ -4160,6 +4306,8 @@
       setFormInput('fGeneFilter', p.gene_filter);
       setFormInput('bamCsvPath', p.input_bam_csv || '');
       updateBamCsvClearBtn();
+      setFormInput('carrierBamPath', p.input_bam || '');
+      if (window.updateCarrierBamClearBtn) window.updateCarrierBamClearBtn();
       refreshCarrierConditionalUi();
       refreshWesPanelPrimaryLabel();
       refreshProactiveApoeOption();
@@ -5164,6 +5312,7 @@
         const wesPanelId = carrier.wes_panel_id || undefined;
         workDir = qs('cr_work_dir').value.trim();
         const bamCsvCarrier = (qs('bamCsvPath') && qs('bamCsvPath').value.trim()) || undefined;
+        const carrierBam = (qs('carrierBamPath') && qs('carrierBamPath').value.trim()) || undefined;
         body = {
           order_id: orderId,
           service_code: serviceCode,
@@ -5174,6 +5323,7 @@
             carrier,
             ...(wesPanelId ? { wes_panel_id: wesPanelId } : {}),
             ...(bamCsvCarrier ? { input_bam_csv: bamCsvCarrier } : {}),
+            ...(carrierBam ? { input_bam: carrierBam } : {}),
           },
         };
         const bb = qs('fBackboneBed').value.trim();

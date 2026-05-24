@@ -661,6 +661,25 @@ class CarrierScreeningPlugin(ServicePlugin):
         job.output_dir = dirs["output"]
         job.log_dir = dirs["log"]
 
+        # ── BAM direct input mode: skip FASTQ entirely ──────────────────
+        input_bam = (job.params or {}).get("input_bam", "").strip()
+        if input_bam:
+            if not os.path.isfile(input_bam):
+                raise RuntimeError(
+                    f"[carrier_screening] --input-bam: BAM file not found: {input_bam}"
+                )
+            bai = input_bam + ".bai"
+            bai2 = (input_bam[:-4] + ".bai") if input_bam.endswith(".bam") else ""
+            if not os.path.isfile(bai) and not (bai2 and os.path.isfile(bai2)):
+                raise RuntimeError(
+                    f"[carrier_screening] --input-bam: BAM index not found "
+                    f"(expected {bai}). Run: samtools index {input_bam}"
+                )
+            logger.info(
+                "[carrier_screening] BAM direct input mode — %s (skipping FASTQ prep)", input_bam
+            )
+            return True
+
         # Same sequencing run, new order / panel: reuse prior pipeline outputs (no Nextflow)
         if carrier_reuse_prior_pipeline_requested(job):
             prepare_carrier_prior_pipeline_reuse(job)
@@ -1021,18 +1040,20 @@ class CarrierScreeningPlugin(ServicePlugin):
         work_arg = carrier_run_analysis_work_arg(job)
         carrier_params = (job.params or {}).get("carrier") or {}
         capture_panel = (carrier_params.get("capture_panel_id") or "").strip() or "twist-exome2"
+        input_bam = (job.params or {}).get("input_bam", "").strip()
 
         # FASTQ가 예상 위치({data_dir}/fastq/{work}/{order_id}/)에 없으면 심볼릭 링크 생성.
         # 같은 fastq/ 트리 내의 상대 링크이므로 docker DinD 마운트에서도 정상 작동.
         fastq_dir = os.path.join(data_dir, "fastq", work_arg, sample_folder)
-        self._ensure_fastq_symlinks(job, fastq_dir)
+        if not input_bam:
+            self._ensure_fastq_symlinks(job, fastq_dir)
 
-        if not os.path.isdir(fastq_dir):
-            raise FileNotFoundError(
-                f"[carrier_screening] FASTQ directory not found: {fastq_dir}\n"
-                f"  order_id='{job.order_id}', --sample='{sample_folder}'\n"
-                f"  FASTQ를 {fastq_dir}/ 에 위치시키거나 fastq_r1_path/r2_path 를 지정하세요."
-            )
+            if not os.path.isdir(fastq_dir):
+                raise FileNotFoundError(
+                    f"[carrier_screening] FASTQ directory not found: {fastq_dir}\n"
+                    f"  order_id='{job.order_id}', --sample='{sample_folder}'\n"
+                    f"  FASTQ를 {fastq_dir}/ 에 위치시키거나 fastq_r1_path/r2_path 를 지정하세요."
+                )
 
         parts = [
             _bash_executable(),
@@ -1058,9 +1079,12 @@ class CarrierScreeningPlugin(ServicePlugin):
 
         is_fresh = bool((job.params or {}).get("_pipeline_fresh"))
         logger.info(
-            "[carrier_screening] _shell_command_run_analysis: order=%s sample=%s panel=%s bed=%s fresh=%s",
-            job.order_id, sample_folder, capture_panel, bed_path or "(--panel fallback)", is_fresh,
+            "[carrier_screening] _shell_command_run_analysis: order=%s sample=%s panel=%s bed=%s bam=%s fresh=%s",
+            job.order_id, sample_folder, capture_panel, bed_path or "(--panel fallback)",
+            input_bam or "(FASTQ mode)", is_fresh,
         )
+        if input_bam:
+            parts += ["--input-bam", input_bam]
         if is_fresh:
             parts.append("--fresh")
             # Live Nextflow process table (shows each process; cached tasks appear as CACHED in trace/log).

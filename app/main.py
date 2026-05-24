@@ -177,6 +177,10 @@ def _is_fastq_filename(name: str) -> bool:
     return any(lower.endswith(s) for s in _FASTQ_NAME_SUFFIXES)
 
 
+def _is_bam_filename(name: str) -> bool:
+    return name.lower().endswith(".bam")
+
+
 def _is_csv_filename(name: str) -> bool:
     return name.lower().endswith(".csv")
 
@@ -197,6 +201,7 @@ def _browse_bam_csv_directory_payload(
     path: str,
     service_code: Optional[str],
     abs_path: Optional[str] = None,
+    file_ext: Optional[str] = None,  # "csv" (default) or "bam"
 ) -> Dict[str, Any]:
     """
     BAM samplesheet CSV 브라우져 공통 구현.
@@ -273,7 +278,9 @@ def _browse_bam_csv_directory_payload(
             else:
                 entry["rel_path"] = rel_child
             items.append(entry)
-        elif os.path.isfile(full) and _is_csv_filename(name):
+        elif os.path.isfile(full) and (
+            _is_bam_filename(name) if file_ext == "bam" else _is_csv_filename(name)
+        ):
             entry = {"name": name, "abs_path": child_abs, "kind": "file"}
             if not abs_path:
                 entry["rel_path"] = rel_child
@@ -1204,9 +1211,10 @@ async def browse_bam_csv_portal(
     path: str = Query(default="", description="BAM 데이터 루트 아래 상대 경로"),
     service_code: Optional[str] = Query(default=None, description="sgnipt | carrier_screening"),
     abs_path: Optional[str] = Query(default=None, description="임의 절대 경로 직접 탐색"),
+    file_ext: Optional[str] = Query(default=None, description="csv (기본) 또는 bam"),
 ):
-    """BAM samplesheet CSV 파일 브라우져 (포털용 — 인증 면제 경로)."""
-    return _browse_bam_csv_directory_payload(path, service_code, abs_path)
+    """BAM samplesheet CSV / BAM 파일 브라우져 (포털용 — 인증 면제 경로)."""
+    return _browse_bam_csv_directory_payload(path, service_code, abs_path, file_ext)
 
 
 @app.get("/api/bam-csv/browse")
@@ -1214,9 +1222,10 @@ async def browse_bam_csv(
     path: str = Query(default="", description="BAM 데이터 루트 아래 상대 경로"),
     service_code: Optional[str] = Query(default=None, description="sgnipt | carrier_screening"),
     abs_path: Optional[str] = Query(default=None, description="임의 절대 경로 직접 탐색"),
+    file_ext: Optional[str] = Query(default=None, description="csv (기본) 또는 bam"),
 ):
-    """BAM samplesheet CSV 파일 브라우져."""
-    return _browse_bam_csv_directory_payload(path, service_code, abs_path)
+    """BAM samplesheet CSV / BAM 파일 브라우져."""
+    return _browse_bam_csv_directory_payload(path, service_code, abs_path, file_ext)
 
 
 @app.get("/api/portal/bam-csv/sample-ids")

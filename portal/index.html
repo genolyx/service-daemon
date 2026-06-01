@@ -124,6 +124,9 @@
     th.sortable::after{content:'';position:absolute;right:6px;opacity:.45;font-size:11px}
     th.sort-asc::after{content:'▲';opacity:.9}
     th.sort-desc::after{content:'▼';opacity:.9}
+    .nipt-filt-btn{padding:4px 11px;font-size:11px;font-weight:600;border-radius:999px;cursor:pointer;border:1px solid var(--line);background:var(--chip);color:var(--muted);transition:.15s all}
+    .nipt-filt-btn:hover{border-color:var(--accent);color:var(--accent)}
+    .nipt-filt-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 
     .orders-table-hint{margin:0 0 10px;font-size:12px;line-height:1.45}
     .orders-filters-token-bar{display:flex;justify-content:flex-end;align-items:center;margin:0 0 10px}
@@ -1884,6 +1887,20 @@
             <button class="btn" onclick="deselectAll()">Deselect All</button>
           </div>
         </div>
+        <!-- sgNIPT-only: Origin / Confidence filter buttons (shown/hidden by JS) -->
+        <div id="sgniptVariantFilters" class="hidden" style="display:flex;gap:5px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+          <span class="muted" style="font-size:11px;font-weight:600;white-space:nowrap">Origin:</span>
+          <button class="nipt-filt-btn active" data-filt="origin" data-val="">All</button>
+          <button class="nipt-filt-btn" data-filt="origin" data-val="fetal_specific">Fetal</button>
+          <button class="nipt-filt-btn" data-filt="origin" data-val="maternal">Maternal</button>
+          <button class="nipt-filt-btn" data-filt="origin" data-val="maternal_het">Mat. Het</button>
+          <button class="nipt-filt-btn" data-filt="origin" data-val="ambiguous">Ambiguous</button>
+          <span class="muted" style="font-size:11px;font-weight:600;white-space:nowrap;margin-left:10px">Confidence:</span>
+          <button class="nipt-filt-btn active" data-filt="conf" data-val="">All</button>
+          <button class="nipt-filt-btn" data-filt="conf" data-val="high">High</button>
+          <button class="nipt-filt-btn" data-filt="conf" data-val="medium">Medium</button>
+          <button class="nipt-filt-btn" data-filt="conf" data-val="low">Low</button>
+        </div>
         <div class="table-wrap" style="max-height:55vh">
           <table id="tblVariants">
             <thead>
@@ -2874,6 +2891,8 @@
     let variantKnowledgeByKey = {};
     let geneKnowledgeMeta = null;
     let variantSortKey = null, variantSortAsc = true;
+    // sgNIPT-specific filter / sort state
+    let sgniptOriginFilter = '', sgniptConfFilter = '', sgniptSortKey = null, sgniptSortAsc = true;
 
     // ═══════════════════════════════════════════════════════════
     // Utilities
@@ -6905,6 +6924,26 @@
         const isSgNIPT = String(reviewData.service_code || '').trim() === 'sgnipt';
         reviewData._service_code = isSgNIPT ? 'sgnipt' : (reviewData.service_code || 'carrier_screening');
 
+        // sgNIPT filter button delegation
+        const _sgniptFiltRowEl = qs('sgniptVariantFilters');
+        if (_sgniptFiltRowEl && !_sgniptFiltRowEl._wired) {
+          _sgniptFiltRowEl._wired = true;
+          _sgniptFiltRowEl.addEventListener('click', e => {
+            const btn = e.target.closest('.nipt-filt-btn');
+            if (!btn) return;
+            setSgniptFilter(btn.dataset.filt, btn.dataset.val);
+          });
+        }
+        // Show/hide sgNIPT filter row; hide carrier-only dropdowns for sgNIPT
+        const _sgniptFiltRow = qs('sgniptVariantFilters');
+        if (_sgniptFiltRow) _sgniptFiltRow.classList.toggle('hidden', !isSgNIPT);
+        const _classF = qs('variantClassFilter'), _clinF = qs('variantClinvarFilter');
+        if (_classF) _classF.style.display = isSgNIPT ? 'none' : '';
+        if (_clinF)  _clinF.style.display  = isSgNIPT ? 'none' : '';
+        // Reset sgNIPT filter/sort state on every review load
+        sgniptOriginFilter = ''; sgniptConfFilter = ''; sgniptSortKey = null; sgniptSortAsc = true;
+        document.querySelectorAll('.nipt-filt-btn').forEach(b => b.classList.toggle('active', b.dataset.val === ''));
+
         if (isSgNIPT && !Array.isArray(reviewData.variants)) {
           // target_name에서 첫 번째 유전자명 추출 (예: "COL4A2_ENST00000..." → "COL4A2")
           const geneFromTarget = tn => {
@@ -10135,22 +10174,34 @@
       const tbl = document.getElementById('tblVariants');
       if (!tbl) return;
 
-      // Replace thead with sgNIPT-specific columns
+      // Build sgNIPT-specific thead only once; re-wire sort handlers each rebuild
       const thead = tbl.querySelector('thead tr');
-      if (thead) thead.innerHTML = `
-        <th style="width:36px;text-align:center"><input type="checkbox" id="chkAllNipt" title="Select/deselect all" /></th>
-        <th class="sortable" data-key="gene">Gene</th>
-        <th>Position</th>
-        <th>Ref → Alt</th>
-        <th class="sortable" data-key="depth">Depth</th>
-        <th class="sortable" data-key="vaf">VAF</th>
-        <th class="sortable" data-key="origin">Origin</th>
-        <th class="sortable" data-key="fetal_genotype">Fetal GT</th>
-        <th class="sortable" data-key="confidence">Confidence</th>
-        <th>Disease / Target</th>
-      `;
+      if (thead && !thead.querySelector('th[data-key="origin"]')) {
+        thead.innerHTML = `
+          <th style="width:36px;text-align:center"><input type="checkbox" id="chkAllNipt" title="Select/deselect all" /></th>
+          <th class="sortable" data-key="gene" style="cursor:pointer">Gene</th>
+          <th class="sortable" data-key="pos" style="cursor:pointer">Position</th>
+          <th>Ref → Alt</th>
+          <th class="sortable" data-key="depth" style="cursor:pointer">Depth</th>
+          <th class="sortable" data-key="vaf" style="cursor:pointer">VAF</th>
+          <th class="sortable" data-key="origin" style="cursor:pointer">Origin</th>
+          <th class="sortable" data-key="fetal_genotype" style="cursor:pointer">Fetal GT</th>
+          <th class="sortable" data-key="confidence" style="cursor:pointer">Confidence</th>
+          <th>Disease / Target</th>
+        `;
+        thead.querySelectorAll('th.sortable').forEach(th => {
+          th.onclick = () => {
+            const key = th.dataset.key;
+            if (sgniptSortKey === key) sgniptSortAsc = !sgniptSortAsc;
+            else { sgniptSortKey = key; sgniptSortAsc = true; }
+            renderSgNIPTVariantsTable();
+          };
+        });
+      }
 
       let variants = reviewData.variants || [];
+
+      // Text search
       const q = qs('variantSearch').value.trim().toLowerCase();
       if (q) {
         variants = variants.filter(v =>
@@ -10161,8 +10212,50 @@
           (`${v.chrom}:${v.pos}`).includes(q)
         );
       }
+
+      // Gene filter dropdown
       const geneFilter = qs('variantGeneFilter').value;
       if (geneFilter) variants = variants.filter(v => v.gene === geneFilter);
+
+      // Origin filter
+      if (sgniptOriginFilter) variants = variants.filter(v => v.origin === sgniptOriginFilter);
+
+      // Confidence filter
+      if (sgniptConfFilter) variants = variants.filter(v => (v.confidence || '').toLowerCase() === sgniptConfFilter);
+
+      // Sort
+      if (sgniptSortKey) {
+        const chromRank = c => {
+          const n = parseInt((c || '').replace(/chr/i, ''));
+          if (!isNaN(n)) return n;
+          return /chrX/i.test(c) ? 23 : /chrY/i.test(c) ? 24 : 25;
+        };
+        variants = [...variants].sort((a, b) => {
+          if (sgniptSortKey === 'pos') {
+            const ra = chromRank(a.chrom) * 3e8 + (parseInt(a.pos) || 0);
+            const rb = chromRank(b.chrom) * 3e8 + (parseInt(b.pos) || 0);
+            return sgniptSortAsc ? ra - rb : rb - ra;
+          }
+          if (sgniptSortKey === 'vaf' || sgniptSortKey === 'depth') {
+            const na = a[sgniptSortKey] ?? null, nb = b[sgniptSortKey] ?? null;
+            if (na == null && nb == null) return 0;
+            if (na == null) return sgniptSortAsc ? 1 : -1;
+            if (nb == null) return sgniptSortAsc ? -1 : 1;
+            return sgniptSortAsc ? na - nb : nb - na;
+          }
+          let va = String(a[sgniptSortKey] ?? '').toLowerCase();
+          let vb = String(b[sgniptSortKey] ?? '').toLowerCase();
+          if (va < vb) return sgniptSortAsc ? -1 : 1;
+          if (va > vb) return sgniptSortAsc ? 1 : -1;
+          return 0;
+        });
+        // Update sort indicator on headers
+        if (thead) {
+          thead.querySelectorAll('th').forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+          const sortTh = thead.querySelector(`th[data-key="${sgniptSortKey}"]`);
+          if (sortTh) sortTh.classList.add(sgniptSortAsc ? 'sort-asc' : 'sort-desc');
+        }
+      }
 
       qs('variantCount').textContent = `${variants.length} variant(s)${selectedVariants.size ? ', ' + selectedVariants.size + ' selected' : ''}`;
       const tb = qs('tblVariantsBody');
@@ -10225,6 +10318,15 @@
           onVariantSelectionChanged();
         };
       }
+    }
+
+    function setSgniptFilter(type, val) {
+      if (type === 'origin') sgniptOriginFilter = val;
+      else if (type === 'conf') sgniptConfFilter = val;
+      document.querySelectorAll(`.nipt-filt-btn[data-filt="${type}"]`).forEach(b => {
+        b.classList.toggle('active', b.dataset.val === val);
+      });
+      renderSgNIPTVariantsTable();
     }
 
     function renderVariantsTable() {

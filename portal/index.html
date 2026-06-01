@@ -1920,11 +1920,14 @@
           <span id="coverageBamInfo" class="muted" style="font-size:12px;word-break:break-all;flex:1;min-width:160px">—</span>
           <button type="button" class="btn" id="coverageIgvLoadBtn">Load / refresh IGV</button>
         </div>
-        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px">
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px">
           <label class="muted" style="margin:0;font-size:12px">Jump to variant</label>
-          <select id="coverageVariantSelect" style="width:auto;min-width:280px;max-width:100%">
+          <select id="coverageVariantSelect" style="width:auto;min-width:320px;max-width:100%">
             <option value="">— Select variant —</option>
           </select>
+          <span id="coverageVariantChangeHint" class="muted" style="font-size:12px;flex:1;min-width:200px"></span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px">
           <label class="muted" style="margin:0;font-size:12px">Locus</label>
           <input id="coverageLocusInput" placeholder="chr13:32315474-32400266 or BRCA1" style="max-width:280px;font-family:monospace;font-size:12px" />
           <button type="button" class="btn" id="coverageGotoLocusBtn">Go</button>
@@ -1932,7 +1935,11 @@
             CFTR IVS9 (poly-T / TG)
           </button>
         </div>
-        <p class="muted" style="margin:0 0 12px;font-size:11px;line-height:1.45;max-width:56rem">
+        <p id="coverageSgniptHelp" class="muted hidden" style="margin:0 0 12px;font-size:11px;line-height:1.45;max-width:56rem">
+          <strong>sgNIPT:</strong> Use <strong>Jump to variant</strong> (Ref→Alt in each label). The pileup shows <strong>letters only at the variant column</strong>
+          (matching bases stay as plain gray bars). The red <strong>Change</strong> track marks the expected substitution.
+        </p>
+        <p id="coverageCftrHelp" class="muted" style="margin:0 0 12px;font-size:11px;line-height:1.45;max-width:56rem">
           <strong>CFTR IVS9:</strong> Click the button above (or open from a CFTR tract variant) to load a small <strong>BED track</strong> on
           <strong>chr7:117,548,607–635</strong> (EH-style span) with separate features for the <strong>TG</strong> and <strong>poly-T</strong> stretches
           (GRCh38, ref layout (TG)<sub>11</sub>(T)<sub>7</sub>). The alignment track is set to <strong>show all bases</strong> (not only mismatches). Use the track’s gear menu for “full” vs “expanded” if the pileup is dense. Homopolymer tracts may still appear as gaps/deletions in CIGAR — counts are best from Expansion Hunter REPCN when available.
@@ -2854,6 +2861,7 @@
     /** loadReviewData 성공 후 유지 — 드롭다운이 아직 비어 있어도 Review Case 탭 등에서 주문 ID 사용 */
     let reviewLoadedOrderId = null;
     let reviewCoverageContext = null;
+    let coverageFocusVariant = null;
     let coverageIgvBrowser = null;
     let coverageIgvResizeObserver = null;
     let selectedVariants = new Set();
@@ -6885,9 +6893,16 @@
         const quietToast = !!opt.quietToast;
         reviewData = await apiGet(`/order/${orderId}/result`);
 
+        try {
+          const list = await apiGet('/orders');
+          const row = (list.orders || []).find(o => o.order_id === orderId);
+          if (row && row.service_code) reviewData.service_code = row.service_code;
+        } catch (e) {
+          /* ignore */
+        }
+
         // ── sgNIPT 감지 및 정규화 ──────────────────────────────────────────
-        const isSgNIPT = reviewData.service_code === 'sgnipt'
-          || (!Array.isArray(reviewData.variants) && Array.isArray(reviewData.clinical_findings));
+        const isSgNIPT = String(reviewData.service_code || '').trim() === 'sgnipt';
         reviewData._service_code = isSgNIPT ? 'sgnipt' : (reviewData.service_code || 'carrier_screening');
 
         if (isSgNIPT && !Array.isArray(reviewData.variants)) {
@@ -8209,8 +8224,8 @@
 
     function isSgniptReview(rd) {
       if (!rd) return false;
-      if (reviewOrderKind(rd) === 'sgnipt') return true;
-      return String(rd.service_code || '').trim() === 'sgnipt';
+      const sc = String(rd._service_code || rd.service_code || '').trim();
+      return sc === 'sgnipt';
     }
 
     function collectReviewQcReportLinks(rd) {
@@ -10575,11 +10590,56 @@
         }
         window._coverageCftrBedBlobUrl = null;
       }
+      if (window._coverageSgniptBedBlobUrl) {
+        try {
+          URL.revokeObjectURL(window._coverageSgniptBedBlobUrl);
+        } catch (e) {
+          /* ignore */
+        }
+        window._coverageSgniptBedBlobUrl = null;
+      }
+      coverageFocusVariant = null;
+      const hint = qs('coverageVariantChangeHint');
+      if (hint) hint.textContent = '';
       const host = qs('coverageIgvHost');
       if (host) {
         host.innerHTML =
           '<p class="muted">Click <strong>Load / refresh IGV</strong> to open alignments for this order’s BAM, then lookup a gene or pick a variant.</p>';
       }
+    }
+
+    function isSpuriousCoverageBamRel(rel) {
+      const r = String(rel || '').toLowerCase();
+      return [
+        '/work/',
+        'site-packages',
+        'tests/resources',
+        '/aldy/',
+        'node_modules',
+        '/.local/lib/',
+        '/.venv/',
+      ].some(m => r.includes(m));
+    }
+
+    /** Prefer alignment/*.md.bam — must match gx-daemon _prioritize_carrier_bam_tracks. */
+    function prioritizeCoverageBamTracks(tracks) {
+      let pool = (tracks || []).filter(t => t && t.has_index && !isSpuriousCoverageBamRel(t.rel_path));
+      const nonWork = pool.filter(t => !String(t.rel_path || '').toLowerCase().includes('/work/'));
+      if (nonWork.length) pool = nonWork;
+      const list = pool.length ? pool : (tracks || []).filter(t => t && t.has_index);
+      return list.slice().sort((a, b) => {
+        const score = rel => {
+          const r = String(rel || '').toLowerCase();
+          let s = 50;
+          if (r.startsWith('alignment/') || r.includes('/alignment/')) s -= 30;
+          if (r.endsWith('.md.bam')) s -= 25;
+          else if (r.endsWith('.pb.bam')) s -= 20;
+          if (r.includes('/work/')) s += 40;
+          return s;
+        };
+        const d = score(a.rel_path) - score(b.rel_path);
+        return d !== 0 ? d : String(a.rel_path).localeCompare(String(b.rel_path));
+      });
     }
 
     function coverageOrderFileUrl(orderId, relPath) {
@@ -10588,7 +10648,20 @@
         .split('/')
         .filter(Boolean)
         .map(encodeURIComponent);
-      return `${API_BASE}${apiPath(`/order/${encodeURIComponent(orderId)}/file/${parts.join('/')}`)}`;
+      let url = `${API_BASE}${apiPath(`/order/${encodeURIComponent(orderId)}/file/${parts.join('/')}`)}`;
+      const key = getDaemonApiKey();
+      if (key) url += (url.includes('?') ? '&' : '?') + 'api_key=' + encodeURIComponent(key);
+      return url;
+    }
+
+    /** BAM index URL — supports HG03166.pb.bam + HG03166.pb.bai (carrier) as well as *.bam.bai. */
+    function coverageBamIndexUrl(orderId, meta) {
+      if (!meta) return undefined;
+      if (meta.index_rel_path) return coverageOrderFileUrl(orderId, meta.index_rel_path);
+      const rel = String(meta.rel_path || '');
+      if (!rel.toLowerCase().endsWith('.bam')) return undefined;
+      const stem = rel.slice(0, -4);
+      return coverageOrderFileUrl(orderId, `${stem}.bai`);
     }
 
     function coverageTrackHeaders() {
@@ -10665,13 +10738,74 @@
       const loc = COVERAGE_CFTR_IVS9_GRCH38.pileupLocus;
       const locInp = qs('coverageLocusInput');
       if (locInp) locInp.value = loc;
-      void startCoverageIgvBrowser(loc);
+      const meta = pickCoverageOrderBamTrack();
+      if (!meta || !meta.rel_path) {
+        toast('Load an order with an indexed exome BAM first', false);
+        return;
+      }
+      try {
+        await ensureIgvScriptLoaded();
+      } catch (e) {
+        toast(e.message || 'IGV script load failed', false);
+        return;
+      }
+      if (coverageIgvBrowser) {
+        try {
+          if (typeof coverageIgvBrowser.dispose === 'function') coverageIgvBrowser.dispose();
+        } catch (e) {
+          /* ignore */
+        }
+        coverageIgvBrowser = null;
+      }
+      const host = qs('coverageIgvHost');
+      if (!host) return;
+      host.innerHTML = '';
+      const th0 = coverageIgvPreferredTrackHeight(host);
+      const bamUrl = coverageOrderFileUrl(oid, meta.rel_path);
+      const indexUrl = coverageBamIndexUrl(oid, meta);
+      const cftrBed = coverageCftrIvs9BedTrackConfig();
+      const tracks = [];
+      if (cftrBed) tracks.push(cftrBed);
+      tracks.push({
+        type: 'alignment',
+        format: 'bam',
+        url: bamUrl,
+        indexURL: indexUrl,
+        name: meta.label || meta.rel_path.split('/').pop(),
+        height: th0,
+        maxHeight: Math.max(th0 + 80, 720),
+        displayMode: 'EXPANDED',
+        showAllBases: true,
+        showMismatches: true,
+        showSoftClips: true,
+        showInsertionText: true,
+        showDeletionText: true,
+        alignmentRowHeight: 15,
+        samplingDepth: 400,
+        samplingWindowSize: 100,
+      });
+      const hdr = coverageTrackHeaders();
+      if (hdr && tracks[tracks.length - 1]) tracks[tracks.length - 1].headers = hdr;
+      try {
+        coverageIgvBrowser = await igv.createBrowser(host, {
+          genome: (reviewCoverageContext && reviewCoverageContext.genome_id) || 'hg38',
+          locus: loc,
+          tracks,
+        });
+        coverageIgvApplyTrackHeightFromHost();
+      } catch (e) {
+        host.innerHTML =
+          '<p class="muted" style="padding:12px;color:var(--err)">IGV failed: ' +
+          escapeHtml(e.message || String(e)) +
+          '</p>';
+        toast(e.message || 'IGV failed', false);
+      }
     }
 
-    /** First indexed BAM from coverage-context (server already drops ancillary paraphase/SMN/FMR1/…). */
+    /** Best indexed BAM for IGV (server ranks; client re-sorts to skip work/ junk). */
     function pickCoverageOrderBamTrack() {
-      const tr = (reviewCoverageContext && reviewCoverageContext.bam_tracks) || [];
-      return tr.find(t => t.has_index) || null;
+      const tr = prioritizeCoverageBamTracks((reviewCoverageContext && reviewCoverageContext.bam_tracks) || []);
+      return tr[0] || null;
     }
 
     /** Vertical space for navbar, ideogram, ruler, ref, gene — remainder goes to alignment track. */
@@ -10730,7 +10864,11 @@
       }
       host.innerHTML = '';
       const bamUrl = coverageOrderFileUrl(oid, rel);
-      const indexUrl = coverageOrderFileUrl(oid, meta.index_rel_path);
+      const indexUrl = coverageBamIndexUrl(oid, meta);
+      if (!indexUrl) {
+        toast('No .bai index beside this BAM — IGV cannot load alignments.', false);
+        return;
+      }
       const locInp = qs('coverageLocusInput');
       let locus = (initialLocus || (locInp && locInp.value.trim()) || '').trim();
       if (!locus) {
@@ -10738,6 +10876,8 @@
         if (locInp) locInp.value = locus;
       }
       const th0 = coverageIgvPreferredTrackHeight(host);
+      const sgniptCov = isSgniptReview(reviewData);
+      const focusVar = getCoverageFocusVariant();
       const track = {
         type: 'alignment',
         format: 'bam',
@@ -10746,23 +10886,24 @@
         name: meta.label || rel.split('/').pop(),
         height: th0,
         maxHeight: Math.max(th0 + 80, 720),
-        // Default IGV.js only draws non-reference bases unless showAllBases — reviewers expect letters in pileup.
         displayMode: 'EXPANDED',
-        showAllBases: true,
+        // sgNIPT: only the variant column shows base letters on reads; carrier keeps all bases (CFTR tracts).
+        showAllBases: !sgniptCov,
         showMismatches: true,
-        showSoftClips: true,
+        showSoftClips: !sgniptCov,
         showInsertionText: true,
         showDeletionText: true,
-        alignmentRowHeight: 15,
-        // Slightly deeper sampling over ~100bp windows so more reads render at IVS9-style loci (avoid empty-looking pileup).
-        samplingDepth: 400,
-        samplingWindowSize: 100,
+        alignmentRowHeight: sgniptCov ? 14 : 15,
+        samplingDepth: sgniptCov ? 500 : 400,
+        samplingWindowSize: sgniptCov ? 20 : 100,
       };
       const hdr = coverageTrackHeaders();
       if (hdr) track.headers = hdr;
       const tracks = [];
-      const cftrBed = coverageCftrIvs9BedTrackConfig();
-      if (cftrBed) tracks.push(cftrBed);
+      if (sgniptCov) {
+        const chg = coverageSgniptVariantBedTrackConfig(focusVar);
+        if (chg) tracks.push(chg);
+      }
       tracks.push(track);
       try {
         coverageIgvBrowser = await igv.createBrowser(host, {
@@ -10875,14 +11016,125 @@
       }
     }
 
+    function formatVariantBaseChange(v) {
+      const r = String(v.ref || '').trim();
+      const a = String(v.alt || '').trim();
+      if (!r && !a) return '';
+      if (r && a) return `${r}→${a}`;
+      return r || a;
+    }
+
+    function variantCoverageSelectLabel(v) {
+      const gene = (v.gene || '').trim();
+      const pos =
+        v.chrom && v.pos != null && String(v.pos).trim() !== ''
+          ? `${v.chrom}:${v.pos}`
+          : '';
+      if (isSgniptReview(reviewData)) {
+        return [gene, pos, formatVariantBaseChange(v)].filter(Boolean).join(' · ') || String(v.variant_id || 'variant');
+      }
+      return [gene, v.hgvsc || pos].filter(Boolean).join(' · ') || String(v.variant_id || 'variant');
+    }
+
+    function getCoverageFocusVariant() {
+      const sel = qs('coverageVariantSelect');
+      const vid = sel && sel.value;
+      if (vid && reviewData && reviewData.variants) {
+        const hit = reviewData.variants.find(x => String(x.variant_id) === String(vid));
+        if (hit) return hit;
+      }
+      return coverageFocusVariant;
+    }
+
+    /** BED track labeling the expected Ref→Alt at the variant (sgNIPT). */
+    function coverageSgniptVariantBedTrackConfig(v) {
+      if (!v) return null;
+      const chrom = (v.chrom || '').trim();
+      const p = parseInt(String(v.pos || ''), 10);
+      if (!chrom || Number.isNaN(p)) return null;
+      const ref = String(v.ref || '').trim();
+      const alt = String(v.alt || '').trim();
+      const name = ref && alt ? `${ref}>${alt}` : formatVariantBaseChange(v) || 'variant';
+      const start = Math.max(0, p - 1);
+      const bed =
+        'track name="sgnipt_change" description="Expected base change" visibility=3 itemRgb="210,40,40"\n' +
+        `${chrom}\t${start}\t${p}\t${name.replace(/\t/g, ' ')}\t1000\t+\n`;
+      if (window._coverageSgniptBedBlobUrl) {
+        try {
+          URL.revokeObjectURL(window._coverageSgniptBedBlobUrl);
+        } catch (e) {
+          /* ignore */
+        }
+      }
+      const url = URL.createObjectURL(new Blob([bed], { type: 'text/plain' }));
+      window._coverageSgniptBedBlobUrl = url;
+      return {
+        type: 'annotation',
+        format: 'bed',
+        url,
+        name: `Change ${name}`,
+        indexed: false,
+        displayMode: 'EXPANDED',
+        height: 36,
+        color: '#d32f2f',
+      };
+    }
+
     function variantToCoverageLocus(v) {
       const c = (v.chrom || '').trim();
       const p = parseInt(String(v.pos || ''), 10);
       if (!c || Number.isNaN(p)) return '';
-      const pad = 45;
+      // sgNIPT: minimal window — with showAllBases off, only the variant column shows letters on reads.
+      const pad = isSgniptReview(reviewData) ? 2 : 45;
       const a = Math.max(1, p - pad);
       const b = p + pad;
       return `${c}:${a}-${b}`;
+    }
+
+    function applyCoverageVariantJumpUi(v) {
+      const locInp = qs('coverageLocusInput');
+      const hint = qs('coverageVariantChangeHint');
+      const locus = variantToCoverageLocus(v);
+      if (locInp) locInp.value = locus;
+      const ch = formatVariantBaseChange(v);
+      const pos =
+        v.chrom && v.pos != null && String(v.pos).trim() !== ''
+          ? `${v.chrom}:${v.pos}`
+          : '';
+      if (hint) {
+        const ref = String(v.ref || '').trim();
+        const alt = String(v.alt || '').trim();
+        if (isSgniptReview(reviewData) && ch && pos && ref && alt) {
+          hint.innerHTML =
+            'Ref <strong style="color:var(--text)">' +
+            escapeHtml(ref) +
+            '</strong> → expect <strong style="color:var(--err)">' +
+            escapeHtml(alt) +
+            '</strong> in reads at <code style="font-size:11px">' +
+            escapeHtml(pos) +
+            '</code> (only that column shows letters in the pileup)';
+        } else if (!isSgniptReview(reviewData) && ch && pos) {
+          hint.innerHTML =
+            '<strong style="color:var(--text)">' +
+            escapeHtml(ch) +
+            '</strong> at <code style="font-size:11px">' +
+            escapeHtml(pos) +
+            '</code> — pileup shows all bases (use CFTR IVS9 button for tract review)';
+        } else if (ch && pos) {
+          hint.innerHTML =
+            'Look for <strong style="color:var(--text)">' +
+            escapeHtml(ch) +
+            '</strong> at <code style="font-size:11px">' +
+            escapeHtml(pos) +
+            '</code>';
+        } else if (ch) {
+          hint.innerHTML =
+            'Look for <strong style="color:var(--text)">' + escapeHtml(ch) + '</strong>';
+        } else {
+          hint.textContent = pos ? `Jumped to ${pos}` : '';
+        }
+      }
+      return locus;
     }
 
     /** Narrow region so IGV shows alignments (avoids whole-chromosome blank track). */
@@ -10904,15 +11156,23 @@
       const opts = ['<option value="">— Select variant —</option>'];
       vars.forEach(v => {
         const vid = String(v.variant_id || '');
-        const lab = [v.gene, v.hgvsc || `${v.chrom}:${v.pos}`].filter(Boolean).join(' · ');
-        opts.push(`<option value=${JSON.stringify(vid)}>${escapeHtml(lab)}</option>`);
+        opts.push(`<option value=${JSON.stringify(vid)}>${escapeHtml(variantCoverageSelectLabel(v))}</option>`);
       });
       sel.innerHTML = opts.join('');
+      const hint = qs('coverageVariantChangeHint');
+      if (hint) hint.textContent = '';
     }
 
     async function refreshReviewCoverageTab() {
       wireReviewCoverageTabOnce();
       populateCoverageVariantSelect();
+      const sgniptCov = isSgniptReview(reviewData);
+      const sgniptHelp = qs('coverageSgniptHelp');
+      const cftrHelp = qs('coverageCftrHelp');
+      const cftrBtn = qs('coverageCftrIvs9Btn');
+      if (sgniptHelp) sgniptHelp.classList.toggle('hidden', !sgniptCov);
+      if (cftrHelp) cftrHelp.classList.toggle('hidden', !!sgniptCov);
+      if (cftrBtn) cftrBtn.style.display = sgniptCov ? 'none' : '';
       const oid = (reviewLoadedOrderId || (qs('reviewOrderSelect') && qs('reviewOrderSelect').value) || '').trim();
       const bamInfo = qs('coverageBamInfo');
       if (!oid) {
@@ -10983,13 +11243,16 @@
       if (vs)
         vs.addEventListener('change', () => {
           const vid = vs.value;
-          if (!vid || !reviewData || !reviewData.variants) return;
+          const hint = qs('coverageVariantChangeHint');
+          if (!vid || !reviewData || !reviewData.variants) {
+            if (hint) hint.textContent = '';
+            return;
+          }
           const v = reviewData.variants.find(x => String(x.variant_id) === vid);
           if (!v) return;
-          const locus = variantToCoverageLocus(v);
-          const locInp = qs('coverageLocusInput');
-          if (locInp) locInp.value = locus;
-          void coverageIgvGoto(locus);
+          coverageFocusVariant = v;
+          const locus = applyCoverageVariantJumpUi(v);
+          void startCoverageIgvBrowser(locus);
         });
     }
 

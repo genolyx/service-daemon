@@ -1170,7 +1170,7 @@
               <select id="cr_wes_panel" style="width:100%;max-width:100%;box-sizing:border-box;margin-top:6px">
                 <option value="">— Select panel (required before Submit) —</option>
               </select>
-              <p id="cr_wes_panel_hint" class="muted" style="font-size:11px;margin:6px 0 0;line-height:1.45">Optional at save. Required before submitting — this panel narrows the clinical variant list after pipeline analysis.</p>
+              <p id="cr_wes_panel_hint" class="muted" style="font-size:11px;margin:6px 0 0;line-height:1.45">Required for carrier screening and health screening — this panel narrows the clinical variant list after pipeline analysis.</p>
               <div id="cr_proactive_apoe_wrap" class="hidden" style="margin-top:12px;padding:10px 12px;border-radius:10px;border:1px solid rgba(130,200,160,.35);background:rgba(130,200,160,.07)">
                 <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px;line-height:1.45;margin:0">
                   <input type="checkbox" id="cr_include_apoe_pgx" style="margin-top:3px;width:16px;height:16px;flex-shrink:0" />
@@ -4540,6 +4540,9 @@
         if (!val('cr_p3_affected')) return 'Affected3 is required';
       }
       const fu2 = getFServiceValue();
+      if (fu2 === 'carrier_screening' || fu2 === 'health_screening') {
+        if (!val('cr_wes_panel')) return 'Select a Primary (interpretation) panel';
+      }
       if (fu2 === 'carrier_screening') {
         const modeEl = document.querySelector('input[name="cr_report_mode"]:checked');
         if (modeEl && modeEl.value === 'couples') {
@@ -4571,7 +4574,7 @@
           : (fu === 'health_screening'
             ? 'Required for Health screening before submit. Annotation is exome-wide; this panel narrows the clinical variant list after analysis.'
             : (fu === 'carrier_screening'
-              ? 'Required for carrier screening. Annotation is exome-wide; this panel narrows the clinical variant list after analysis.'
+              ? 'Required — annotation is exome-wide; this panel narrows the clinical variant list after analysis.'
               : ''));
         return;
       }
@@ -5578,8 +5581,7 @@
 
     /**
      * List column + sort key: Primary (interpretation) panel label when wes_panel_id is set;
-     * whole exome without panel → "Full exome (no panel)";
-     * carrier without panel → legacy program short name (Standard / Couples / Other).
+     * otherwise an explicit "no panel" label (never a legacy program name like Standard).
      */
     function orderPrimaryInterpretationTypeText(o) {
       const sc = o.service_code || '';
@@ -5591,15 +5593,7 @@
         return label || pid;
       }
       if (sc === 'whole_exome') return 'Full exome (no panel)';
-      if (sc === 'health_screening') return 'Health screening (no panel)';
-      const flat = carrierOrderMetaFlat(o.params || {});
-      if (!flat) return '';
-      const tc = String(flat.test_category || '').trim();
-      const ot = String(flat.other_test_type || '').trim();
-      const pc = String(flat.package_code || '').trim();
-      if (pc === 'CouplesCarrier' || (tc === 'other' && ot === 'CouplesCarrier')) return 'Couples carrier';
-      if (tc === 'other' && ot) return `Other: ${ot}`;
-      return 'Standard carrier';
+      return '— (no panel)';
     }
 
     /** 주문 행 Type 컬럼: carrier / whole_exome = Primary (interpretation) panel (see orderPrimaryInterpretationTypeText) */
@@ -5630,25 +5624,11 @@
       const panelTitle = 'Primary (interpretation) panel';
       if (sc === 'carrier_screening' || sc === 'whole_exome' || sc === 'health_screening') {
         const pid = orderWesPanelIdFromOrder(o);
-        const txt = orderPrimaryInterpretationTypeText(o) || '—';
+        const txt = orderPrimaryInterpretationTypeText(o) || '— (no panel)';
         if (pid) {
           return `<span class="pill type-carrier" title="${escapeAttr(panelTitle)}">${escapeHtml(txt)}</span>`;
         }
-        if (sc === 'whole_exome' || sc === 'health_screening') {
-          return `<span class="pill type-carrier muted" title="${escapeAttr(panelTitle)}">${escapeHtml(txt)}</span>`;
-        }
-        const flat = carrierOrderMetaFlat(o.params || {});
-        if (!flat) return '<span class="pill muted">—</span>';
-        const tc = String(flat.test_category || '').trim();
-        const ot = String(flat.other_test_type || '').trim();
-        const pc = String(flat.package_code || '').trim();
-        if (pc === 'CouplesCarrier' || (tc === 'other' && ot === 'CouplesCarrier')) {
-          return `<span class="pill type-couples" title="${escapeAttr(panelTitle + ' — not set; program type')}">Couples Carrier</span>`;
-        }
-        if (tc === 'other' && ot) {
-          return `<span class="pill type-other-test" title="${escapeAttr(panelTitle + ' — not set; program')}">${escapeHtml(ot)}</span>`;
-        }
-        return `<span class="pill type-carrier" title="${escapeAttr(panelTitle + ' — not set; standard carrier')}">Standard</span>`;
+        return `<span class="pill type-carrier muted" title="${escapeAttr(panelTitle + ' — not selected')}">${escapeHtml(txt)}</span>`;
       }
       if (sc === 'sgnipt') {
         return '<span class="pill type-sgnipt">Single-gene NIPT</span>';
@@ -6279,13 +6259,16 @@
       setupOrderPipelineLogPanel(o);
     }
 
-    /** 주문 상세 하단: log_dir/pipeline.log 터미널 (기본 접힘). */
+    /** 주문 상세 하단: nextflow.log (gx-exome/sgNIPT) 또는 pipeline.log 터미널 (기본 접힘). */
     function setupOrderPipelineLogPanel(o) {
       stopPipelineLogPoll();
       const host = qs('orderPipelineLogHost');
       if (!host || !o || !o.order_id) return;
       host.classList.remove('hidden');
       const oid = o.order_id;
+      const svc = String(o.service_code || '').trim();
+      const logLabel = ['carrier_screening', 'whole_exome', 'health_screening', 'sgnipt'].includes(svc)
+        ? 'nextflow.log' : 'pipeline.log';
       const st = orderStatusUpper(o);
       const activeForPoll = new Set(['QUEUED', 'RUNNING', 'RECEIVED', 'DOWNLOADING', 'PROCESSING', 'UPLOADING']);
 
@@ -6298,8 +6281,8 @@
 
       host.innerHTML = `${cmdHtml}
         <div class="pipeline-terminal collapsed" id="pipelineTerminalRoot" data-order-id="${escapeHtml(oid)}">
-          <div class="pipeline-terminal-head" id="pipelineTerminalHead" role="button" tabindex="0" aria-expanded="false" aria-controls="pipelineLogPre" title="Show or hide pipeline.log">
-            <span class="pipeline-terminal-title">pipeline.log</span>
+          <div class="pipeline-terminal-head" id="pipelineTerminalHead" role="button" tabindex="0" aria-expanded="false" aria-controls="pipelineLogPre" title="Show or hide ${escapeHtml(logLabel)}">
+            <span class="pipeline-terminal-title">${escapeHtml(logLabel)}</span>
             <span class="pipeline-terminal-meta">
               <button type="button" class="pipeline-log-refresh" id="pipelineLogRefreshBtn" title="Reload log">Refresh</button>
               <span class="pipeline-terminal-chev" id="pipelineTerminalChev" aria-hidden="true">▸</span>

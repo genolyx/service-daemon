@@ -745,8 +745,9 @@ async def save_order(service_code: str, request: OrderSubmitRequest):
         )
     if request.service_code != service_code:
         request.service_code = service_code
-    # Save = 초안 저장: wes_panel_id 등 Submit 전에 채울 수 있는 항목은 strict=False 로 건너뜀
-    is_valid, error_msg = plugin.validate_params(request.params or {}, strict=False)
+    # whole_exome: panel optional at save (strict=False). carrier/health: Primary required at save too.
+    save_strict = service_code in ("carrier_screening", "health_screening")
+    is_valid, error_msg = plugin.validate_params(request.params or {}, strict=save_strict)
     if not is_valid:
         raise HTTPException(status_code=400, detail=f"Invalid params: {error_msg}")
 
@@ -3519,25 +3520,38 @@ async def get_order_pipeline_log(
     ),
 ):
     """
-    `log_dir/pipeline.log` 내용을 plain text로 반환합니다 (Portal 주문 상세 터미널).
+    파이프라인 로그를 plain text로 반환합니다 (Portal 주문 상세 터미널).
+    Carrier/sgNIPT: ``nextflow.log`` (gx-exome / sgNIPT 레이아웃). 그 외: ``pipeline.log``.
     """
+    from .pipeline_log_path import resolve_order_pipeline_log
+
     queue_manager = get_queue_manager()
     job = queue_manager.get_job(order_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Order not found: {order_id}")
-    log_dir = job.log_dir
-    if not log_dir:
-        raise HTTPException(status_code=404, detail="log_dir not set for this order")
-    log_dir_real = os.path.realpath(log_dir)
-    candidate = os.path.join(log_dir, "pipeline.log")
-    file_path = os.path.realpath(candidate)
-    if not file_path.startswith(log_dir_real + os.sep):
-        raise HTTPException(status_code=400, detail="invalid log path")
-    if not os.path.isfile(file_path):
+    file_path, log_name = resolve_order_pipeline_log(job)
+    if not file_path:
         raise HTTPException(
             status_code=404,
-            detail="pipeline.log not found (pipeline may not have started yet)",
+            detail=f"{log_name} not found (pipeline may not have started yet)",
         )
+    file_real = os.path.realpath(file_path)
+    allowed_roots = {
+        os.path.realpath(p)
+        for p in (
+            (job.log_dir or "").strip(),
+            settings.carrier_screening_layout_base,
+            settings.carrier_screening_host or "",
+            settings.carrier_screening_script_data_dir or "",
+            settings.sgnipt_job_root,
+            settings.sgnipt_layout_root,
+        )
+        if (p or "").strip()
+    }
+    if not any(
+        file_real == root or file_real.startswith(root + os.sep) for root in allowed_roots
+    ):
+        raise HTTPException(status_code=400, detail="invalid log path")
     try:
         size = os.path.getsize(file_path)
         with open(file_path, "rb") as f:
@@ -3550,8 +3564,12 @@ async def get_order_pipeline_log(
         text = raw.decode("utf-8", errors="replace")
     except OSError as e:
         logger.warning("pipeline-log read failed for %s: %s", order_id, e)
-        raise HTTPException(status_code=500, detail=f"cannot read pipeline.log: {e}")
-    return PlainTextResponse(content=text, media_type="text/plain; charset=utf-8")
+        raise HTTPException(status_code=500, detail=f"cannot read {log_name}: {e}")
+    return PlainTextResponse(
+        content=text,
+        media_type="text/plain; charset=utf-8",
+        headers={"X-Pipeline-Log-File": log_name},
+    )
 
 
 def _guess_file_type(filename: str) -> str:

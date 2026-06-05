@@ -398,8 +398,8 @@ class CarrierScreeningPlugin(ServicePlugin):
     def validate_params(self, params: Dict[str, Any], strict: bool = True) -> Tuple[bool, str]:
         """서비스별 파라미터 유효성 검사.
 
-        strict=False (Save 단계): wes_panel_id 는 나중에 채울 수 있으므로 건너뜀.
-        strict=True  (Submit/Run 단계): 모든 필수 항목 검사.
+        strict=False (whole_exome Save): wes_panel_id optional at save.
+        strict=True  (carrier/health Save, Submit/Run): Primary panel required.
         """
         carrier = (params or {}).get("carrier") or {}
         if carrier.get("reuse_prior_pipeline_outputs"):

@@ -59,13 +59,20 @@ def _should_use_data_wes_panels_fallback(abs_default: str) -> bool:
         return False
 
 
+def _shared_data_wes_panels_custom_path() -> str:
+    return "/data/wes_panels/wes_panels_custom.json"
+
+
 def _custom_catalog_path() -> str:
     env = (settings.wes_panels_custom_json or "").strip()
     if env:
         return env if os.path.isabs(env) else os.path.normpath(os.path.join(_project_root_dir(), env))
-    default = os.path.join(_project_root_dir(), "data", "wes_panels_custom.json")
-    if _should_use_data_wes_panels_fallback(os.path.normpath(default)):
-        return "/data/wes_panels/wes_panels_custom.json"
+    default = os.path.normpath(os.path.join(_project_root_dir(), "data", "wes_panels_custom.json"))
+    shared = _shared_data_wes_panels_custom_path()
+    if _should_use_data_wes_panels_fallback(default):
+        return shared
+    if not os.path.isfile(default) and os.path.isfile(shared):
+        return shared
     return default
 
 
@@ -73,9 +80,12 @@ def _generated_dir() -> str:
     env = (settings.wes_panels_generated_dir or "").strip()
     if env:
         return env if os.path.isabs(env) else os.path.normpath(os.path.join(_project_root_dir(), env))
-    default = os.path.join(_project_root_dir(), "data", "bed", "wes_panels_generated")
-    if _should_use_data_wes_panels_fallback(os.path.normpath(default)):
-        return "/data/wes_panels/generated"
+    default = os.path.normpath(os.path.join(_project_root_dir(), "data", "bed", "wes_panels_generated"))
+    shared = "/data/wes_panels/generated"
+    if _should_use_data_wes_panels_fallback(default):
+        return shared
+    if not os.path.isdir(default) and os.path.isdir(shared):
+        return shared
     return default
 
 

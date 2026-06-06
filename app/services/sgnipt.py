@@ -58,6 +58,76 @@ def apply_sgnipt_layout_directories(job: Job) -> bool:
     return changed
 
 
+def _sgnipt_qc_blob_has_values(blob: Optional[dict], keys: Tuple[str, ...]) -> bool:
+    if not isinstance(blob, dict):
+        return False
+    return any(blob.get(k) is not None for k in keys)
+
+
+def _parse_sgnipt_bam_qc_blob(data: dict) -> dict:
+    legacy = data.get("metrics") if isinstance(data.get("metrics"), dict) else {}
+    flagstat = data.get("flagstat_metrics") if isinstance(data.get("flagstat_metrics"), dict) else {}
+    stats = data.get("stats_metrics") if isinstance(data.get("stats_metrics"), dict) else {}
+    target = data.get("target_metrics") if isinstance(data.get("target_metrics"), dict) else {}
+
+    def pick(*keys: str):
+        for key in keys:
+            for src in (legacy, flagstat, stats, target):
+                if key in src and src[key] is not None:
+                    return src[key]
+        return None
+
+    dup = pick("duplicate_rate", "dup_rate")
+    return {
+        "total_reads": pick("total_reads", "raw_total_sequences"),
+        "mapped_reads": pick("mapped_reads", "reads_mapped"),
+        "mapping_rate": pick("mapping_rate"),
+        "mean_coverage": pick("mean_coverage", "mean_target_coverage", "mean_genome_coverage"),
+        "target_coverage": pick("target_mean_coverage", "mean_target_coverage"),
+        "on_target_rate": pick("on_target_rate"),
+        "dup_rate": dup,
+        "duplicate_rate": dup,
+        "mean_mapping_quality": pick("mean_mapping_quality", "average_quality"),
+        "overall_pass": (data.get("qc_evaluation") or {}).get("overall_qc_pass", True),
+    }
+
+
+def _find_sgnipt_analysis_qc_json(analysis_dir: Optional[str], sample_id: str, stem: str) -> Optional[str]:
+    if not analysis_dir or not sample_id:
+        return None
+    for path in (
+        os.path.join(analysis_dir, "qc", f"{sample_id}.{stem}.json"),
+        os.path.join(analysis_dir, sample_id, "qc", f"{sample_id}.{stem}.json"),
+    ):
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def _enrich_sgnipt_sample_qc(sample: dict, analysis_dir: Optional[str], sample_id: str) -> dict:
+    out = dict(sample or {})
+    bam_keys = (
+        "total_reads", "mapped_reads", "mapping_rate", "mean_coverage",
+        "target_coverage", "on_target_rate", "dup_rate", "mean_mapping_quality",
+    )
+    bam_qc = out.get("bam_qc") if isinstance(out.get("bam_qc"), dict) else {}
+    if not _sgnipt_qc_blob_has_values(bam_qc, bam_keys):
+        path = _find_sgnipt_analysis_qc_json(analysis_dir, sample_id, "bam_qc")
+        if path:
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    raw = json.load(f) or {}
+                parsed = _parse_sgnipt_bam_qc_blob(raw)
+                merged = dict(bam_qc)
+                for k, v in parsed.items():
+                    if merged.get(k) is None and v is not None:
+                        merged[k] = v
+                out["bam_qc"] = merged
+            except (OSError, json.JSONDecodeError) as e:
+                logger.warning("[sgnipt] Could not enrich bam_qc from %s: %s", path, e)
+    return out
+
+
 def _normalize_ff(ff: dict | None) -> dict | None:
     """Normalize fetal_fraction dict: map pipeline key primary_ff → primary_fetal_fraction."""
     if not isinstance(ff, dict):
@@ -363,7 +433,7 @@ class SgNIPTPlugin(ServicePlugin):
         return None
 
     @staticmethod
-    def _build_merged_result(summary: dict, vr: dict) -> dict:
+    def _build_merged_result(summary: dict, vr: dict, analysis_dir: Optional[str] = None) -> dict:
         """
         파이프라인 요약 JSON(summary)과 variant_report JSON(vr)을 병합하여
         포털 Review에서 바로 사용할 수 있는 완성된 result.json 구조를 반환합니다.
@@ -372,6 +442,7 @@ class SgNIPTPlugin(ServicePlugin):
         samples = summary.get("samples") or []
         sample0 = samples[0] if samples else {}
         sample_id = vr.get("sample_id") or sample0.get("sample_id") or ""
+        sample0 = _enrich_sgnipt_sample_qc(sample0, analysis_dir, sample_id)
         return {
             **summary,
             # variant_report 상세 필드 (Review 핵심 데이터)
@@ -421,7 +492,7 @@ class SgNIPTPlugin(ServicePlugin):
                     sample_id, job.analysis_dir,
                 )
 
-            merged = self._build_merged_result(summary, vr)
+            merged = self._build_merged_result(summary, vr, job.analysis_dir)
             text = json.dumps(merged, ensure_ascii=False, indent=2, default=str)
             with open(dst, "w", encoding="utf-8") as f:
                 f.write(text)

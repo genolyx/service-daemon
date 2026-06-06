@@ -8293,8 +8293,9 @@
       const meanQ = bq.mean_mapping_quality ?? bq.average_quality ?? fq.average_quality;
       const meanCov = bq.mean_coverage;
       const mapped = bq.mapped_reads;
+      // sgNIPT qc_thresholds.json min_total_reads = 1M; panel/BAM runs are often 1–5M reads at high on-target depth
       return [
-        { metric: 'total_reads', valueHtml: qcFmtValue(tr), unit: 'reads', threshold: '>10M', status: qcEvalMin(tr, 10e6, 5e6) },
+        { metric: 'total_reads', valueHtml: qcFmtValue(tr), unit: 'reads', threshold: '>1M', status: qcEvalMin(tr, 1e6, 5e5) },
         {
           metric: 'mapped_reads',
           valueHtml: qcFmtValue(mapped),

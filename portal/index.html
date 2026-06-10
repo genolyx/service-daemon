@@ -662,6 +662,12 @@
     }
     body.light #coverageIgvHost{background:#fff}
     #coverageIgvHost .muted{padding:14px}
+    /* IGV position marker overlay */
+    .igv-pos-marker-line{position:absolute;top:0;bottom:0;width:1px;background:#EF4444;pointer-events:none;z-index:9999}
+    .igv-pos-marker-label{position:absolute;top:0;background:#EF4444;color:#fff;font-size:11px;font-weight:700;padding:2px 6px;border-radius:0 0 4px 4px;pointer-events:none;z-index:10000;white-space:nowrap;transform:translateX(-50%)}
+    /* IGV popover text override */
+    [class*="igv-popover"] *,.igv-popover *,.igv-ui-popover *{color:#111 !important}
+    .igv-popover td,.igv-ui-popover td{color:#111 !important;font-size:12px !important}
     .dark-genes-visual-evidence .dg-repeat-row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start}
     .dark-genes-visual-evidence .dg-repeat-svg,.dark-genes-visual-evidence .dg-snap-png{max-width:100%;max-height:520px;border-radius:8px;border:1px solid var(--line);background:var(--card)}
     a.omim-link{color:var(--brand);text-decoration:underline;text-underline-offset:2px}
@@ -1981,6 +1987,8 @@
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px">
           <label class="muted" style="margin:0;font-size:12px">Jump to variant</label>
+          <button type="button" class="nipt-filt-btn active" id="coverageVariantListAll">All</button>
+          <button type="button" class="nipt-filt-btn" id="coverageVariantListChecked">Checked</button>
           <select id="coverageVariantSelect" style="width:auto;min-width:320px;max-width:100%">
             <option value="">— Select variant —</option>
           </select>
@@ -1993,6 +2001,7 @@
           <button type="button" class="btn" id="coverageCftrIvs9Btn" title="GRCh38 — adds BED layers for IVS9 TG vs poly-T span; zoom to pileup">
             CFTR IVS9 (poly-T / TG)
           </button>
+          <button type="button" class="btn" id="coverageClearMarkerBtn" title="Remove position marker lines" style="display:none">Clear marker</button>
         </div>
         <p id="coverageSgniptHelp" class="muted hidden" style="margin:0 0 12px;font-size:11px;line-height:1.45;max-width:56rem">
           <strong>sgNIPT:</strong> Use <strong>Jump to variant</strong> (Ref→Alt in each label). The pileup shows <strong>letters only at the variant column</strong>
@@ -2961,6 +2970,7 @@
     let reviewOrdersCache = [];
     const REVIEW_SERVICE_CODES = ['carrier_screening', 'whole_exome', 'health_screening', 'sgnipt'];
     let reviewCoverageContext = null;
+    let coverageVariantListMode = 'all';
     let coverageFocusVariant = null;
     let coverageIgvBrowser = null;
     let coverageIgvResizeObserver = null;
@@ -6884,6 +6894,9 @@
       pruneVariantKnowledgeToSelection();
       scheduleGeneKnowledgeFetchAfterSelectionChange();
       if (typeof renderVariantsTable === 'function') renderVariantsTable();
+      if (coverageVariantListMode === 'checked' && qs('reviewCoverage') && !qs('reviewCoverage').classList.contains('hidden')) {
+        populateCoverageVariantSelect();
+      }
     }
 
     /**
@@ -7175,6 +7188,7 @@
 
         teardownCoverageIgv();
         reviewCoverageContext = null;
+        coverageVariantListMode = 'all';
 
         selectedVariants = new Set();
         variantComments = {};
@@ -8316,8 +8330,9 @@
 
       const sum = reviewData.summary || {};
       const va = reviewData.variant_analysis_summary || {};
-      const ff = reviewData.fetal_fraction_used
-        ?? reviewData.fetal_fraction_detail?.primary_ff;
+      const ffDetail = reviewData.fetal_fraction_detail || {};
+      const ffFailed = ffDetail.status === 'FAILED' || ffDetail.primary_ff == null && ffDetail.status != null;
+      const ff = ffFailed ? null : (reviewData.fetal_fraction_used ?? ffDetail.primary_ff);
       const panel = reviewData.panel || '';
       const pipelineStatus = reviewData.sgnipt_status || reviewData.status || '';
       const flags = (reviewData.sgnipt_status_flags || []).join(', ');
@@ -8352,7 +8367,7 @@
           <div class="banner-detail">${escapeHtml(detail)}</div>
         </div>
         <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          ${ff != null ? `<span class="pill inp">FF: ${(ff * 100).toFixed(1)}%</span>` : ''}
+          ${ff != null ? `<span class="pill inp">FF: ${(ff * 100).toFixed(1)}%</span>` : ffFailed ? '<span class="pill err" title="Fetal fraction estimation failed">FF: N/A</span>' : ''}
           ${panel ? `<span class="pill new">${escapeHtml(panel)}</span>` : ''}
           <span class="pill err">${fetal} Fetal</span>
           <span class="pill warn">${matHet} MatHet</span>
@@ -11135,6 +11150,59 @@
       }
     }
 
+    // ── IGV position marker ──
+    let _igvMarkerPos = null; // { chr, pos }
+
+    function setIgvPosMarker(chr, pos) {
+      _igvMarkerPos = { chr, pos: Number(pos) };
+      redrawIgvPosMarker();
+      const btn = qs('coverageClearMarkerBtn');
+      if (btn) btn.style.display = '';
+    }
+
+    function clearIgvPosMarker() {
+      _igvMarkerPos = null;
+      const host = qs('coverageIgvHost');
+      if (!host) return;
+      host.querySelectorAll('.igv-pos-marker-line,.igv-pos-marker-label').forEach(el => el.remove());
+    }
+
+    function redrawIgvPosMarker() {
+      const host = qs('coverageIgvHost');
+      if (!host) return;
+      host.querySelectorAll('.igv-pos-marker-line,.igv-pos-marker-label').forEach(el => el.remove());
+      if (!_igvMarkerPos || !coverageIgvBrowser) return;
+      const { chr, pos } = _igvMarkerPos;
+      try {
+        const refList = coverageIgvBrowser.referenceFrameList;
+        if (!refList || !refList.length) return;
+        const ref = refList[0];
+        if (!ref || ref.chr !== chr) return;
+        const vpEl = host.querySelector('.igv-viewport') || host.querySelector('[class*="igv-viewport"]');
+        const vpLeft = vpEl ? (vpEl.getBoundingClientRect().left - host.getBoundingClientRect().left) : 0;
+        const bpp = ref.bpPerPixel;
+        if (!bpp || bpp <= 0) return;
+        const leftPx  = vpLeft + (pos - 1 - ref.start) / bpp;
+        const rightPx = vpLeft + (pos     - ref.start) / bpp;
+        const midPx   = (leftPx + rightPx) / 2;
+        const mkLeft = document.createElement('div');
+        mkLeft.className = 'igv-pos-marker-line';
+        mkLeft.style.left = Math.round(leftPx) + 'px';
+        host.appendChild(mkLeft);
+        const mkRight = document.createElement('div');
+        mkRight.className = 'igv-pos-marker-line';
+        mkRight.style.left = Math.round(rightPx) + 'px';
+        host.appendChild(mkRight);
+        const label = document.createElement('div');
+        label.className = 'igv-pos-marker-label';
+        label.textContent = chr + ':' + pos.toLocaleString();
+        label.style.left = Math.round(midPx) + 'px';
+        host.appendChild(label);
+      } catch (e) {
+        /* ignore layout errors */
+      }
+    }
+
     function teardownCoverageIgv() {
       if (coverageIgvResizeObserver) {
         try {
@@ -11169,6 +11237,9 @@
         window._coverageSgniptBedBlobUrl = null;
       }
       coverageFocusVariant = null;
+      clearIgvPosMarker();
+      const clearMkBtn2 = qs('coverageClearMarkerBtn');
+      if (clearMkBtn2) clearMkBtn2.style.display = 'none';
       const hint = qs('coverageVariantChangeHint');
       if (hint) hint.textContent = '';
       const host = qs('coverageIgvHost');
@@ -11512,6 +11583,11 @@
         } catch (e) {
           /* ignore */
         }
+        try {
+          coverageIgvBrowser.on('locuschange', () => { try { redrawIgvPosMarker(); } catch (e) {/* ignore */} });
+        } catch (e) {
+          /* ignore */
+        }
         const gotoLoc = ((locInp && locInp.value.trim()) || locus || '').trim();
         if (gotoLoc && coverageIgvBrowser) {
           try {
@@ -11522,6 +11598,7 @@
             toast(eNav.message || 'IGV could not go to locus', false);
           }
         }
+        setTimeout(() => { try { redrawIgvPosMarker(); } catch (e) {/* ignore */} }, 400);
       } catch (e) {
         host.innerHTML =
           '<p class="muted" style="padding:12px;color:var(--err)">IGV failed: ' +
@@ -11704,10 +11781,11 @@
           hint.textContent = pos ? `Jumped to ${pos}` : '';
         }
       }
+      if (v.chrom && v.pos != null) {
+        try { setIgvPosMarker(v.chrom, Number(v.pos)); } catch (e) {/* ignore */}
+      }
       return locus;
     }
-
-    /** Narrow region so IGV shows alignments (avoids whole-chromosome blank track). */
     function defaultCoverageIgvLocus() {
       const vars = (reviewData && reviewData.variants) || [];
       for (let i = 0; i < vars.length; i++) {
@@ -11719,18 +11797,48 @@
       return '';
     }
 
+    function syncCoverageVariantListModeButtons() {
+      const allBtn = qs('coverageVariantListAll');
+      const chkBtn = qs('coverageVariantListChecked');
+      if (allBtn) allBtn.classList.toggle('active', coverageVariantListMode === 'all');
+      if (chkBtn) chkBtn.classList.toggle('active', coverageVariantListMode === 'checked');
+    }
+
+    function getCoverageVariantListForSelect() {
+      const vars = (reviewData && reviewData.variants) || [];
+      if (coverageVariantListMode !== 'checked') return vars;
+      return vars.filter(v => selectedVariants.has(v.variant_id));
+    }
+
+    function setCoverageVariantListMode(mode) {
+      coverageVariantListMode = mode === 'checked' ? 'checked' : 'all';
+      populateCoverageVariantSelect();
+    }
+
     function populateCoverageVariantSelect() {
       const sel = qs('coverageVariantSelect');
       if (!sel) return;
-      const vars = (reviewData && reviewData.variants) || [];
-      const opts = ['<option value="">— Select variant —</option>'];
-      vars.forEach(v => {
-        const vid = String(v.variant_id || '');
-        opts.push(`<option value=${JSON.stringify(vid)}>${escapeHtml(variantCoverageSelectLabel(v))}</option>`);
-      });
+      syncCoverageVariantListModeButtons();
+      const prev = sel.value;
+      const vars = getCoverageVariantListForSelect();
+      const opts = [];
+      if (coverageVariantListMode === 'checked' && !vars.length) {
+        opts.push('<option value="">— No checked variants —</option>');
+      } else {
+        opts.push('<option value="">— Select variant —</option>');
+        vars.forEach(v => {
+          const vid = String(v.variant_id || '');
+          opts.push(`<option value=${JSON.stringify(vid)}>${escapeHtml(variantCoverageSelectLabel(v))}</option>`);
+        });
+      }
       sel.innerHTML = opts.join('');
-      const hint = qs('coverageVariantChangeHint');
-      if (hint) hint.textContent = '';
+      if (prev && vars.some(v => String(v.variant_id) === prev)) {
+        sel.value = prev;
+      } else if (prev) {
+        coverageFocusVariant = null;
+        const hint = qs('coverageVariantChangeHint');
+        if (hint) hint.textContent = '';
+      }
     }
 
     async function refreshReviewCoverageTab() {
@@ -11803,12 +11911,22 @@
         cftrB.addEventListener('click', () => {
           jumpReviewCoverageCftrIvs9();
         });
+      const clearMkBtn = qs('coverageClearMarkerBtn');
+      if (clearMkBtn)
+        clearMkBtn.addEventListener('click', () => {
+          clearIgvPosMarker();
+          clearMkBtn.style.display = 'none';
+        });
       const gb = qs('coverageGotoLocusBtn');
       if (gb)
         gb.addEventListener('click', () => {
           const loc = qs('coverageLocusInput') && qs('coverageLocusInput').value.trim();
           void coverageIgvGoto(loc);
         });
+      const covAllBtn = qs('coverageVariantListAll');
+      if (covAllBtn) covAllBtn.addEventListener('click', () => setCoverageVariantListMode('all'));
+      const covChkBtn = qs('coverageVariantListChecked');
+      if (covChkBtn) covChkBtn.addEventListener('click', () => setCoverageVariantListMode('checked'));
       const vs = qs('coverageVariantSelect');
       if (vs)
         vs.addEventListener('change', () => {

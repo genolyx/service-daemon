@@ -1155,8 +1155,11 @@
         </div>
         <div id="orderDetailPanel" class="hidden">
           <button type="button" class="detail-back order-detail-back" id="btnOrderDetailBack">← Go back to order list</button>
-          <h3 class="detail-title" id="orderDetailTitle">Order Detail</h3>
-          <p class="detail-sub" id="orderDetailSub">Detail info of order</p>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:2px">
+            <h3 class="detail-title" id="orderDetailTitle" style="margin:0"></h3>
+            <button type="button" class="btn primary hidden" id="btnOrderDetailReview" style="flex-shrink:0;padding:5px 14px;font-size:13px">→ Review</button>
+          </div>
+          <p class="detail-sub hidden" id="orderDetailSub">Detail info of order</p>
           <div id="orderDetailBody"></div>
           <div id="orderPipelineLogHost" class="order-pipeline-log-host hidden" aria-live="polite"></div>
         </div>
@@ -6200,8 +6203,18 @@
       const p = qs('orderDetailPanel');
       if (p) p.classList.remove('hidden');
       const svcTag = dashSvcLabel(o.service_code);
-      qs('orderDetailTitle').textContent = `Order Detail ${o.order_id}` + (svcTag ? ` (${svcTag})` : '');
-      qs('orderDetailSub').textContent = 'Detail info of order';
+      qs('orderDetailTitle').textContent = o.order_id + (svcTag ? ` (${svcTag})` : '');
+
+      const subEl = qs('orderDetailSub');
+      if (subEl) subEl.classList.add('hidden');
+
+      const reviewBtn = qs('btnOrderDetailReview');
+      const canReview = REVIEW_SERVICE_CODES.includes(o.service_code) &&
+        ['COMPLETED', 'REPORT_READY'].includes(orderStatusUpper(o));
+      if (reviewBtn) {
+        reviewBtn.classList.toggle('hidden', !canReview);
+        reviewBtn.onclick = canReview ? () => openReview(o.order_id) : null;
+      }
 
       const stDetail = orderStatusUpper(o);
       const canFollowUpDetail = ['COMPLETED', 'REPORT_READY'].includes(stDetail) && ['carrier_screening', 'whole_exome', 'health_screening', 'sgnipt'].includes(o.service_code);

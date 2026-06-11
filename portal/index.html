@@ -7128,9 +7128,10 @@
         // Show/hide sgNIPT filter row; hide carrier-only dropdowns for sgNIPT
         const _sgniptFiltRow = qs('sgniptVariantFilters');
         if (_sgniptFiltRow) _sgniptFiltRow.classList.toggle('hidden', !isSgNIPT);
+        // Both Classification and ClinVar filters are shown for both carrier and sgNIPT
         const _classF = qs('variantClassFilter'), _clinF = qs('variantClinvarFilter');
-        if (_classF) _classF.style.display = isSgNIPT ? 'none' : '';
-        if (_clinF)  _clinF.style.display  = isSgNIPT ? 'none' : '';
+        if (_classF) _classF.style.display = '';
+        if (_clinF)  _clinF.style.display  = '';
         // Reset sgNIPT filter/sort state on every review load
         sgniptOriginFilter = ''; sgniptConfFilter = ''; sgniptSortKey = null; sgniptSortAsc = true;
         document.querySelectorAll('.nipt-filt-btn').forEach(b => b.classList.toggle('active', b.dataset.val === ''));
@@ -7154,6 +7155,7 @@
           // clinical_findings → variants 정규화 (공통 review 렌더링 호환)
           reviewData.variants = (reviewData.clinical_findings || []).map((v, idx) => {
             const gene = v.gene || geneFromTarget(v.target_name);
+            const acmgCls = v.acmg_classification || (v.pathogenic_variant ? 'Pathogenic' : '');
             return {
               variant_id: v.variant_id || `NIPT_${String(idx + 1).padStart(4, '0')}`,
               gene,
@@ -7173,9 +7175,15 @@
               target_name: v.target_name || '',
               in_zero_probe_region: !!v.in_zero_probe_region,
               details: v.details || '',
-              acmg_class: v.pathogenic_variant ? '5' : '',
-              acmg_classification: v.pathogenic_variant ? 'Pathogenic' : '',
-              hgvsc: '', hgvsp: '', effect: '', gnomad_af: '',
+              acmg_class: acmgCls ? (acmgCls.toLowerCase().includes('pathogenic') ? '5' : '3') : '',
+              acmg_classification: acmgCls,
+              acmg_criteria: v.acmg_criteria || [],
+              acmg_reasoning: v.acmg_reasoning || '',
+              clinvar_sig_primary: v.clinvar_sig_primary || '',
+              clinvar_stars: v.clinvar_stars || 0,
+              clinvar_dn: v.clinvar_dn || '',
+              gnomad_af: v.gnomad_af != null ? v.gnomad_af : '',
+              hgvsc: v.hgvsc || '', hgvsp: v.hgvsp || '', effect: v.effect || '',
             };
           });
         }
@@ -10680,6 +10688,7 @@
           <th class="sortable" data-key="origin" style="cursor:pointer">Origin</th>
           <th class="sortable" data-key="fetal_genotype" style="cursor:pointer">Fetal GT</th>
           <th class="sortable" data-key="confidence" style="cursor:pointer">Confidence</th>
+          <th class="sortable" data-key="acmg_classification" style="cursor:pointer">ACMG / ClinVar</th>
           <th>Disease / Target</th>
         `;
         thead.querySelectorAll('th.sortable').forEach(th => {
@@ -10706,6 +10715,23 @@
           (v.target_name || '').toLowerCase().includes(q) ||
           (`${v.chrom}:${v.pos}`).includes(q)
         );
+      }
+
+      // Classification filter (shared with carrier)
+      const classFilter = qs('variantClassFilter').value;
+      if (classFilter) {
+        variants = variants.filter(v => v.acmg_classification === classFilter);
+      }
+
+      // ClinVar filter (shared with carrier)
+      const clinvarFilter = qs('variantClinvarFilter').value;
+      if (clinvarFilter) {
+        variants = variants.filter(v => {
+          const sig = (v.clinvar_sig_primary || '').toLowerCase();
+          const f = clinvarFilter.toLowerCase().replace(/_/g, ' ');
+          if (f === 'benign') return sig.includes('benign');
+          return sig.includes(f);
+        });
       }
 
       // Gene filter dropdown
@@ -10769,10 +10795,20 @@
         uncertain: 'Uncertain',
       };
       const confPill = { high: 'done', medium: 'warn', low: 'err' };
+      const acmgColor = cls => {
+        const c = (cls || '').toLowerCase();
+        if (c === 'pathogenic') return 'err';
+        if (c === 'likely pathogenic') return 'warn';
+        if (c === 'vus') return 'inp';
+        if (c === 'likely benign') return 'new';
+        if (c === 'benign') return 'done';
+        return 'new';
+      };
 
       variants.forEach(v => {
         const isFetal = v.origin === 'fetal_specific' || v.origin === 'fetal';
-        const isPathogenic = v.pathogenic_variant;
+        const acmgCls = v.acmg_classification || '';
+        const isPathogenic = acmgCls.toLowerCase().includes('pathogenic') || v.pathogenic_variant;
         const isSelected = selectedVariants.has(v.variant_id);
         const tr = document.createElement('tr');
         tr.className = 'variant-row' + (isSelected ? ' selected' : '');
@@ -10787,6 +10823,22 @@
         const diseaseCell = v.disease
           ? `<span title="${escapeHtml(v.target_name || '')}">${escapeHtml(v.disease)}</span>`
           : (firstGene ? `<span title="${escapeHtml(v.target_name)}">${escapeHtml(firstGene)}</span>` : '-');
+
+        // Build ACMG / ClinVar cell
+        let acmgCell = '';
+        if (acmgCls) {
+          acmgCell = pill(acmgCls, acmgColor(acmgCls));
+          const criteria = (v.acmg_criteria || []).join(', ');
+          if (criteria) acmgCell += `<br><span class="muted" style="font-size:10px">${escapeHtml(criteria)}</span>`;
+        }
+        const cvPrim = v.clinvar_sig_primary || '';
+        if (cvPrim) {
+          const cvColor = acmgColor(cvPrim);
+          const stars = v.clinvar_stars ? ' ' + '★'.repeat(Math.min(v.clinvar_stars, 4)) : '';
+          acmgCell += (acmgCell ? '<br>' : '') + `<span class="pill ${cvColor}" style="font-size:10px" title="ClinVar${v.clinvar_dn ? ': ' + v.clinvar_dn : ''}">CV: ${escapeHtml(cvPrim)}${stars}</span>`;
+        }
+        if (!acmgCell) acmgCell = '-';
+
         const starHtml = isPathogenic ? ' <span style="color:var(--err);font-size:11px" title="Pathogenic">★</span>' : '';
         tr.innerHTML = `
           <td style="text-align:center"><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleVariant('${escapeHtml(v.variant_id)}', this.checked)" />${starHtml}</td>
@@ -10799,6 +10851,7 @@
           <td>${pill(origLabel, origClass)}</td>
           <td class="muted">${escapeHtml(v.fetal_genotype || '-')}</td>
           <td>${conf ? pill(conf, confClass) : '-'}</td>
+          <td style="white-space:nowrap;line-height:1.6">${acmgCell}</td>
           <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;font-size:11px">${diseaseCell}</td>
         `;
         tb.appendChild(tr);
@@ -10834,7 +10887,7 @@
       if (isReviewOrderMismatch()) {
         const tb = qs('tblVariantsBody');
         const selId = (qs('reviewOrderSelect') && qs('reviewOrderSelect').value || '').trim();
-        const colspan = reviewData._service_code === 'sgnipt' ? 11 : 14;
+        const colspan = reviewData._service_code === 'sgnipt' ? 12 : 14;
         const msg = `Different order selected — click <strong>Load</strong> to show data for <strong>${escapeHtml(selId)}</strong> (table still shows <strong>${escapeHtml(String(reviewLoadedOrderId))}</strong>).`;
         if (tb) tb.innerHTML = `<tr><td colspan="${colspan}" class="muted" style="padding:20px;text-align:center">${msg}</td></tr>`;
         qs('variantCount').textContent = '— pending load —';

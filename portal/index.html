@@ -85,6 +85,8 @@
     .btn.loading{pointer-events:none;opacity:.7;position:relative}
     .btn.loading::after{content:'';position:absolute;right:10px;top:50%;width:14px;height:14px;border:2px solid rgba(255,255,255,.7);border-top-color:transparent;border-radius:50%;transform:translateY(-50%);animation:spin .8s linear infinite}
     @keyframes spin{to{transform:translateY(-50%) rotate(360deg)}}
+    @keyframes spin-i{to{transform:rotate(360deg)}}
+    .spin-inline{display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;vertical-align:middle;animation:spin-i .7s linear infinite}
 
     /* PGx review tables: sortable column headers */
     th.pgx-sortable-th{cursor:pointer;user-select:none;white-space:nowrap}
@@ -1949,6 +1951,10 @@
           <button class="nipt-filt-btn active" data-filt="conf" data-val="">All</button>
           <button class="nipt-filt-btn" data-filt="conf" data-val="high">High</button>
           <button class="nipt-filt-btn" data-filt="conf" data-val="medium">Medium</button>
+          <span style="margin-left:12px;border-left:1px solid var(--border);padding-left:12px">
+            <button id="btnSgniptClassify" class="btn-secondary" style="font-size:11px;padding:4px 10px" title="현재 필터된 variant에 ClinVar/ACMG 분류 적용">🔍 Classify</button>
+            <span id="sgniptClassifyStatus" class="muted" style="font-size:11px;margin-left:6px"></span>
+          </span>
           <button class="nipt-filt-btn" data-filt="conf" data-val="low">Low</button>
         </div>
         <div class="table-wrap" style="max-height:55vh">
@@ -2996,6 +3002,65 @@
     let variantSetsPageExpandedTag = null;
     // sgNIPT-specific filter / sort state
     let sgniptOriginFilter = '', sgniptConfFilter = '', sgniptSortKey = null, sgniptSortAsc = true;
+
+    // sgNIPT on-demand ClinVar/ACMG classification state
+    let _sgniptClassifyOrderId = null;
+    let _sgniptVisibleVariants = [];   // last filtered result from renderSgNIPTVariantsTable
+
+    async function classifyVisibleSgniptVariants(orderId, visibleVariants, force = false) {
+      if (!visibleVariants || visibleVariants.length === 0) return;
+      // When force=true (explicit button press), re-classify all; otherwise skip already classified
+      const toClassify = force ? visibleVariants : visibleVariants.filter(v =>
+        !v.acmg_classification || v.acmg_classification === '' ||
+        !v.clinvar_sig_primary
+      );
+      if (toClassify.length === 0) return;
+      // Cap at 200 to avoid slow requests
+      const batch = toClassify.slice(0, 200).map(v => ({
+        variant_id: v.variant_id,
+        chrom: v.chrom,
+        pos: parseInt(v.pos) || v.pos,
+        ref: v.ref,
+        alt: v.alt,
+        gene: v.gene || '',
+      }));
+      try {
+        const resp = await fetch(`${API_BASE}${apiPath(`/order/${orderId}/classify-variants`)}`, {
+          method: 'POST',
+          headers: apiFetchHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ variants: batch }),
+        });
+        const data = await resp.json();
+        if (!data.results) return;
+        // Merge results back into reviewData.variants
+        const byKey = {};
+        for (const r of data.results) {
+          const k = `${r.chrom}:${r.pos}:${r.ref}:${r.alt}`;
+          byKey[k] = r;
+        }
+        let updated = false;
+        if (reviewData && reviewData.variants) {
+          for (const v of reviewData.variants) {
+            const k = `${v.chrom}:${v.pos}:${v.ref}:${v.alt}`;
+            if (byKey[k]) {
+              const r = byKey[k];
+              if (r.acmg_classification) { v.acmg_classification = r.acmg_classification; updated = true; }
+              if (r.acmg_criteria)       { v.acmg_criteria = r.acmg_criteria; }
+              if (r.acmg_reasoning)      { v.acmg_reasoning = r.acmg_reasoning; }
+              if (r.acmg_confidence)     { v.acmg_confidence = r.acmg_confidence; }
+              if (r.clinvar_sig_primary) { v.clinvar_sig_primary = r.clinvar_sig_primary; updated = true; }
+              if (r.clinvar_stars != null){ v.clinvar_stars = r.clinvar_stars; }
+              if (r.clinvar_dn)          { v.clinvar_dn = r.clinvar_dn; }
+              if (r.gnomad_af != null)   { v.gnomad_af = r.gnomad_af; }
+            }
+          }
+        }
+        if (updated) renderSgNIPTVariantsTable();
+      } catch (e) {
+        console.error('[classify-variants]', e);
+        throw e;
+      }
+    }
 
     // ═══════════════════════════════════════════════════════════
     // Utilities
@@ -7125,6 +7190,33 @@
             setSgniptFilter(btn.dataset.filt, btn.dataset.val);
           });
         }
+        // Wire "Classify" button
+        const _btnClassify = qs('btnSgniptClassify');
+        if (_btnClassify && !_btnClassify._wired) {
+          _btnClassify._wired = true;
+          _btnClassify.onclick = async () => {
+            if (!reviewData || reviewData._service_code !== 'sgnipt') return;
+            const oid = reviewLoadedOrderId || '';
+            if (!oid) return;
+            const visibleVariants = _sgniptVisibleVariants || [];
+            const statusEl = qs('sgniptClassifyStatus');
+            // Show spinner + count
+            _btnClassify.disabled = true;
+            _btnClassify.innerHTML = '<span class="spin-inline"></span> Classifying…';
+            if (statusEl) statusEl.innerHTML = `<span class="muted">${visibleVariants.length} variants</span>`;
+            try {
+              await classifyVisibleSgniptVariants(oid, visibleVariants, true);
+              _btnClassify.innerHTML = '🔍 Classify';
+              if (statusEl) statusEl.innerHTML = `<span style="color:var(--done,#16a34a)">✓ Done (${visibleVariants.length})</span>`;
+              setTimeout(() => { if (statusEl) statusEl.innerHTML = ''; }, 4000);
+            } catch(e) {
+              _btnClassify.innerHTML = '🔍 Classify';
+              if (statusEl) statusEl.innerHTML = '<span style="color:var(--err,#ef4444)">⚠ Failed</span>';
+            } finally {
+              _btnClassify.disabled = false;
+            }
+          };
+        }
         // Show/hide sgNIPT filter row; hide carrier-only dropdowns for sgNIPT
         const _sgniptFiltRow = qs('sgniptVariantFilters');
         if (_sgniptFiltRow) _sgniptFiltRow.classList.toggle('hidden', !isSgNIPT);
@@ -10681,7 +10773,7 @@
           <th style="width:36px;text-align:center"><input type="checkbox" id="chkAllNipt" title="Select/deselect all" /></th>
           <th class="sortable" data-key="gene" style="cursor:pointer">Gene</th>
           <th class="sortable" data-key="pos" style="cursor:pointer">Position</th>
-          <th>Ref → Alt</th>
+          <th style="max-width:120px;overflow:hidden">Ref → Alt</th>
           <th class="sortable" data-key="depth" style="cursor:pointer">Depth</th>
           <th class="sortable" data-key="vaf" style="cursor:pointer">VAF</th>
           <th>Tags</th>
@@ -10781,6 +10873,9 @@
         }
       }
 
+      // Cache for Classify button
+      _sgniptVisibleVariants = variants;
+
       setVariantCountDisplay(variants.length, variantTotal, selectedVariants.size);
       const tb = qs('tblVariantsBody');
       tb.innerHTML = '';
@@ -10844,7 +10939,7 @@
           <td style="text-align:center"><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleVariant('${escapeHtml(v.variant_id)}', this.checked)" />${starHtml}</td>
           <td style="font-weight:600">${escapeHtml(v.gene || '-')}</td>
           <td class="muted" style="font-size:11px">${escapeHtml(posStr)}</td>
-          <td style="font-size:11px">${escapeHtml(v.ref || '')} → ${escapeHtml(v.alt || '')}</td>
+          <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(v.ref || '')} → ${escapeHtml(v.alt || '')}">${escapeHtml((v.ref||'').length > 10 ? v.ref.slice(0,10)+'…' : (v.ref||''))} → ${escapeHtml((v.alt||'').length > 10 ? v.alt.slice(0,10)+'…' : (v.alt||''))}</td>
           <td>${v.depth != null ? v.depth : '-'}</td>
           <td>${v.vaf != null ? (v.vaf * 100).toFixed(1) + '%' : '-'}</td>
           <td style="white-space:nowrap">${variantSetTagPillsHtml(getVariantSetTags(v))}</td>
@@ -10870,6 +10965,8 @@
           onVariantSelectionChanged();
         };
       }
+
+      // On-demand ClinVar/ACMG classification — triggered by "Classify" button
     }
 
     function setSgniptFilter(type, val) {

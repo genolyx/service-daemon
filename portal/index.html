@@ -7312,6 +7312,16 @@
         langDisp.textContent = '—';
         return;
       }
+
+      // sgNIPT has its own report flow — always eligible
+      if (reviewData?._service_code === 'sgnipt') {
+        if (msg) { msg.style.display = 'none'; msg.textContent = ''; }
+        btn.classList.remove('report-gen-blocked');
+        if (previewBtn) previewBtn.classList.remove('report-gen-blocked');
+        langDisp.textContent = 'EN · sgnipt_en.html';
+        return;
+      }
+
       const op = reviewData && reviewData.order_params;
       const flat = carrierOrderMetaFlat(op);
       const el = carrierReportEligible(op);
@@ -12405,9 +12415,13 @@
     async function generateReport() {
       const orderId = getActiveReviewOrderId();
       if (!orderId) return toast('Load an order first (Review → Load), or open Review from the order list.', false);
-      const elig = carrierReportEligible(reviewData?.order_params);
-      if (!elig.ok) {
-        return toast(elig.reason || 'Report PDF is not available for this order type or report language.', false);
+
+      const isSgNIPT = reviewData?._service_code === 'sgnipt';
+      if (!isSgNIPT) {
+        const elig = carrierReportEligible(reviewData?.order_params);
+        if (!elig.ok) {
+          return toast(elig.reason || 'Report PDF is not available for this order type or report language.', false);
+        }
       }
 
       const revName = qs('rRevName').value.trim();
@@ -12848,8 +12862,15 @@
     async function previewReport() {
       const orderId = getActiveReviewOrderId();
       if (!orderId) return toast('Load an order first.', false);
-      const elig = carrierReportEligible(reviewData?.order_params);
-      if (!elig.ok) return toast(elig.reason || 'Report is not available for this order type.', false);
+
+      const isSgNIPT = reviewData?._service_code === 'sgnipt';
+
+      // For carrier-like orders, check template eligibility; sgNIPT bypasses this.
+      let elig = { ok: true, kind: 'sgnipt', reportLang: 'EN' };
+      if (!isSgNIPT) {
+        elig = carrierReportEligible(reviewData?.order_params);
+        if (!elig.ok) return toast(elig.reason || 'Report is not available for this order type.', false);
+      }
 
       const revName = qs('rRevName').value.trim();
       if (!revName) return toast('Reviewer name is required', false);

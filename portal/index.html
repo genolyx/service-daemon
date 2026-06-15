@@ -1806,6 +1806,63 @@
         </div>
       </div>
 
+      <!-- ── AI Provider ───────────────────────────────────── -->
+      <div class="form-section-card" style="max-width:1200px;margin-bottom:18px">
+        <h4 style="margin:0 0 6px;font-size:14px">AI Provider</h4>
+        <p class="muted" style="font-size:12px;margin:0 0 14px;line-height:1.5">
+          <strong>Gene Knowledge</strong> (New search / write-up) 에 사용할 AI를 선택합니다.
+          Gemini는 Google API key가 필요하고 인터넷 검색 가능. Ollama는 로컬 모델로 오프라인 동작합니다.
+        </p>
+
+        <!-- Provider radio -->
+        <div style="display:flex;gap:18px;margin-bottom:14px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+            <input type="radio" name="aiProviderRadio" id="aiProviderGemini" value="gemini" style="accent-color:var(--brand)" />
+            <strong>Gemini</strong> <span class="muted" style="font-size:11px">(Google API)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+            <input type="radio" name="aiProviderRadio" id="aiProviderOllama" value="ollama" style="accent-color:var(--brand)" />
+            <strong>Ollama</strong> <span class="muted" style="font-size:11px">(local model)</span>
+          </label>
+        </div>
+
+        <!-- Gemini info -->
+        <div id="aiCfgGeminiPanel">
+          <p class="muted" style="font-size:12px;margin:0 0 6px">
+            Key status: <span id="aiGeminiKeyStatus" class="muted">—</span>
+          </p>
+          <p class="muted" style="font-size:11px;margin:0">
+            Gemini API key는 gx-daemon <code>.env</code>의 <code>GEMINI_API_KEY</code>에서 로드됩니다.
+          </p>
+        </div>
+
+        <!-- Ollama panel -->
+        <div id="aiCfgOllamaPanel" class="hidden">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+            <div style="flex:2;min-width:200px">
+              <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Ollama Base URL</label>
+              <input id="cfgOllamaUrl" type="text" placeholder="http://host.docker.internal:11434/v1"
+                style="width:100%;padding:8px 12px;border-radius:10px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-family:ui-monospace,monospace;font-size:12px;box-sizing:border-box" />
+            </div>
+            <div style="flex:1;min-width:160px">
+              <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Model</label>
+              <select id="cfgOllamaModel" style="width:100%;padding:8px 12px;border-radius:10px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-size:12px">
+                <option value="">— loading… —</option>
+              </select>
+            </div>
+            <button type="button" class="btn" style="font-size:12px;padding:7px 12px" onclick="refreshOllamaModels()">⟳ Refresh models</button>
+            <button type="button" class="btn" style="font-size:12px;padding:7px 12px" onclick="openOllamaPullModal()">⬇ Pull model</button>
+          </div>
+          <p id="aiOllamaStatus" class="muted" style="font-size:11px;margin:0"></p>
+        </div>
+
+        <!-- Apply button -->
+        <div style="margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button type="button" class="btn primary" style="font-size:12px;padding:7px 18px" onclick="applyAiProviderConfig()">Apply</button>
+          <span id="aiCfgResult" class="muted" style="font-size:12px"></span>
+        </div>
+      </div>
+
       <!-- ── Pipeline Options ──────────────────────────────── -->
       <div class="form-section-card" style="max-width:1200px">
         <h4 style="margin:0 0 12px;font-size:14px">Pipeline Options</h4>
@@ -2612,6 +2669,204 @@
         inp.value = t;
       }
       toast('Pipeline options saved', true);
+    }
+
+    // ── AI Provider config ──────────────────────────────────────
+    async function loadAiProviderConfig() {
+      try {
+        const r = await fetch(`${API_BASE}/ai/config`, { headers: apiFetchHeaders() });
+        if (!r.ok) return;
+        const d = await r.json();
+        const provider = d.provider || 'gemini';
+        // Set radio
+        const radio = document.querySelector(`input[name="aiProviderRadio"][value="${provider}"]`);
+        if (radio) radio.checked = true;
+        // Gemini key status
+        const geminiStatus = qs('aiGeminiKeyStatus');
+        if (geminiStatus) {
+          geminiStatus.innerHTML = d.gemini && d.gemini.available
+            ? '<span style="color:var(--done,#16a34a)">✓ Configured</span>'
+            : '<span style="color:var(--err,#ef4444)">✗ Not set</span>';
+        }
+        // Ollama URL + model
+        const urlInp = qs('cfgOllamaUrl');
+        if (urlInp && d.ollama) urlInp.value = d.ollama.base_url || '';
+        // Toggle panels
+        toggleAiPanels(provider);
+        // If ollama is current provider, refresh model list
+        if (provider === 'ollama') refreshOllamaModels();
+      } catch (e) { /* daemon may not support /ai/config yet */ }
+    }
+
+    function toggleAiPanels(provider) {
+      const geminiPanel = qs('aiCfgGeminiPanel');
+      const ollamaPanel = qs('aiCfgOllamaPanel');
+      if (geminiPanel) geminiPanel.classList.toggle('hidden', provider !== 'gemini');
+      if (ollamaPanel) ollamaPanel.classList.toggle('hidden', provider !== 'ollama');
+    }
+
+    // Wire radio change
+    document.querySelectorAll('input[name="aiProviderRadio"]').forEach(r => {
+      r.addEventListener('change', () => toggleAiPanels(r.value));
+    });
+
+    async function refreshOllamaModels() {
+      const sel = qs('cfgOllamaModel');
+      const statusEl = qs('aiOllamaStatus');
+      if (!sel) return;
+      if (statusEl) statusEl.textContent = 'Loading models…';
+      try {
+        const r = await fetch(`${API_BASE}/ai/ollama/models`, { headers: apiFetchHeaders() });
+        const d = await r.json();
+        if (d.error) {
+          if (statusEl) statusEl.innerHTML = `<span style="color:var(--err,#ef4444)">⚠ ${d.error}</span>`;
+          return;
+        }
+        const models = d.models || [];
+        sel.innerHTML = models.length
+          ? models.map(m => `<option value="${m}">${m}</option>`).join('')
+          : '<option value="">No models found</option>';
+        // Select currently configured model
+        try {
+          const cfg = await (await fetch(`${API_BASE}/ai/config`, { headers: apiFetchHeaders() })).json();
+          if (cfg.ollama && cfg.ollama.model) sel.value = cfg.ollama.model;
+        } catch (_) {}
+        if (statusEl) statusEl.textContent = `${models.length} model(s) available`;
+      } catch (e) {
+        if (statusEl) statusEl.innerHTML = `<span style="color:var(--err,#ef4444)">⚠ Failed to reach Ollama</span>`;
+      }
+    }
+
+    async function applyAiProviderConfig() {
+      const resultEl = qs('aiCfgResult');
+      const radio = document.querySelector('input[name="aiProviderRadio"]:checked');
+      const provider = radio ? radio.value : 'gemini';
+      const body = { provider };
+      if (provider === 'ollama') {
+        const urlInp = qs('cfgOllamaUrl');
+        const sel = qs('cfgOllamaModel');
+        if (urlInp && urlInp.value.trim()) body.ollama_base_url = urlInp.value.trim();
+        if (sel && sel.value) body.ollama_model = sel.value;
+      }
+      if (resultEl) resultEl.textContent = 'Applying…';
+      try {
+        const r = await fetch(`${API_BASE}/ai/config`, {
+          method: 'PATCH',
+          headers: apiFetchHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        if (resultEl) resultEl.innerHTML = `<span style="color:var(--done,#16a34a)">✓ Applied — provider: ${d.runtime_overrides?.provider || provider}</span>`;
+        setTimeout(() => { if (resultEl) resultEl.textContent = ''; }, 4000);
+      } catch (e) {
+        if (resultEl) resultEl.innerHTML = '<span style="color:var(--err,#ef4444)">⚠ Failed</span>';
+      }
+    }
+
+    // ── Ollama Pull Model Modal ──────────────────────────────────────
+    function openOllamaPullModal() {
+      const modal = qs('ollamaPullModal');
+      if (!modal) return;
+      modal.classList.remove('hidden');
+      modal.style.display = 'flex';
+      qs('ollamaPullInput').value = '';
+      qs('ollamaPullProgress').classList.add('hidden');
+      qs('ollamaPullLog').textContent = '';
+      qs('ollamaPullBar').style.width = '0%';
+      qs('ollamaPullPct').textContent = '';
+      qs('ollamaPullStatusText').textContent = '';
+      setTimeout(() => qs('ollamaPullInput').focus(), 50);
+    }
+
+    function closeOllamaPullModal() {
+      const modal = qs('ollamaPullModal');
+      if (modal) { modal.classList.add('hidden'); modal.style.display = 'none'; }
+    }
+
+    async function startOllamaPull() {
+      const modelName = (qs('ollamaPullInput').value || '').trim();
+      if (!modelName) { qs('ollamaPullInput').focus(); return; }
+
+      const btn = qs('ollamaPullBtn');
+      const progressEl = qs('ollamaPullProgress');
+      const logEl = qs('ollamaPullLog');
+      const barEl = qs('ollamaPullBar');
+      const pctEl = qs('ollamaPullPct');
+      const statusEl = qs('ollamaPullStatusText');
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin-inline"></span> Pulling…';
+      progressEl.classList.remove('hidden');
+      logEl.textContent = '';
+      barEl.style.width = '0%';
+      pctEl.textContent = '';
+      statusEl.textContent = `Pulling ${modelName}…`;
+
+      try {
+        const resp = await fetch(`${API_BASE}/ai/ollama/pull`, {
+          method: 'POST',
+          headers: apiFetchHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ model: modelName }),
+        });
+        if (!resp.ok) {
+          const e = await resp.json().catch(() => ({}));
+          throw new Error(e.detail || resp.statusText);
+        }
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        let done = false;
+        while (!done) {
+          const { value, done: d } = await reader.read();
+          done = d;
+          buf += decoder.decode(value || new Uint8Array(), { stream: !done });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const ev = JSON.parse(line);
+              if (ev.error) {
+                statusEl.innerHTML = `<span style="color:var(--err,#ef4444)">⚠ ${ev.error}</span>`;
+                logEl.textContent += `ERROR: ${ev.error}\n`;
+                logEl.scrollTop = logEl.scrollHeight;
+                continue;
+              }
+              const status = ev.status || '';
+              statusEl.textContent = status;
+              if (ev.total && ev.completed) {
+                const pct = Math.round((ev.completed / ev.total) * 100);
+                barEl.style.width = pct + '%';
+                pctEl.textContent = `${pct}%  (${_fmtBytes(ev.completed)} / ${_fmtBytes(ev.total)})`;
+              } else if (status === 'success') {
+                barEl.style.width = '100%';
+                pctEl.textContent = '100%';
+              }
+              logEl.textContent += status + (ev.digest ? `  ${ev.digest.slice(0,20)}…` : '') + '\n';
+              logEl.scrollTop = logEl.scrollHeight;
+            } catch (_) { logEl.textContent += line + '\n'; }
+          }
+        }
+        statusEl.innerHTML = `<span style="color:var(--done,#16a34a)">✓ Done — ${modelName} ready</span>`;
+        await refreshOllamaModels();
+        // Auto-select the newly pulled model
+        const sel = qs('cfgOllamaModel');
+        if (sel) { for (const o of sel.options) { if (o.value.startsWith(modelName.split(':')[0])) { sel.value = o.value; break; } } }
+      } catch (e) {
+        statusEl.innerHTML = `<span style="color:var(--err,#ef4444)">⚠ ${e.message}</span>`;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '⬇ Pull';
+      }
+    }
+
+    function _fmtBytes(b) {
+      if (!b) return '0B';
+      const units = ['B','KB','MB','GB'];
+      let i = 0;
+      while (b >= 1024 && i < units.length - 1) { b /= 1024; i++; }
+      return b.toFixed(1) + units[i];
     }
     /**
      * Body for POST /order/{id}/start — include run_analysis SSD options for carrier / WES / health.
@@ -4214,6 +4469,7 @@
       if (name === 'config') {
         stopOrdersListPolling();
         loadPortalPipelineConfigUi();
+        loadAiProviderConfig();
         refreshDaemonLog();
         _startDaemonLogPoller();
       } else {
@@ -6990,13 +7246,18 @@
       const g = (geneSymbol || '').trim();
       if (!g) return toast('Cannot refresh write-up: this variant has no gene symbol.', false);
       let b = btn instanceof HTMLElement ? btn : null;
+      // label span sits just before the button inside the same flex row
+      const labelEl = b ? b.closest('div')?.querySelector('.ai-model-label') : null;
       try {
         if (b) {
           b.disabled = true;
           b.classList.add('loading');
           b.textContent = 'Searching…';
         }
-        const res = await apiGet(`/order/${encodeURIComponent(orderId)}/gene-knowledge?gene=${encodeURIComponent(g)}&force=1`);
+        if (labelEl) {
+          labelEl.textContent = '';
+        }
+        const res = await apiGet(`/order/${encodeURIComponent(orderId)}/gene-knowledge?gene=${encodeURIComponent(g)}&force=1&enrich=1`);
         if (res.error) {
           toast(res.error, false);
           return;
@@ -7011,12 +7272,26 @@
           configured: res.gene_knowledge_db_configured,
           geminiAvailable: res.gemini_available,
         };
+        // Show which model was used
+        if (labelEl) {
+          const aiProvider = res.ai_provider || 'gemini';
+          try {
+            const cfgR = await fetch(`${API_BASE}/ai/config`, { headers: apiFetchHeaders() });
+            const cfg = await cfgR.json();
+            const modelName = aiProvider === 'ollama'
+              ? (cfg.ollama?.model || aiProvider)
+              : (cfg.gemini?.model || aiProvider);
+            labelEl.textContent = `via ${modelName}`;
+          } catch (_) {
+            labelEl.textContent = `via ${aiProvider}`;
+          }
+        }
         const gu = g.toUpperCase();
         const row = (res.genes || {})[gu] || {};
         const hasLong = ((row.function_summary || '').trim() || (row.disease_association || '').trim());
         if (!hasLong && !((row.disorder || '').trim())) {
           toast(
-            (res.gemini_fetch_error || 'Gemini did not return usable text for this gene. Check GEMINI_API_KEY, model access, and daemon logs.') + ' Boxes were not updated.',
+            (res.gemini_fetch_error || 'AI did not return usable text for this gene. Check the AI provider settings and daemon logs.') + ' Boxes were not updated.',
             false
           );
           updateSelectedVariantsList();
@@ -7028,7 +7303,7 @@
             delete variantReportTexts[v.variant_id];
           }
         }
-        toast(hasLong ? 'Gene write-up refreshed from Gemini.' : 'Gene cache updated (short disorder label only).');
+        toast(hasLong ? 'Gene write-up refreshed.' : 'Gene cache updated (short disorder label only).');
         updateSelectedVariantsList();
         renderGeneDatabase();
       } catch (e) {
@@ -12519,7 +12794,8 @@
               ${disease !== '-' ? `<div class="muted" style="font-size:12px;margin-top:4px">${escapeHtml(disease)}</div>` : ''}
             </div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <button type="button" class="btn primary" style="padding:4px 10px;font-size:11px" title="Re-run Gemini search for this gene and refresh the text boxes below" onclick='refreshVariantWriteupFromGemini(${JSON.stringify(v.gene || '')}, this)'>New search / write-up</button>
+              <span class="ai-model-label muted" style="font-size:10px;font-style:italic"></span>
+              <button type="button" class="btn primary" style="padding:4px 10px;font-size:11px" title="Re-run AI search for this gene and refresh the text boxes below" onclick='refreshVariantWriteupFromGemini(${JSON.stringify(v.gene || '')}, this)'>New search / write-up</button>
               <button type="button" class="btn danger-btn" style="padding:4px 10px;font-size:11px" data-remove-vid="${vidEnc}">Remove</button>
             </div>
           </div>
@@ -13214,5 +13490,39 @@
       if (e.target === qs('rptPreviewOverlay')) closePreview();
     });
   </script>
+<!-- ── Ollama Pull Model Modal ─────────────────────────── -->
+<div id="ollamaPullModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)closeOllamaPullModal()">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px 30px;width:100%;max-width:480px;box-shadow:0 8px 40px rgba(0,0,0,.4);position:relative">
+    <button onclick="closeOllamaPullModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:20px;color:var(--muted);cursor:pointer;line-height:1">×</button>
+    <h3 style="margin:0 0 4px;font-size:16px">⬇ Pull Ollama Model</h3>
+    <p class="muted" style="font-size:12px;margin:0 0 16px">
+      Enter a model name from <a href="https://ollama.com/library" target="_blank" style="color:var(--accent)">ollama.com/library</a>
+    </p>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <input id="ollamaPullInput" type="text" placeholder="e.g. gemma3:27b, qwen2.5:14b, llama3.1:latest"
+        style="flex:1;padding:10px 14px;border-radius:10px;border:1px solid var(--input-bd);background:var(--input-bg);color:var(--text);font-family:ui-monospace,monospace;font-size:13px"
+        onkeydown="if(event.key==='Enter')startOllamaPull()" />
+      <button id="ollamaPullBtn" class="btn primary" style="padding:10px 18px;font-size:13px" onclick="startOllamaPull()">⬇ Pull</button>
+    </div>
+    <p class="muted" style="font-size:11px;margin:0 0 14px">
+      Popular models: gemma3:27b, qwen2.5:14b, llama3.1:latest, mistral, phi4<br>
+      Use <code>model:tag</code> format for specific versions
+    </p>
+    <!-- Progress area -->
+    <div id="ollamaPullProgress" class="hidden">
+      <div style="background:var(--card-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span id="ollamaPullStatusText" style="font-size:12px;font-weight:600"></span>
+          <span id="ollamaPullPct" class="muted" style="font-size:11px"></span>
+        </div>
+        <div style="background:var(--line);border-radius:4px;height:6px;overflow:hidden">
+          <div id="ollamaPullBar" style="height:100%;background:var(--accent,#3b82f6);border-radius:4px;width:0%;transition:width .2s"></div>
+        </div>
+      </div>
+      <pre id="ollamaPullLog" style="background:#050810;color:#b0bec5;font-family:ui-monospace,monospace;font-size:11px;line-height:1.5;padding:10px 12px;border-radius:8px;max-height:180px;overflow-y:auto;margin:0;white-space:pre-wrap;word-break:break-all"></pre>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

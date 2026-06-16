@@ -1810,12 +1810,16 @@
       <div class="form-section-card" style="max-width:1200px;margin-bottom:18px">
         <h4 style="margin:0 0 6px;font-size:14px">AI Provider</h4>
         <p class="muted" style="font-size:12px;margin:0 0 14px;line-height:1.5">
-          <strong>Gene Knowledge</strong> (New search / write-up) 에 사용할 AI를 선택합니다.
-          Gemini는 Google API key가 필요하고 인터넷 검색 가능. Ollama는 로컬 모델로 오프라인 동작합니다.
+          <strong>Gene Knowledge</strong> (New search / write-up) 에 사용할 소스를 선택합니다.
+          Local(HGMD+ClinVar)는 로컬 파일 기반으로 즉시 조회됩니다. Gemini는 Google API key 필요. Ollama는 로컬 LLM 모델 사용.
         </p>
 
         <!-- Provider radio -->
         <div style="display:flex;gap:18px;margin-bottom:14px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+            <input type="radio" name="aiProviderRadio" id="aiProviderLocal" value="local" style="accent-color:var(--brand)" />
+            <strong>Local (HGMD+ClinVar)</strong> <span class="muted" style="font-size:11px">(로컬 파일, 빠름)</span>
+          </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
             <input type="radio" name="aiProviderRadio" id="aiProviderGemini" value="gemini" style="accent-color:var(--brand)" />
             <strong>Gemini</strong> <span class="muted" style="font-size:11px">(Google API)</span>
@@ -1833,6 +1837,18 @@
           </p>
           <p class="muted" style="font-size:11px;margin:0">
             Gemini API key는 gx-daemon <code>.env</code>의 <code>GEMINI_API_KEY</code>에서 로드됩니다.
+          </p>
+        </div>
+
+        <!-- Local (HGMD+ClinVar) panel -->
+        <div id="aiCfgLocalPanel" class="hidden">
+          <p class="muted" style="font-size:12px;margin:0 0 6px">
+            HGMD VCF: <span id="aiLocalHgmdStatus" class="muted">—</span><br>
+            ClinVar VCF: <span id="aiLocalClinvarStatus" class="muted">—</span>
+          </p>
+          <p class="muted" style="font-size:11px;margin:0">
+            로컬 파일에서 즉시 조회합니다. AI 호출 없이 HGMD DM/DM? 변이와 ClinVar P/LP 근거를 집계합니다.<br>
+            파일 경로는 gx-daemon <code>.env</code>의 <code>HGMD_VCF</code>, <code>CLINVAR_VCF</code>에서 로드됩니다.
           </p>
         </div>
 
@@ -2695,14 +2711,27 @@
         toggleAiPanels(provider);
         // If ollama is current provider, refresh model list
         if (provider === 'ollama') refreshOllamaModels();
+        // If local is current provider, show file status
+        if (provider === 'local') {
+          const hgmdEl    = qs('aiLocalHgmdStatus');
+          const clinvarEl = qs('aiLocalClinvarStatus');
+          if (hgmdEl)    hgmdEl.innerHTML    = d.local && d.local.hgmd_vcf
+            ? `<span style="color:var(--done,#16a34a)">✓ ${d.local.hgmd_vcf}</span>`
+            : '<span style="color:var(--err,#ef4444)">✗ HGMD_VCF not set</span>';
+          if (clinvarEl) clinvarEl.innerHTML = d.local && d.local.clinvar_vcf
+            ? `<span style="color:var(--done,#16a34a)">✓ ${d.local.clinvar_vcf}</span>`
+            : '<span style="color:var(--err,#ef4444)">✗ CLINVAR_VCF not set</span>';
+        }
       } catch (e) { /* daemon may not support /ai/config yet */ }
     }
 
     function toggleAiPanels(provider) {
       const geminiPanel = qs('aiCfgGeminiPanel');
       const ollamaPanel = qs('aiCfgOllamaPanel');
+      const localPanel  = qs('aiCfgLocalPanel');
       if (geminiPanel) geminiPanel.classList.toggle('hidden', provider !== 'gemini');
       if (ollamaPanel) ollamaPanel.classList.toggle('hidden', provider !== 'ollama');
+      if (localPanel)  localPanel.classList.toggle('hidden',  provider !== 'local');
     }
 
     // Wire radio change
@@ -11049,6 +11078,7 @@
           <th class="sortable" data-key="gene" style="cursor:pointer">Gene</th>
           <th class="sortable" data-key="pos" style="cursor:pointer">Position</th>
           <th style="max-width:120px;overflow:hidden">Ref → Alt</th>
+          <th style="min-width:110px">c.Number</th>
           <th class="sortable" data-key="depth" style="cursor:pointer">Depth</th>
           <th class="sortable" data-key="vaf" style="cursor:pointer">VAF</th>
           <th>Tags</th>
@@ -11215,6 +11245,7 @@
           <td style="font-weight:600">${escapeHtml(v.gene || '-')}</td>
           <td class="muted" style="font-size:11px">${escapeHtml(posStr)}</td>
           <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(v.ref || '')} → ${escapeHtml(v.alt || '')}">${escapeHtml((v.ref||'').length > 10 ? v.ref.slice(0,10)+'…' : (v.ref||''))} → ${escapeHtml((v.alt||'').length > 10 ? v.alt.slice(0,10)+'…' : (v.alt||''))}</td>
+          <td style="font-size:11px;white-space:nowrap;color:${v.hgmd_hgvsc ? 'inherit' : 'var(--muted,#9ca3af)'}" title="${escapeHtml(v.hgmd_hgvsc || v.hgvsc || '')}">${escapeHtml(v.hgmd_hgvsc || v.hgvsc || '—')}</td>
           <td>${v.depth != null ? v.depth : '-'}</td>
           <td>${v.vaf != null ? (v.vaf * 100).toFixed(1) + '%' : '-'}</td>
           <td style="white-space:nowrap">${variantSetTagPillsHtml(getVariantSetTags(v))}</td>

@@ -1872,9 +1872,9 @@
           <p id="aiOllamaStatus" class="muted" style="font-size:11px;margin:0"></p>
         </div>
 
-        <!-- Apply button -->
+        <!-- Apply button (for Ollama URL/model changes) -->
         <div style="margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button type="button" class="btn primary" style="font-size:12px;padding:7px 18px" onclick="applyAiProviderConfig()">Apply</button>
+          <button type="button" class="btn primary" style="font-size:12px;padding:7px 18px" onclick="applyAiProviderConfig()">Apply Ollama Settings</button>
           <span id="aiCfgResult" class="muted" style="font-size:12px"></span>
         </div>
       </div>
@@ -2734,9 +2734,27 @@
       if (localPanel)  localPanel.classList.toggle('hidden',  provider !== 'local');
     }
 
-    // Wire radio change
+    // Wire radio change — auto-apply provider immediately on selection
     document.querySelectorAll('input[name="aiProviderRadio"]').forEach(r => {
-      r.addEventListener('change', () => toggleAiPanels(r.value));
+      r.addEventListener('change', () => {
+        toggleAiPanels(r.value);
+        applyAiProviderConfig();
+        if (r.value === 'ollama') refreshOllamaModels();
+        if (r.value === 'local') {
+          const hgmdEl    = qs('aiLocalHgmdStatus');
+          const clinvarEl = qs('aiLocalClinvarStatus');
+          fetch(`${API_BASE}/ai/config`, { headers: apiFetchHeaders() })
+            .then(res => res.json())
+            .then(d => {
+              if (hgmdEl)    hgmdEl.innerHTML    = d.local && d.local.hgmd_vcf
+                ? `<span style="color:var(--done,#16a34a)">✓ ${d.local.hgmd_vcf}</span>`
+                : '<span style="color:var(--err,#ef4444)">✗ HGMD_VCF not set</span>';
+              if (clinvarEl) clinvarEl.innerHTML = d.local && d.local.clinvar_vcf
+                ? `<span style="color:var(--done,#16a34a)">✓ ${d.local.clinvar_vcf}</span>`
+                : '<span style="color:var(--err,#ef4444)">✗ CLINVAR_VCF not set</span>';
+            }).catch(() => {});
+        }
+      });
     });
 
     async function refreshOllamaModels() {

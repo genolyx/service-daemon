@@ -1810,16 +1810,12 @@
       <div class="form-section-card" style="max-width:1200px;margin-bottom:18px">
         <h4 style="margin:0 0 6px;font-size:14px">AI Provider</h4>
         <p class="muted" style="font-size:12px;margin:0 0 14px;line-height:1.5">
-          <strong>Gene Knowledge</strong> (New search / write-up) source selection.
-          Local (HGMD+ClinVar) queries local files instantly — no AI call needed. Gemini requires a Google API key. Ollama uses a local LLM model.
+          Select the AI provider for <strong>Gene Knowledge</strong> (New search / write-up).
+          Gemini requires a Google API key. Ollama uses a local LLM model.
         </p>
 
         <!-- Provider radio -->
         <div style="display:flex;gap:18px;margin-bottom:14px;flex-wrap:wrap">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
-            <input type="radio" name="aiProviderRadio" id="aiProviderLocal" value="local" style="accent-color:var(--brand)" />
-            <strong>Local (HGMD+ClinVar)</strong>
-          </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
             <input type="radio" name="aiProviderRadio" id="aiProviderGemini" value="gemini" style="accent-color:var(--brand)" />
             <strong>Gemini</strong>
@@ -1837,18 +1833,6 @@
           </p>
           <p class="muted" style="font-size:11px;margin:0">
             Gemini API key is loaded from <code>GEMINI_API_KEY</code> in the gx-daemon <code>.env</code>.
-          </p>
-        </div>
-
-        <!-- Local (HGMD+ClinVar) panel -->
-        <div id="aiCfgLocalPanel" class="hidden">
-          <p class="muted" style="font-size:12px;margin:0 0 6px">
-            HGMD VCF: <span id="aiLocalHgmdStatus" class="muted">—</span><br>
-            ClinVar VCF: <span id="aiLocalClinvarStatus" class="muted">—</span>
-          </p>
-          <p class="muted" style="font-size:11px;margin:0">
-            Queries local files instantly. Aggregates HGMD DM/DM? variants and ClinVar P/LP evidence — no AI call required.<br>
-            File paths are loaded from <code>HGMD_VCF</code> and <code>CLINVAR_VCF</code> in the gx-daemon <code>.env</code>.
           </p>
         </div>
 
@@ -2711,27 +2695,14 @@
         toggleAiPanels(provider);
         // If ollama is current provider, refresh model list
         if (provider === 'ollama') refreshOllamaModels();
-        // If local is current provider, show file status
-        if (provider === 'local') {
-          const hgmdEl    = qs('aiLocalHgmdStatus');
-          const clinvarEl = qs('aiLocalClinvarStatus');
-          if (hgmdEl)    hgmdEl.innerHTML    = d.local && d.local.hgmd_vcf
-            ? `<span style="color:var(--done,#16a34a)">✓ ${d.local.hgmd_vcf}</span>`
-            : '<span style="color:var(--err,#ef4444)">✗ HGMD_VCF not set</span>';
-          if (clinvarEl) clinvarEl.innerHTML = d.local && d.local.clinvar_vcf
-            ? `<span style="color:var(--done,#16a34a)">✓ ${d.local.clinvar_vcf}</span>`
-            : '<span style="color:var(--err,#ef4444)">✗ CLINVAR_VCF not set</span>';
-        }
       } catch (e) { /* daemon may not support /ai/config yet */ }
     }
 
     function toggleAiPanels(provider) {
       const geminiPanel = qs('aiCfgGeminiPanel');
       const ollamaPanel = qs('aiCfgOllamaPanel');
-      const localPanel  = qs('aiCfgLocalPanel');
       if (geminiPanel) geminiPanel.classList.toggle('hidden', provider !== 'gemini');
       if (ollamaPanel) ollamaPanel.classList.toggle('hidden', provider !== 'ollama');
-      if (localPanel)  localPanel.classList.toggle('hidden',  provider !== 'local');
     }
 
     // Wire radio change — auto-apply provider immediately on selection
@@ -2740,20 +2711,6 @@
         toggleAiPanels(r.value);
         applyAiProviderConfig();
         if (r.value === 'ollama') refreshOllamaModels();
-        if (r.value === 'local') {
-          const hgmdEl    = qs('aiLocalHgmdStatus');
-          const clinvarEl = qs('aiLocalClinvarStatus');
-          fetch(`${API_BASE}/ai/config`, { headers: apiFetchHeaders() })
-            .then(res => res.json())
-            .then(d => {
-              if (hgmdEl)    hgmdEl.innerHTML    = d.local && d.local.hgmd_vcf
-                ? `<span style="color:var(--done,#16a34a)">✓ ${d.local.hgmd_vcf}</span>`
-                : '<span style="color:var(--err,#ef4444)">✗ HGMD_VCF not set</span>';
-              if (clinvarEl) clinvarEl.innerHTML = d.local && d.local.clinvar_vcf
-                ? `<span style="color:var(--done,#16a34a)">✓ ${d.local.clinvar_vcf}</span>`
-                : '<span style="color:var(--err,#ef4444)">✗ CLINVAR_VCF not set</span>';
-            }).catch(() => {});
-        }
       });
     });
 

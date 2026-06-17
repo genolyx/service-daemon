@@ -188,7 +188,12 @@ def _is_csv_filename(name: str) -> bool:
 def _bam_csv_root_for_service(service_code: Optional[str]) -> str:
     """BAM samplesheet CSV 브라우져용 루트 디렉터리 (서비스별)."""
     sc = (service_code or "").strip().lower().replace("-", "_")
-    if sc in ("carrier_screening", "whole_exome", "health_screening"):
+    if sc in ("carrier_screening", "whole_exome", "health_screening", "extended_services"):
+        # Use pipeline data dir (e.g. /home/ken/gx-exome/data) as browse root
+        data_dir = settings.get_carrier_screening_data_dir()
+        if os.path.isdir(data_dir):
+            return os.path.realpath(data_dir)
+        # Fallback: artifact work root / data
         return os.path.realpath(os.path.join(settings.carrier_screening_work_root, "data"))
     # sgnipt (default): SGNIPT_DATA_DIR 우선, 없으면 sgnipt_job_root/data
     data_dir = (settings.sgnipt_data_dir or "").strip()

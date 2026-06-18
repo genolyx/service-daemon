@@ -2353,7 +2353,7 @@ async def _dark_genes_review_impl(order_id: str, body: DarkGenesReviewRequest) -
 
     def _apply() -> Dict[str, Any]:
         from app.services.carrier_screening.dark_genes import (
-            align_section_reviews,
+            apply_reviewer_section_reviews,
             ensure_dark_genes_detailed_sections,
             _coerce_risk_level,
         )
@@ -2381,7 +2381,7 @@ async def _dark_genes_review_impl(order_id: str, body: DarkGenesReviewRequest) -
                 item["risk"] = _coerce_risk_level(x.risk)
             incoming.append(item)
         dg2 = dict(dg)
-        dg2["section_reviews"] = align_section_reviews(incoming, n, sections)
+        dg2["section_reviews"] = apply_reviewer_section_reviews(incoming, n, sections)
         data["dark_genes"] = dg2
         write_carrier_result_json_sync(job, data)
         return data
@@ -2455,6 +2455,7 @@ async def _pgx_review_impl(order_id: str, body: PgxReviewRequest) -> Dict[str, A
             "reviewer_notes": (body.reviewer_notes or "")[:16000],
             "reviewed": bool(body.reviewed),
             "include_apoe_proactive_pdf": bool(body.include_apoe_proactive_pdf),
+            "inclusions_saved": True,
         }
         grs = pgx2.get("gene_results")
         if isinstance(grs, list) and body.gene_reviews is not None:

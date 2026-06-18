@@ -130,6 +130,42 @@
     .nipt-filt-btn:hover{border-color:var(--accent);color:var(--accent)}
     .nipt-filt-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 
+    /* ── sgNIPT Variant Table enhancements ───────────────────── */
+    .sgnipt-stat-cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+    .sgnipt-stat-card{flex:1;min-width:120px;padding:10px 14px;border-radius:12px;background:var(--card-2);border:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
+    .sgnipt-stat-card .stat-val{font-size:22px;font-weight:700;line-height:1.1}
+    .sgnipt-stat-card .stat-lbl{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+    .sgnipt-stat-card.stat-fetal .stat-val{color:#3b82f6}
+    .sgnipt-stat-card.stat-patho .stat-val{color:#ef4444}
+    .sgnipt-stat-card.stat-combo .stat-val{color:#f97316}
+
+    .sgnipt-tab-bar{display:flex;gap:4px;margin-bottom:8px;border-bottom:1px solid var(--line);padding-bottom:6px}
+    .sgnipt-tab-btn{padding:5px 14px;font-size:12px;font-weight:600;border-radius:8px 8px 0 0;cursor:pointer;border:1px solid transparent;background:transparent;color:var(--muted);transition:.15s all;white-space:nowrap}
+    .sgnipt-tab-btn:hover{background:var(--card-2);color:var(--text)}
+    .sgnipt-tab-btn.active{background:var(--card-2);border-color:var(--line);border-bottom-color:var(--card-2);color:var(--accent);margin-bottom:-1px}
+
+    .sgnipt-col-toggle{position:relative;display:inline-block}
+    .sgnipt-col-toggle-panel{display:none;position:absolute;right:0;top:110%;z-index:200;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:180px;box-shadow:0 4px 18px rgba(0,0,0,.18)}
+    .sgnipt-col-toggle.open .sgnipt-col-toggle-panel{display:block}
+    .sgnipt-col-toggle-panel label{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px;cursor:pointer;white-space:nowrap}
+
+    .sgnipt-badge{display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;background:rgba(99,102,241,.15);color:#6366f1;margin-left:4px;vertical-align:middle;letter-spacing:.03em}
+
+    .var-row-expand{display:none;background:var(--card-2)}
+    .var-row-expand.open{display:table-row}
+    .var-row-expand td{padding:10px 16px;border-bottom:1px solid var(--line);white-space:normal}
+    .var-expand-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px 20px;white-space:normal}
+    .var-expand-item{font-size:12px;white-space:normal}
+    .var-expand-item.wide{grid-column:1/-1}
+    .var-expand-item.span3{grid-column:span 3}
+    .var-expand-item .expand-key{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;white-space:normal}
+    .var-expand-item .expand-val{font-family:monospace;word-break:break-all;white-space:pre-wrap;font-size:12px;line-height:1.5}
+
+    .var-row-fetal-patho td{background:rgba(239,68,68,.07)!important}
+    .var-row-fetal td{background:rgba(59,130,246,.06)!important}
+    .var-row-mat-patho td{background:rgba(249,115,22,.06)!important}
+    .var-warn-icon{display:inline-block;margin-left:5px;color:#f59e0b;cursor:help;font-size:12px}
+
     .orders-table-hint{margin:0 0 10px;font-size:12px;line-height:1.45}
     .orders-filters-token-bar{display:flex;justify-content:flex-end;align-items:center;margin:0 0 10px}
     .search-tokens-switch{display:inline-flex;align-items:center;gap:6px;flex-shrink:0}
@@ -266,10 +302,10 @@
     .variant-set-expand-table tr.variant-set-expand-current td{background:rgba(234,179,8,.12);font-weight:600}
     .variant-set-expand-table tr:hover td{background:rgba(106,163,255,.08)}
     .variant-detail{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:12px}
-    .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .detail-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px 16px}
     .detail-item{padding:4px 0}
     .detail-item .detail-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
-    .detail-item .detail-value{font-size:13px;color:var(--text);margin-top:2px;word-break:break-all}
+    .detail-item .detail-value{font-size:13px;color:var(--text);margin-top:2px;word-break:break-all;white-space:normal}
     .checkbox-label{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px}
     .checkbox-label input[type="checkbox"]{width:auto;cursor:pointer}
     /* Carrier create — Couples report mode: two columns, radio + label grouped */
@@ -1998,22 +2034,34 @@
           </div>
         </div>
         <!-- sgNIPT-only: Origin / Confidence filter buttons (shown/hidden by JS) -->
-        <div id="sgniptVariantFilters" class="hidden" style="display:flex;gap:5px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-          <span class="muted" style="font-size:11px;font-weight:600;white-space:nowrap">Origin:</span>
-          <button class="nipt-filt-btn active" data-filt="origin" data-val="">All</button>
-          <button class="nipt-filt-btn" data-filt="origin" data-val="fetal_specific">Fetal</button>
-          <button class="nipt-filt-btn" data-filt="origin" data-val="maternal">Maternal</button>
-          <button class="nipt-filt-btn" data-filt="origin" data-val="maternal_het">Mat. Het</button>
-          <button class="nipt-filt-btn" data-filt="origin" data-val="ambiguous">Ambiguous</button>
-          <span class="muted" style="font-size:11px;font-weight:600;white-space:nowrap;margin-left:10px">Confidence:</span>
-          <button class="nipt-filt-btn active" data-filt="conf" data-val="">All</button>
-          <button class="nipt-filt-btn" data-filt="conf" data-val="high">High</button>
-          <button class="nipt-filt-btn" data-filt="conf" data-val="medium">Medium</button>
-          <span style="margin-left:12px;border-left:1px solid var(--border);padding-left:12px">
-            <button id="btnSgniptClassify" class="btn-secondary" style="font-size:11px;padding:4px 10px" title="Apply ClinVar/HGMD classification to currently filtered variants">🔍 Classify</button>
-            <span id="sgniptClassifyStatus" class="muted" style="font-size:11px;margin-left:6px"></span>
-          </span>
-          <button class="nipt-filt-btn" data-filt="conf" data-val="low">Low</button>
+        <div id="sgniptVariantFilters" class="hidden">
+          <!-- Summary stat cards -->
+          <div id="sgniptStatCards" class="sgnipt-stat-cards"></div>
+          <!-- Tab bar: All / Fetal / P·LP / Maternal -->
+          <div class="sgnipt-tab-bar" id="sgniptTabBar" style="justify-content:space-between;align-items:center">
+            <div style="display:flex;gap:4px">
+              <button class="sgnipt-tab-btn active" data-tab="all">All</button>
+              <button class="sgnipt-tab-btn" data-tab="fetal">Fetal <span id="sgniptTabFetalCount" class="pill inp" style="font-size:9px;padding:1px 5px;margin-left:2px"></span></button>
+              <button class="sgnipt-tab-btn" data-tab="plp">P / LP <span id="sgniptTabPlpCount" class="pill err" style="font-size:9px;padding:1px 5px;margin-left:2px"></span></button>
+              <button class="sgnipt-tab-btn" data-tab="maternal">Maternal</button>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <button id="btnSgniptClassify" class="btn-secondary" style="font-size:11px;padding:4px 10px" title="Apply ClinVar/HGMD classification to currently filtered variants">🔍 Classify</button>
+              <span id="sgniptClassifyStatus" class="muted" style="font-size:11px"></span>
+              <div class="sgnipt-col-toggle" id="sgniptColToggleWrap">
+                <button class="btn" style="font-size:11px;padding:4px 10px" onclick="toggleSgniptColPanel(event)">Columns ▾</button>
+                <div class="sgnipt-col-toggle-panel" id="sgniptColTogglePanel"></div>
+              </div>
+            </div>
+          </div>
+          <!-- Confidence sub-filter (shown inside All/Fetal tabs) -->
+          <div id="sgniptConfFilterRow" style="display:flex;gap:5px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+            <span class="muted" style="font-size:11px;font-weight:600;white-space:nowrap">Confidence:</span>
+            <button class="nipt-filt-btn active" data-filt="conf" data-val="">All</button>
+            <button class="nipt-filt-btn" data-filt="conf" data-val="high">High</button>
+            <button class="nipt-filt-btn" data-filt="conf" data-val="medium">Medium</button>
+            <button class="nipt-filt-btn" data-filt="conf" data-val="low">Low</button>
+          </div>
         </div>
         <div class="table-wrap" style="max-height:55vh">
           <table id="tblVariants">
@@ -2266,6 +2314,16 @@
         <button type="button" class="btn" onclick="variantDbEditClose()">Cancel</button>
         <button type="button" class="btn primary" id="variantDbEditSaveBtn" onclick="variantDbEditSave()">Save</button>
       </div>
+    </div>
+  </div>
+
+  <div id="sgniptDetailModal" class="modal-overlay hidden" style="z-index:20010" aria-hidden="true" onclick="if(event.target===this)_sgniptDetailClose()">
+    <div class="modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()" style="max-width:min(680px,95vw);max-height:min(88vh,720px);overflow:auto;padding:18px 20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h3 id="sgniptDetailTitle" style="margin:0;font-size:15px;font-weight:700">Variant Detail</h3>
+        <button type="button" class="btn" style="padding:4px 10px;font-size:11px" onclick="_sgniptDetailClose()">Close</button>
+      </div>
+      <div id="sgniptDetailBody"></div>
     </div>
   </div>
 
@@ -3296,6 +3354,16 @@
     let variantSetsPageExpandedTag = null;
     // sgNIPT-specific filter / sort state
     let sgniptOriginFilter = '', sgniptConfFilter = '', sgniptSortKey = null, sgniptSortAsc = true;
+    let _sgniptActiveTab = 'all'; // 'all' | 'fetal' | 'plp' | 'maternal'
+    const SGNIPT_TIER2_COLS = [
+      { key: 'transcript', label: 'Transcript (NM)', def: true },
+      { key: 'effect',     label: 'Effect / Impact', def: true },
+      { key: 'allele_depth', label: 'Allele Depth',  def: true },
+      { key: 'zygosity',  label: 'Zygosity',          def: true },
+      { key: 'gnomad',    label: 'gnomAD AF',          def: true },
+      { key: 'disease',   label: 'Disease',            def: true },
+    ];
+    let _sgniptColVisible = Object.fromEntries(SGNIPT_TIER2_COLS.map(c => [c.key, c.def]));
 
     // sgNIPT on-demand ClinVar/ACMG classification state
     let _sgniptClassifyOrderId = null;
@@ -3333,21 +3401,33 @@
           byKey[k] = r;
         }
         let updated = false;
-        if (reviewData && reviewData.variants) {
-          for (const v of reviewData.variants) {
-            const k = `${v.chrom}:${v.pos}:${v.ref}:${v.alt}`;
-            if (byKey[k]) {
-              const r = byKey[k];
-              if (r.acmg_classification) { v.acmg_classification = r.acmg_classification; updated = true; }
-              if (r.acmg_criteria)       { v.acmg_criteria = r.acmg_criteria; }
-              if (r.acmg_reasoning)      { v.acmg_reasoning = r.acmg_reasoning; }
-              if (r.acmg_confidence)     { v.acmg_confidence = r.acmg_confidence; }
-              if (r.clinvar_sig_primary) { v.clinvar_sig_primary = r.clinvar_sig_primary; updated = true; }
-              if (r.clinvar_stars != null){ v.clinvar_stars = r.clinvar_stars; }
-              if (r.clinvar_dn)          { v.clinvar_dn = r.clinvar_dn; }
-              if (r.gnomad_af != null)   { v.gnomad_af = r.gnomad_af; }
+        const _applyClassifyResult = (v) => {
+          const k = `${v.chrom}:${v.pos}:${v.ref}:${v.alt}`;
+          if (byKey[k]) {
+            const r = byKey[k];
+            if (r.acmg_classification) { v.acmg_classification = r.acmg_classification; updated = true; }
+            if (r.acmg_criteria)       { v.acmg_criteria = r.acmg_criteria; }
+            if (r.acmg_reasoning)      { v.acmg_reasoning = r.acmg_reasoning; }
+            if (r.acmg_confidence)     { v.acmg_confidence = r.acmg_confidence; }
+            if (r.clinvar_sig_primary) { v.clinvar_sig_primary = r.clinvar_sig_primary; updated = true; }
+            if (r.clinvar_stars != null){ v.clinvar_stars = r.clinvar_stars; }
+            if (r.clinvar_dn)          { v.clinvar_dn = r.clinvar_dn; }
+            if (r.gnomad_af != null)   { v.gnomad_af = r.gnomad_af; }
+            // Also patch vep.clinvar if present (for sgNIPT new-style variant_analysis)
+            if (v.vep) {
+              v.vep.clinvar = v.vep.clinvar || {};
+              if (r.clinvar_sig_primary) v.vep.clinvar.clnsig = r.clinvar_sig_primary;
+              if (r.clinvar_dn) v.vep.clinvar.clndn = r.clinvar_dn;
             }
           }
+        };
+        if (reviewData && reviewData.variants) {
+          for (const v of reviewData.variants) _applyClassifyResult(v);
+        }
+        // Also patch fetal_specific_detail / pathogenic_details
+        const _va = (reviewData && reviewData.variant_analysis) || {};
+        for (const arr of [_va.fetal_specific_detail, _va.pathogenic_details]) {
+          if (Array.isArray(arr)) arr.forEach(_applyClassifyResult);
         }
         if (updated) renderSgNIPTVariantsTable();
       } catch (e) {
@@ -7670,8 +7750,15 @@
         if (_classF) _classF.style.display = '';
         if (_clinF)  _clinF.style.display  = '';
         // Reset sgNIPT filter/sort state on every review load
-        sgniptOriginFilter = ''; sgniptConfFilter = ''; sgniptSortKey = null; sgniptSortAsc = true;
+        _sgniptActiveTab = 'all';
+        sgniptConfFilter = ''; sgniptSortKey = null; sgniptSortAsc = true;
+        document.querySelectorAll('.sgnipt-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === 'all'));
         document.querySelectorAll('.nipt-filt-btn').forEach(b => b.classList.toggle('active', b.dataset.val === ''));
+        // Wire tab buttons
+        document.querySelectorAll('.sgnipt-tab-btn').forEach(b => { b.onclick = () => setSgniptTab(b.dataset.tab); });
+        // Show conf filter row
+        const _confRow = qs('sgniptConfFilterRow');
+        if (_confRow) _confRow.style.display = 'flex';
         const vafModeEl = qs('variantVafFilterMode');
         const vafFromEl = qs('variantVafFrom');
         const vafToEl = qs('variantVafTo');
@@ -7681,6 +7768,21 @@
         syncVariantVafFilterInputs();
         const tagFilt = qs('variantTagFilter');
         if (tagFilt) tagFilt.value = '';
+
+        // If sgNIPT result has variant_analysis.fetal_specific_detail, use it directly.
+        // Otherwise fall back to clinical_findings for backward compat.
+        if (isSgNIPT) {
+          const va = reviewData.variant_analysis || {};
+          if (!Array.isArray(va.fetal_specific_detail)) {
+            // Build variant_analysis.fetal_specific_detail from clinical_findings
+            const cf = reviewData.clinical_findings || [];
+            if (!reviewData.variant_analysis) reviewData.variant_analysis = {};
+            reviewData.variant_analysis.fetal_specific_detail = cf;
+            reviewData.variant_analysis.pathogenic_details = cf.filter(v =>
+              v.pathogenic_variant || (v.clinvar_sig_primary || '').toLowerCase().includes('pathogenic')
+            );
+          }
+        }
 
         if (isSgNIPT && !Array.isArray(reviewData.variants)) {
           // target_name에서 첫 번째 유전자명 추출 (예: "COL4A2_ENST00000..." → "COL4A2")
@@ -10402,25 +10504,36 @@
       return o.slice(0, n).map((e, i) => {
         const sec = sections && sections[i];
         const notes = String(e.notes || '');
+        if (e && e.reviewer_set) {
+          const risk =
+            e.risk === 'low' ? 'low' : e.risk === 'high' ? 'high' : inferPipelineDangerForSection(sec) ? 'high' : 'low';
+          return { approved: !!e.approved, notes, risk, reviewer_set: true };
+        }
         const inferred = inferPipelineDangerForSection(sec);
+        const hasTier = e && Object.prototype.hasOwnProperty.call(e, 'risk') && e.risk != null && e.risk !== '';
         let risk;
-        if (inferred) {
-          risk = 'high';
-        } else if (e && Object.prototype.hasOwnProperty.call(e, 'risk') && e.risk != null && e.risk !== '') {
+        if (hasTier) {
           risk = e.risk === 'low' ? 'low' : 'high';
+        } else if (inferred) {
+          risk = 'high';
         } else {
           risk = 'low';
         }
-        const storedExplicitHigh =
-          e && Object.prototype.hasOwnProperty.call(e, 'risk') && e.risk === 'high';
         let approved = !!e.approved;
-        if (inferred && !storedExplicitHigh) {
+        if (inferred && risk === 'low') {
+          risk = 'high';
+          approved = false;
+        } else if (inferred && hasTier && e.risk !== 'high') {
+          approved = false;
+        } else if (inferred && !hasTier) {
           approved = false;
         }
+        const explicitlyUnapproved = e && e.reviewer_set && e.approved === false;
         if (
           risk === 'low' &&
           darkGenesSectionAlwaysOnCustomerPdf(sec) &&
-          !darkGenesSectionExcludesLowRiskAutoApprove(sec)
+          !darkGenesSectionExcludesLowRiskAutoApprove(sec) &&
+          !explicitlyUnapproved
         ) {
           approved = true;
         }
@@ -11266,30 +11379,181 @@
       setVariantCountDisplay(reviewVariantFilterShown, reviewVariantFilterTotal, selectedVariants.size);
     }
 
-    // ── Variants Table ──
+    // ── sgNIPT Variant Table ─────────────────────────────────────
+
+    function toggleSgniptColPanel(e) {
+      e.stopPropagation();
+      const wrap = qs('sgniptColToggleWrap');
+      if (wrap) wrap.classList.toggle('open');
+    }
+    document.addEventListener('click', () => {
+      const wrap = qs('sgniptColToggleWrap');
+      if (wrap) wrap.classList.remove('open');
+    });
+
+    function _buildSgniptColTogglePanel() {
+      const panel = qs('sgniptColTogglePanel');
+      if (!panel) return;
+      panel.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">Tier 2 Columns</div>' +
+        SGNIPT_TIER2_COLS.map(c =>
+          `<label><input type="checkbox" ${_sgniptColVisible[c.key] ? 'checked' : ''} onchange="_sgniptColVisible['${c.key}']=this.checked;renderSgNIPTVariantsTable()" />${c.label}</label>`
+        ).join('');
+    }
+
+    function setSgniptTab(tab) {
+      _sgniptActiveTab = tab;
+      document.querySelectorAll('.sgnipt-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+      const confRow = qs('sgniptConfFilterRow');
+      if (confRow) confRow.style.display = (tab === 'all' || tab === 'fetal') ? 'flex' : 'none';
+      renderSgNIPTVariantsTable();
+    }
+
+    function _sgniptNormVariant(v, idx) {
+      const vep = v.vep || {};
+      const cv = vep.clinvar || {};
+      const clnsig = cv.clnsig || v.clinvar_sig_primary || '';
+      const clnsigMap = {
+        'Pathogenic': 'Pathogenic', 'pathogenic': 'Pathogenic',
+        'Likely_pathogenic': 'Likely pathogenic', 'likely_pathogenic': 'Likely pathogenic',
+        'Uncertain_significance': 'VUS', 'uncertain_significance': 'VUS',
+        'Likely_benign': 'Likely benign', 'likely_benign': 'Likely benign',
+        'Benign': 'Benign', 'benign': 'Benign',
+      };
+      const acmgMap = {
+        'Pathogenic': 'P', 'Likely pathogenic': 'LP', 'VUS': 'VUS',
+        'Likely benign': 'LB', 'Benign': 'B',
+      };
+      const clnsigNorm = clnsigMap[clnsig] || clnsig || v.acmg_classification || '';
+      const acmgShort = acmgMap[clnsigNorm] || '';
+
+      // HGVSc: strip transcript prefix (NM_xxx.y: / ENST000xxx.y: / ENSP000xxx.y: etc.)
+      const stripPrefix = s => (s || '').replace(/^[A-Z0-9]+[\d._]*:/, '');
+      const hgvsc = stripPrefix(vep.hgvsc || v.hgvsc || v.pathogenic_variant || '');
+      const hgvsp = stripPrefix(vep.hgvsp || v.hgvsp || '');
+
+      // gnomAD AF
+      const gnomad = vep.gnomad_af != null ? vep.gnomad_af : (v.gnomad_af != null ? v.gnomad_af : null);
+
+      // allele depth
+      const vaf = v.vaf != null ? v.vaf : null;
+      const dep = v.depth != null ? v.depth : null;
+      const altCnt = (vaf != null && dep != null) ? Math.round(vaf * dep) : null;
+      const refCnt = (altCnt != null && dep != null) ? dep - altCnt : null;
+
+      // effect: strip _variant suffix, replace _ with space
+      const conseq = (vep.consequence || v.effect || '').replace(/_variant$/, '').replace(/_/g, ' ');
+      const impact = vep.impact || v.impact || '';
+
+      // Tags
+      const tags = [];
+      const origin = v.origin || '';
+      if (origin === 'fetal_specific' || origin === 'fetal') tags.push({ label: 'Fetal', cls: 'inp' });
+      if (clnsigNorm === 'Pathogenic') tags.push({ label: 'Pathogenic', cls: 'err' });
+      else if (clnsigNorm === 'Likely pathogenic') tags.push({ label: 'Likely Path.', cls: 'warn' });
+      else if (clnsigNorm === 'VUS') tags.push({ label: 'VUS', cls: 'new' });
+      if ((v.confidence || '').toLowerCase() === 'low') tags.push({ label: 'Low conf.', cls: 'new' });
+      if (v.in_zero_probe_region) tags.push({ label: 'Low cov. region', cls: 'warn' });
+      if (gnomad == null && !(vep.existing || '').trim()) tags.push({ label: 'Novel', cls: 'inp' });
+
+      return {
+        ...v,
+        _vep: vep, _cv: cv,
+        variant_id: v.variant_id || `NIPT_${String(idx + 1).padStart(4, '0')}`,
+        gene: vep.symbol || v.gene || '',
+        hgvsc, hgvsp,
+        transcript: vep.mane || '',
+        effect: conseq, impact,
+        gnomad_af: gnomad,
+        alt_count: altCnt, ref_count: refCnt,
+        clnsig_norm: clnsigNorm,
+        acmg_short: acmgShort,
+        _tags: tags,
+        clinvar_sig_primary: clnsigNorm || v.clinvar_sig_primary || '',
+        acmg_classification: clnsigNorm || v.acmg_classification || '',
+      };
+    }
+
+    function _getSgniptSourceVariants(tab) {
+      const va = reviewData.variant_analysis || {};
+      const fetalDetail = Array.isArray(va.fetal_specific_detail) ? va.fetal_specific_detail : null;
+      const pathoDetail = Array.isArray(va.pathogenic_details) ? va.pathogenic_details : null;
+      const fallback = reviewData.variants || [];
+
+      if (tab === 'plp') {
+        const src = pathoDetail || fallback.filter(v => {
+          const s = (v.clinvar_sig_primary || v.acmg_classification || '').toLowerCase();
+          return s.includes('pathogenic');
+        });
+        return src.slice(0, 10).map(_sgniptNormVariant);
+      }
+      const base = fetalDetail || fallback;
+      let src = base.slice(0, 20);
+      if (tab === 'fetal') src = base.filter(v => (v.origin === 'fetal_specific' || v.origin === 'fetal'));
+      if (tab === 'maternal') src = base.filter(v => v.origin === 'maternal' || v.origin === 'maternal_het');
+      return src.map(_sgniptNormVariant);
+    }
+
+    function _renderSgniptStatCards() {
+      const el = qs('sgniptStatCards');
+      if (!el) return;
+      const va = reviewData.variant_analysis || reviewData.variant_analysis_summary || {};
+      const fetalDetail = Array.isArray((reviewData.variant_analysis || {}).fetal_specific_detail)
+        ? reviewData.variant_analysis.fetal_specific_detail : (reviewData.variants || []);
+      const totalV = va.total_variants ?? (reviewData.variants || []).length;
+      const fetalV = va.fetal_variants ?? fetalDetail.filter(v => v.origin === 'fetal_specific' || v.origin === 'fetal').length;
+      const pathoV = va.pathogenic_variants ?? 0;
+      const fetalPatho = fetalDetail.filter(v => {
+        const o = v.origin || '';
+        const s = ((v.vep && v.vep.clinvar && v.vep.clinvar.clnsig) || v.clinvar_sig_primary || '').toLowerCase();
+        return (o === 'fetal_specific' || o === 'fetal') && (s.includes('pathogenic'));
+      }).length;
+
+      const tabCounts = { fetal: fetalV, plp: pathoV };
+      const fetalCountEl = qs('sgniptTabFetalCount');
+      const plpCountEl = qs('sgniptTabPlpCount');
+      if (fetalCountEl) fetalCountEl.textContent = fetalV > 0 ? fetalV : '';
+      if (plpCountEl) plpCountEl.textContent = pathoV > 0 ? pathoV : '';
+
+      el.innerHTML = `
+        <div class="sgnipt-stat-card"><div class="stat-val">${totalV ?? '—'}</div><div class="stat-lbl">Total Variants</div></div>
+        <div class="sgnipt-stat-card stat-fetal"><div class="stat-val">${fetalV}</div><div class="stat-lbl">Fetal-Specific</div></div>
+        <div class="sgnipt-stat-card stat-patho"><div class="stat-val">${pathoV}</div><div class="stat-lbl">Pathogenic / LP</div></div>
+        <div class="sgnipt-stat-card stat-combo"><div class="stat-val">${fetalPatho}</div><div class="stat-lbl">Fetal + Pathogenic</div></div>
+      `;
+    }
+
     function renderSgNIPTVariantsTable() {
       const tbl = document.getElementById('tblVariants');
       if (!tbl) return;
 
-      // Build sgNIPT-specific thead only once; re-wire sort handlers each rebuild
+      _renderSgniptStatCards();
+      _buildSgniptColTogglePanel();
+
+      // Build thead
+      const col = _sgniptColVisible;
       const thead = tbl.querySelector('thead tr');
-      if (thead && !thead.querySelector('th[data-key="origin"]')) {
+      if (thead) {
         thead.innerHTML = `
           <th style="width:36px;text-align:center"><input type="checkbox" id="chkAllNipt" title="Select/deselect all" /></th>
-          <th class="sortable" data-key="gene" style="cursor:pointer">Gene</th>
-          <th class="sortable" data-key="pos" style="cursor:pointer">Position</th>
-          <th style="max-width:120px;overflow:hidden">Ref → Alt</th>
-          <th style="min-width:110px">c.Number</th>
-          <th class="sortable" data-key="depth" style="cursor:pointer">Depth</th>
-          <th class="sortable" data-key="vaf" style="cursor:pointer">VAF</th>
+          <th class="sortable" data-key="gene">Gene</th>
+          <th class="sortable" data-key="hgvsc" style="min-width:100px">HGVSc</th>
+          <th class="sortable" data-key="hgvsp" style="min-width:100px">HGVSp</th>
+          ${col.transcript ? `<th class="sortable" data-key="transcript" style="min-width:90px">Transcript</th>` : ''}
+          ${col.effect     ? `<th class="sortable" data-key="effect" style="width:160px;max-width:160px">Effect</th>` : ''}
+          <th class="sortable" data-key="origin">Origin</th>
+          <th class="sortable" data-key="vaf" style="text-align:right">VAF</th>
+          ${col.allele_depth ? `<th>Allele Depth</th>` : ''}
+          ${col.zygosity   ? `<th>Zygosity</th>` : ''}
+          ${col.gnomad     ? `<th class="sortable" data-key="gnomad_af">gnomAD AF</th>` : ''}
+          <th class="sortable" data-key="clnsig_norm">ClinVar</th>
+          <th class="sortable" data-key="acmg_short">ACMG</th>
+          <th class="sortable" data-key="confidence">Confidence</th>
           <th>Tags</th>
-          <th class="sortable" data-key="origin" style="cursor:pointer">Origin</th>
-          <th class="sortable" data-key="fetal_genotype" style="cursor:pointer">Fetal GT</th>
-          <th class="sortable" data-key="confidence" style="cursor:pointer">Confidence</th>
-          <th class="sortable" data-key="acmg_classification" style="cursor:pointer">ACMG / ClinVar</th>
-          <th>Disease / Target</th>
+          ${col.disease    ? `<th>Disease</th>` : ''}
+          <th>Action</th>
         `;
         thead.querySelectorAll('th.sortable').forEach(th => {
+          th.style.cursor = 'pointer';
           th.onclick = () => {
             const key = th.dataset.key;
             if (sgniptSortKey === key) sgniptSortAsc = !sgniptSortAsc;
@@ -11299,45 +11563,21 @@
         });
       }
 
-      const allVariants = reviewData.variants || [];
-      const variantTotal = allVariants.length;
-      let variants = allVariants;
+      let variants = _getSgniptSourceVariants(_sgniptActiveTab);
+      const variantTotal = variants.length;
 
       // Text search
-      const q = qs('variantSearch').value.trim().toLowerCase();
-      if (q) {
-        variants = variants.filter(v =>
-          (v.gene || '').toLowerCase().includes(q) ||
-          (v.disease || '').toLowerCase().includes(q) ||
-          (v.origin || '').toLowerCase().includes(q) ||
-          (v.target_name || '').toLowerCase().includes(q) ||
-          (`${v.chrom}:${v.pos}`).includes(q)
-        );
-      }
+      const q = (qs('variantSearch') || {}).value ? qs('variantSearch').value.trim().toLowerCase() : '';
+      if (q) variants = variants.filter(v =>
+        (v.gene || '').toLowerCase().includes(q) ||
+        (v.disease || '').toLowerCase().includes(q) ||
+        (v.hgvsc || '').toLowerCase().includes(q) ||
+        (`${v.chrom}:${v.pos}`).includes(q)
+      );
 
-      // Classification filter (shared with carrier)
-      const classFilter = qs('variantClassFilter').value;
-      if (classFilter) {
-        variants = variants.filter(v => v.acmg_classification === classFilter);
-      }
-
-      // ClinVar filter (shared with carrier)
-      const clinvarFilter = qs('variantClinvarFilter').value;
-      if (clinvarFilter) {
-        variants = variants.filter(v => {
-          const sig = (v.clinvar_sig_primary || '').toLowerCase();
-          const f = clinvarFilter.toLowerCase().replace(/_/g, ' ');
-          if (f === 'benign') return sig.includes('benign');
-          return sig.includes(f);
-        });
-      }
-
-      // Gene filter dropdown
-      const geneFilter = qs('variantGeneFilter').value;
+      // Gene filter
+      const geneFilter = (qs('variantGeneFilter') || {}).value || '';
       if (geneFilter) variants = variants.filter(v => v.gene === geneFilter);
-
-      // Origin filter
-      if (sgniptOriginFilter) variants = variants.filter(v => v.origin === sgniptOriginFilter);
 
       // Confidence filter
       if (sgniptConfFilter) variants = variants.filter(v => (v.confidence || '').toLowerCase() === sgniptConfFilter);
@@ -11347,138 +11587,299 @@
 
       // Sort
       if (sgniptSortKey) {
-        const chromRank = c => {
-          const n = parseInt((c || '').replace(/chr/i, ''));
-          if (!isNaN(n)) return n;
-          return /chrX/i.test(c) ? 23 : /chrY/i.test(c) ? 24 : 25;
-        };
+        const chromRank = c => { const n = parseInt((c||'').replace(/chr/i,'')); return isNaN(n) ? (/chrX/i.test(c)?23:/chrY/i.test(c)?24:25) : n; };
         variants = [...variants].sort((a, b) => {
           if (sgniptSortKey === 'pos') {
-            const ra = chromRank(a.chrom) * 3e8 + (parseInt(a.pos) || 0);
-            const rb = chromRank(b.chrom) * 3e8 + (parseInt(b.pos) || 0);
-            return sgniptSortAsc ? ra - rb : rb - ra;
+            const ra = chromRank(a.chrom)*3e8+(parseInt(a.pos)||0), rb = chromRank(b.chrom)*3e8+(parseInt(b.pos)||0);
+            return sgniptSortAsc ? ra-rb : rb-ra;
           }
-          if (sgniptSortKey === 'vaf' || sgniptSortKey === 'depth') {
-            const na = a[sgniptSortKey] ?? null, nb = b[sgniptSortKey] ?? null;
-            if (na == null && nb == null) return 0;
-            if (na == null) return sgniptSortAsc ? 1 : -1;
-            if (nb == null) return sgniptSortAsc ? -1 : 1;
-            return sgniptSortAsc ? na - nb : nb - na;
+          if (['vaf','depth','gnomad_af'].includes(sgniptSortKey)) {
+            const na = a[sgniptSortKey]??null, nb = b[sgniptSortKey]??null;
+            if (na==null&&nb==null) return 0;
+            if (na==null) return sgniptSortAsc?1:-1;
+            if (nb==null) return sgniptSortAsc?-1:1;
+            return sgniptSortAsc?na-nb:nb-na;
           }
-          let va = String(a[sgniptSortKey] ?? '').toLowerCase();
-          let vb = String(b[sgniptSortKey] ?? '').toLowerCase();
-          if (va < vb) return sgniptSortAsc ? -1 : 1;
-          if (va > vb) return sgniptSortAsc ? 1 : -1;
-          return 0;
+          const va2=String(a[sgniptSortKey]??'').toLowerCase(), vb2=String(b[sgniptSortKey]??'').toLowerCase();
+          return sgniptSortAsc ? va2.localeCompare(vb2) : vb2.localeCompare(va2);
         });
-        // Update sort indicator on headers
         if (thead) {
-          thead.querySelectorAll('th').forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+          thead.querySelectorAll('th').forEach(h => h.classList.remove('sort-asc','sort-desc'));
           const sortTh = thead.querySelector(`th[data-key="${sgniptSortKey}"]`);
-          if (sortTh) sortTh.classList.add(sgniptSortAsc ? 'sort-asc' : 'sort-desc');
+          if (sortTh) sortTh.classList.add(sgniptSortAsc?'sort-asc':'sort-desc');
         }
       }
 
-      // Cache for Classify button
       _sgniptVisibleVariants = variants;
-
       setVariantCountDisplay(variants.length, variantTotal, selectedVariants.size);
+
       const tb = qs('tblVariantsBody');
       tb.innerHTML = '';
 
-      const originLabel = {
-        fetal_specific: 'Fetal',
-        fetal: 'Fetal',
-        maternal_het: 'Mat. Het',
-        maternal_hom: 'Mat. Hom',
-        maternal: 'Maternal',
-        ambiguous: 'Ambiguous',
-        uncertain: 'Uncertain',
-      };
-      const confPill = { high: 'done', medium: 'warn', low: 'err' };
-      const acmgColor = cls => {
-        const c = (cls || '').toLowerCase();
-        if (c === 'pathogenic') return 'err';
-        if (c === 'likely pathogenic') return 'warn';
-        if (c === 'vus') return 'inp';
-        if (c === 'likely benign') return 'new';
-        if (c === 'benign') return 'done';
+      const originLabel = { fetal_specific:'Fetal', fetal:'Fetal', maternal_het:'Mat. Het', maternal_hom:'Mat. Hom', maternal:'Maternal', ambiguous:'Ambiguous', uncertain:'Uncertain' };
+      const originClass = o => (o==='fetal_specific'||o==='fetal') ? 'inp' : (o==='maternal'||o==='maternal_het'||o==='maternal_hom') ? 'new' : 'warn';
+      const confClass = c => ({ high:'done', medium:'warn', low:'err' }[c] || 'new');
+      const clsigColor = s => {
+        const sl = (s||'').toLowerCase();
+        if (sl.includes('pathogenic') && !sl.includes('likely')) return 'err';
+        if (sl.includes('likely path')) return 'warn';
+        if (sl.includes('vus')||sl.includes('uncertain')) return 'new';
+        if (sl.includes('benign')) return 'done';
         return 'new';
       };
+      const impactColor = i => ({ HIGH:'err', MODERATE:'warn', LOW:'new', MODIFIER:'new' }[(i||'').toUpperCase()] || 'new');
 
-      variants.forEach(v => {
+      variants.forEach((v, rowIdx) => {
         const isFetal = v.origin === 'fetal_specific' || v.origin === 'fetal';
-        const acmgCls = v.acmg_classification || '';
-        const isPathogenic = acmgCls.toLowerCase().includes('pathogenic') || v.pathogenic_variant;
-        const isSelected = selectedVariants.has(v.variant_id);
-        const tr = document.createElement('tr');
-        tr.className = 'variant-row' + (isSelected ? ' selected' : '');
-        if (isFetal) tr.style.background = 'rgba(239,68,68,.07)';
-        const posStr = `${v.chrom || ''}:${v.pos || ''}`;
-        const origLabel = originLabel[v.origin] || (v.origin || '-');
         const isMat = v.origin === 'maternal' || v.origin === 'maternal_het' || v.origin === 'maternal_hom';
-        const origClass = isFetal ? 'err' : isMat ? 'warn' : 'new';
-        const conf = (v.confidence || '').toLowerCase();
-        const confClass = confPill[conf] || 'inp';
-        const firstGene = (v.target_name || '').split('|')[0].split('_')[0];
-        const diseaseCell = v.disease
-          ? `<span title="${escapeHtml(v.target_name || '')}">${escapeHtml(v.disease)}</span>`
-          : (firstGene ? `<span title="${escapeHtml(v.target_name)}">${escapeHtml(firstGene)}</span>` : '-');
+        const isPatho = (v.clnsig_norm||'').toLowerCase().includes('pathogenic');
+        const isSelected = selectedVariants.has(v.variant_id);
+        const conf = (v.confidence||'').toLowerCase();
+        const col = _sgniptColVisible;
 
-        // Build ACMG / ClinVar cell
-        let acmgCell = '';
-        if (acmgCls) {
-          acmgCell = pill(acmgCls, acmgColor(acmgCls));
-          const criteria = (v.acmg_criteria || []).join(', ');
-          if (criteria) acmgCell += `<br><span class="muted" style="font-size:10px">${escapeHtml(criteria)}</span>`;
-        }
-        const cvPrim = v.clinvar_sig_primary || '';
-        if (cvPrim) {
-          const cvColor = acmgColor(cvPrim);
-          const stars = v.clinvar_stars ? ' ' + '★'.repeat(Math.min(v.clinvar_stars, 4)) : '';
-          acmgCell += (acmgCell ? '<br>' : '') + `<span class="pill ${cvColor}" style="font-size:10px" title="ClinVar${v.clinvar_dn ? ': ' + v.clinvar_dn : ''}">CV: ${escapeHtml(cvPrim)}${stars}</span>`;
-        }
-        if (!acmgCell) acmgCell = '-';
+        // Row highlight class
+        let rowCls = 'variant-row';
+        if (isSelected) rowCls += ' selected';
+        if (isFetal && isPatho) rowCls += ' var-row-fetal-patho';
+        else if (isFetal) rowCls += ' var-row-fetal';
+        else if (!isFetal && isPatho) rowCls += ' var-row-mat-patho';
 
-        const starHtml = isPathogenic ? ' <span style="color:var(--err);font-size:11px" title="Pathogenic">★</span>' : '';
+        const warnIcon = v.warning ? `<span class="var-warn-icon" title="${escapeHtml(v.warning)}">⚠</span>` : '';
+
+        // HGVSc cell (c.xxx 만 표시)
+        const hgvscCell = v.hgvsc
+          ? `<span style="font-family:monospace;font-size:12px">${escapeHtml(v.hgvsc)}</span>`
+          : (v.pathogenic_variant ? `<span style="font-family:monospace;font-size:12px;color:var(--muted)">${escapeHtml(v.pathogenic_variant)}</span>` : '<span class="muted">—</span>');
+        // HGVSp cell (p.xxx 만 표시)
+        const hgvspCell = v.hgvsp
+          ? `<span style="font-family:monospace;font-size:12px">${escapeHtml(v.hgvsp)}</span>`
+          : '<span class="muted">—</span>';
+
+        // ClinVar pill
+        const cvCell = v.clnsig_norm ? pill(v.clnsig_norm, clsigColor(v.clnsig_norm)) : '<span class="muted">—</span>';
+        // ACMG pill
+        const acmgCell = v.acmg_short ? pill(v.acmg_short, clsigColor(v.clnsig_norm)) : '<span class="muted">—</span>';
+
+        // gnomAD
+        const gnomadCell = v.gnomad_af == null
+          ? `<span class="pill inp" style="font-size:10px">Novel</span>`
+          : `${(v.gnomad_af * 100).toFixed(3)}%`;
+
+        // Allele depth
+        const adCell = (v.ref_count != null && v.alt_count != null)
+          ? `<span style="font-size:11px;font-family:monospace">REF=${v.ref_count} / ALT=${v.alt_count}</span>`
+          : (v.depth != null ? `<span class="muted" style="font-size:11px">DP=${v.depth}</span>` : '—');
+
+        // Zygosity
+        const zygoCell = `<span style="font-size:11px">F: ${escapeHtml(v.fetal_genotype||'—')}<br><span class="muted">M: ${escapeHtml(v.maternal_genotype||'—')}</span></span>`;
+
+        // Effect cell
+        const effectCell = v.effect
+          ? `${escapeHtml(v.effect)}${v.impact ? `<br><span class="pill ${impactColor(v.impact)}" style="font-size:9px;padding:1px 4px">${escapeHtml(v.impact)}</span>` : ''}`
+          : '<span class="muted">—</span>';
+
+        // Tags
+        const setTags = getVariantSetTags(v);
+        const allTags = [
+          ...v._tags.map(t => `<span class="pill ${t.cls}" style="font-size:10px;margin:1px">${t.label}</span>`),
+          variantSetTagPillsHtml(setTags),
+        ].join('');
+
+        const expandId = `sgnipt-exp-${rowIdx}`;
+        const tr = document.createElement('tr');
+        tr.className = rowCls;
+        tr.style.cursor = 'pointer';
         tr.innerHTML = `
-          <td style="text-align:center"><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleVariant('${escapeHtml(v.variant_id)}', this.checked)" />${starHtml}</td>
-          <td style="font-weight:600">${escapeHtml(v.gene || '-')}</td>
-          <td class="muted" style="font-size:11px">${escapeHtml(posStr)}</td>
-          <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(v.ref || '')} → ${escapeHtml(v.alt || '')}">${escapeHtml((v.ref||'').length > 10 ? v.ref.slice(0,10)+'…' : (v.ref||''))} → ${escapeHtml((v.alt||'').length > 10 ? v.alt.slice(0,10)+'…' : (v.alt||''))}</td>
-          <td style="font-size:11px;white-space:nowrap;color:${v.hgmd_hgvsc ? 'inherit' : 'var(--muted,#9ca3af)'}" title="${escapeHtml(v.hgmd_hgvsc || v.hgvsc || '')}">${escapeHtml(v.hgmd_hgvsc || v.hgvsc || '—')}</td>
-          <td>${v.depth != null ? v.depth : '-'}</td>
-          <td>${v.vaf != null ? (v.vaf * 100).toFixed(1) + '%' : '-'}</td>
-          <td style="white-space:nowrap">${variantSetTagPillsHtml(getVariantSetTags(v))}</td>
-          <td>${pill(origLabel, origClass)}</td>
-          <td class="muted">${escapeHtml(v.fetal_genotype || '-')}</td>
-          <td>${conf ? pill(conf, confClass) : '-'}</td>
-          <td style="white-space:nowrap;line-height:1.6">${acmgCell}</td>
-          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;font-size:11px">${diseaseCell}</td>
+          <td style="text-align:center" onclick="event.stopPropagation()">
+            <input type="checkbox" ${isSelected?'checked':''} onchange="toggleVariant('${escapeHtml(v.variant_id)}',this.checked)" />
+          </td>
+          <td style="font-weight:700;white-space:nowrap">${escapeHtml(v.gene||'—')}${warnIcon}</td>
+          <td style="white-space:nowrap">${hgvscCell}</td>
+          <td style="white-space:nowrap">${hgvspCell}</td>
+          ${col.transcript ? `<td style="font-family:monospace;font-size:11px;color:var(--muted)">${escapeHtml(v.transcript||'—')}</td>` : ''}
+          ${col.effect     ? `<td style="font-size:11px;width:160px;max-width:160px;white-space:normal;word-break:break-word">${effectCell}</td>` : ''}
+          <td>${pill(originLabel[v.origin]||v.origin||'—', originClass(v.origin))}</td>
+          <td style="text-align:right;font-weight:700">${v.vaf!=null?(v.vaf*100).toFixed(1)+'%':'—'}</td>
+          ${col.allele_depth ? `<td>${adCell}</td>` : ''}
+          ${col.zygosity   ? `<td>${zygoCell}</td>` : ''}
+          ${col.gnomad     ? `<td style="font-size:11px">${gnomadCell}</td>` : ''}
+          <td style="white-space:nowrap">${cvCell}</td>
+          <td style="white-space:nowrap">${acmgCell}</td>
+          <td>${conf ? pill(conf, confClass(conf)) : '—'}</td>
+          <td style="white-space:nowrap;max-width:160px">${allTags}</td>
+          ${col.disease    ? `<td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(v.disease||'')}">${escapeHtml(v.disease||'—')}</td>` : ''}
+          <td style="white-space:nowrap" onclick="event.stopPropagation()">
+            <button class="btn" style="font-size:11px;padding:3px 8px;margin-right:3px" onclick="_sgniptShowDetail('${escapeHtml(v.variant_id)}')">Detail</button>
+            <button class="btn" style="font-size:11px;padding:3px 8px" onclick="_sgniptGotoCoverageById('${escapeHtml(v.variant_id)}')">IGV</button>
+          </td>
         `;
+        // Row click → expand Tier 3
+        tr.onclick = () => _sgniptToggleExpand(expandId, tr, v);
         tb.appendChild(tr);
+
+        // Tier 3 expand row (hidden by default)
+        const expTr = document.createElement('tr');
+        expTr.id = expandId;
+        expTr.className = 'var-row-expand';
+        const totalCols = 10 + (col.transcript?1:0) + (col.effect?1:0) + (col.allele_depth?1:0) + (col.zygosity?1:0) + (col.gnomad?1:0) + (col.disease?1:0);
+        expTr.innerHTML = `<td colspan="${totalCols}" class="var-expand-td"></td>`;
+        tb.appendChild(expTr);
       });
 
-      // Wire "select all" checkbox
+      // Wire "select all"
       const chkAllNipt = document.getElementById('chkAllNipt');
       if (chkAllNipt) {
         chkAllNipt.checked = variants.length > 0 && variants.every(v => selectedVariants.has(v.variant_id));
         chkAllNipt.onchange = () => {
-          variants.forEach(v => {
-            if (chkAllNipt.checked) selectedVariants.add(v.variant_id);
-            else selectedVariants.delete(v.variant_id);
-          });
+          variants.forEach(v => { if (chkAllNipt.checked) selectedVariants.add(v.variant_id); else selectedVariants.delete(v.variant_id); });
           renderSgNIPTVariantsTable();
           onVariantSelectionChanged();
         };
       }
+    }
 
-      // On-demand ClinVar/ACMG classification — triggered by "Classify" button
+    function _sgniptToggleExpand(expandId, tr, v) {
+      const expTr = document.getElementById(expandId);
+      if (!expTr) return;
+      const isOpen = expTr.classList.contains('open');
+      // Close all other expand rows
+      document.querySelectorAll('.var-row-expand.open').forEach(r => r.classList.remove('open'));
+      if (isOpen) return;
+      expTr.classList.add('open');
+      // Build Tier 3 content
+      const vep = v._vep || {};
+      const cv = v._cv || {};
+      const sift = vep.sift || '—';
+      const pp = vep.polyphen || '—';
+      const existing = (vep.existing || '').replace(/&/g, ' · ') || '—';
+      const clnhgvs = cv.clnhgvs || '—';
+      const clndn = (cv.clndn || '').replace(/_/g,' ').split('|')[0] || '—';
+      const clnrev = cv.clnrevstat || '—';
+      const genomicPos = `${v.chrom||''}:${v.pos||''} ${v.ref||''}>${v.alt||''}`;
+      const details = v.details || '—';
+      const items = [
+        { key: 'Genomic Position', val: genomicPos },
+        { key: 'ClinVar HGVSc', val: clnhgvs },
+        { key: 'ClinVar Disease', val: clndn, span3: true },
+        { key: 'ClinVar Review', val: clnrev },
+        { key: 'SIFT', val: sift },
+        { key: 'PolyPhen', val: pp },
+        { key: 'dbSNP / ID', val: existing },
+        { key: 'Pipeline Rationale', val: details, wide: true },
+      ];
+      const warningHtml = v.warning ? `<div style="background:rgba(245,158,11,.12);border:1px solid #f59e0b;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#b45309">⚠ ${escapeHtml(v.warning)}</div>` : '';
+      const td = expTr.querySelector('td');
+      td.innerHTML = warningHtml + `<div class="var-expand-grid">${
+        items.map(it => `<div class="var-expand-item${it.wide?' wide':it.span3?' span3':''}"><div class="expand-key">${it.key}</div><div class="expand-val">${escapeHtml(String(it.val))}</div></div>`).join('')
+      }</div>`;
+    }
+
+    function _sgniptDetailClose() {
+      const panel = qs('variantDetail');
+      if (panel) panel.classList.add('hidden');
+      // Also close the modal fallback if open
+      const m = document.getElementById('sgniptDetailModal');
+      if (m) { m.classList.add('hidden'); m.setAttribute('aria-hidden','true'); }
+    }
+
+    function _sgniptShowDetail(variantId) {
+      const v = (_sgniptVisibleVariants || []).find(x => x.variant_id === variantId);
+      if (!v) return;
+
+      showReviewTab('variants');
+
+      const vep = v._vep || {};
+      const cv = v._cv || {};
+
+      const panel = qs('variantDetail');
+      if (!panel) return;
+      panel.classList.remove('hidden');
+
+      const warningBanner = v.warning
+        ? `<div style="background:rgba(245,158,11,.12);border:1px solid #f59e0b;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#b45309">⚠ ${escapeHtml(v.warning)}</div>`
+        : '';
+
+      const clnsig = cv.clnsig || '—';
+      const clndn = (cv.clndn || '').split('|')[0] || '—';
+      const clnrev = cv.clnrevstat || '—';
+
+      panel.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <h3 style="margin:0;font-size:16px">${escapeHtml(v.gene||'—')} — ${escapeHtml(v.hgvsc||v.hgvsp||v.variant_id)}</h3>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button type="button" class="btn" style="padding:4px 12px;font-size:11px"
+              onclick="_sgniptGotoCoverageById('${escapeHtml(v.variant_id)}')">IGV</button>
+            <button class="btn" style="padding:4px 12px;font-size:11px"
+              onclick="qs('variantDetail').classList.add('hidden')">Close</button>
+          </div>
+        </div>
+        ${warningBanner}
+        <div class="detail-grid">
+          <div class="detail-item"><div class="detail-label">Gene</div><div class="detail-value">${escapeHtml(v.gene||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">Position</div><div class="detail-value">${escapeHtml(v.chrom||'')}:${escapeHtml(String(v.pos||''))} ${escapeHtml(v.ref||'')}>${escapeHtml(v.alt||'')}</div></div>
+          <div class="detail-item"><div class="detail-label">HGVSc (full)</div><div class="detail-value" style="font-family:monospace">${escapeHtml(vep.hgvsc||v.hgvsc||v.pathogenic_variant||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">HGVSp (full)</div><div class="detail-value" style="font-family:monospace">${escapeHtml(vep.hgvsp||v.hgvsp||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">Transcript (MANE)</div><div class="detail-value" style="font-family:monospace">${escapeHtml(vep.mane||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">Consequence</div><div class="detail-value">${escapeHtml(vep.consequence||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">Impact</div><div class="detail-value">${escapeHtml(vep.impact||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">Origin</div><div class="detail-value">${escapeHtml(v.origin||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">Fetal Genotype</div><div class="detail-value">${escapeHtml(v.fetal_genotype||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">Maternal Genotype</div><div class="detail-value">${escapeHtml(v.maternal_genotype||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">VAF</div><div class="detail-value">${v.vaf!=null?(v.vaf*100).toFixed(2)+'%':'—'}</div></div>
+          <div class="detail-item"><div class="detail-label">Depth</div><div class="detail-value">${v.depth!=null?String(v.depth):'—'}${v.alt_count!=null?' (ALT='+v.alt_count+' / REF='+v.ref_count+')':''}</div></div>
+          <div class="detail-item"><div class="detail-label">Confidence</div><div class="detail-value">${escapeHtml(v.confidence||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">ClinVar Sig.</div><div class="detail-value">${escapeHtml(clnsig)}</div></div>
+          <div class="detail-item"><div class="detail-label">ClinVar Disease</div><div class="detail-value">${escapeHtml(clndn)}</div></div>
+          <div class="detail-item"><div class="detail-label">ClinVar Review</div><div class="detail-value">${escapeHtml(clnrev)}</div></div>
+          <div class="detail-item"><div class="detail-label">ClinVar HGVSc</div><div class="detail-value" style="font-family:monospace">${escapeHtml(cv.clnhgvs||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">gnomAD AF</div><div class="detail-value">${vep.gnomad_af!=null?String(vep.gnomad_af):'Novel (not in gnomAD)'}</div></div>
+          <div class="detail-item"><div class="detail-label">SIFT</div><div class="detail-value">${escapeHtml(vep.sift||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">PolyPhen</div><div class="detail-value">${escapeHtml(vep.polyphen||'—')}</div></div>
+          <div class="detail-item"><div class="detail-label">dbSNP / ID</div><div class="detail-value">${escapeHtml((vep.existing||'').replace(/&/g,' · ')||'—')}</div></div>
+          <div class="detail-item" style="grid-column:1/-1"><div class="detail-label">Disease</div><div class="detail-value">${escapeHtml(v.disease||'—')}</div></div>
+          <div class="detail-item" style="grid-column:1/-1"><div class="detail-label">Target Region</div><div class="detail-value" style="font-size:11px;color:var(--muted)">${escapeHtml((v.target_name||'').split('|')[0]||'—')}</div></div>
+          <div class="detail-item" style="grid-column:1/-1"><div class="detail-label">Pipeline Rationale</div><div class="detail-value" style="font-size:12px;line-height:1.6;color:var(--muted)">${escapeHtml(v.details||'—')}</div></div>
+        </div>
+      `;
+    }
+
+    function _sgniptGotoCoverageById(variantId) {
+      const v = (_sgniptVisibleVariants || []).find(x => x.variant_id === variantId);
+      if (v) void _sgniptGotoCoverage({chrom:v.chrom, pos:v.pos, ref:v.ref, alt:v.alt, gene:v.gene, variant_id:v.variant_id});
+    }
+
+    async function _sgniptGotoCoverage(varInfo) {
+      const varId = varInfo.variant_id;
+      let focusV = varId ? (reviewData && reviewData.variants || []).find(x => x.variant_id === varId) : null;
+      if (!focusV) {
+        focusV = { chrom: varInfo.chrom, pos: varInfo.pos, ref: varInfo.ref, alt: varInfo.alt, gene: varInfo.gene };
+      }
+
+      // Switch to Coverage tab (triggers refreshReviewCoverageTab async)
+      showReviewTab('coverage');
+
+      const oid = (reviewLoadedOrderId || (qs('reviewOrderSelect') && qs('reviewOrderSelect').value) || '').trim();
+
+      // Fetch coverage context if not yet loaded
+      if (!reviewCoverageContext && oid) {
+        try {
+          reviewCoverageContext = await apiGet(`/order/${encodeURIComponent(oid)}/coverage-context`);
+        } catch (e) {
+          toast('Cannot load coverage context: ' + (e.message || ''), false);
+          return;
+        }
+      }
+
+      coverageFocusVariant = focusV;
+      const sel = qs('coverageVariantSelect');
+      if (sel && varId) sel.value = varId;
+
+      const locus = applyCoverageVariantJumpUi(focusV) || variantToCoverageLocus(focusV);
+      void startCoverageIgvBrowser(locus);
     }
 
     function setSgniptFilter(type, val) {
-      if (type === 'origin') sgniptOriginFilter = val;
-      else if (type === 'conf') sgniptConfFilter = val;
+      if (type === 'conf') sgniptConfFilter = val;
       document.querySelectorAll(`.nipt-filt-btn[data-filt="${type}"]`).forEach(b => {
         b.classList.toggle('active', b.dataset.val === val);
       });
@@ -11491,7 +11892,7 @@
       if (isReviewOrderMismatch()) {
         const tb = qs('tblVariantsBody');
         const selId = (qs('reviewOrderSelect') && qs('reviewOrderSelect').value || '').trim();
-        const colspan = reviewData._service_code === 'sgnipt' ? 12 : 14;
+        const colspan = reviewData._service_code === 'sgnipt' ? 17 : 14;
         const msg = `Different order selected — click <strong>Load</strong> to show data for <strong>${escapeHtml(selId)}</strong> (table still shows <strong>${escapeHtml(String(reviewLoadedOrderId))}</strong>).`;
         if (tb) tb.innerHTML = `<tr><td colspan="${colspan}" class="muted" style="padding:20px;text-align:center">${msg}</td></tr>`;
         qs('variantCount').textContent = '— pending load —';

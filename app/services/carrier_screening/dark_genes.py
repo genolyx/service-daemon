@@ -168,26 +168,76 @@ def _infer_pipeline_section_high_risk(sec: Dict[str, Any]) -> bool:
     return False
 
 
+def _section_review_has_explicit_tier(rev: Optional[Dict[str, Any]]) -> bool:
+    if not rev or not isinstance(rev, dict):
+        return False
+    r = rev.get("risk")
+    return r is not None and str(r).strip() != ""
+
+
+def _section_review_is_reviewer_locked(rev: Optional[Dict[str, Any]]) -> bool:
+    """True after portal **Save section reviews** — risk/approve must not be re-inferred."""
+    return bool(rev and isinstance(rev, dict) and rev.get("reviewer_set"))
+
+
 def effective_risk_for_section(
     rev: Dict[str, Any],
     sec: Optional[Dict[str, Any]],
 ) -> str:
     """
-    ``section_reviews[i].risk`` when set, except a stored **low** is ignored if the pipeline
-    section text still signals high priority (CAH uncertain deletion, ``WARNING:``, etc.) so
-    stale JSON / reprocessed reports do not stay green after the body updates.
+    Risk tier for PDF title color and approval rules.
+
+    - **Reviewer locked** (``reviewer_set``): use saved tier; pipeline inference never overrides.
+    - **Stored tier, not locked**: use saved tier unless pipeline now signals high and the row
+      still looks like a stale auto-default (no lock) — then upgrade to high.
+    - **No stored tier**: infer from pipeline text.
     """
     inferred = bool(sec and _infer_pipeline_section_high_risk(sec))
     if rev:
-        r = rev.get("risk")
-        if r is not None and str(r).strip() != "":
-            stored = _coerce_risk_level(r)
+        if _section_review_is_reviewer_locked(rev):
+            r = rev.get("risk")
+            if r is not None and str(r).strip() != "":
+                return _coerce_risk_level(r)
+        if _section_review_has_explicit_tier(rev):
+            stored = _coerce_risk_level(rev.get("risk"))
             if stored == "low" and inferred:
                 return "high"
             return stored
     if sec is not None:
         return "high" if inferred else "low"
     return "low"
+
+
+def apply_reviewer_section_reviews(
+    incoming: List[Any],
+    n: int,
+    sections: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Persist portal **Save section reviews** without upgrading reviewer **low** back to pipeline
+    **high** or clearing approval. Sets ``reviewer_set`` so PDF + reload honor the choice.
+    """
+    out: List[Dict[str, Any]] = []
+    for i in range(n):
+        sec_i = sections[i] if sections and i < len(sections) else None
+        inc: Dict[str, Any] = {}
+        if i < len(incoming) and isinstance(incoming[i], dict):
+            inc = incoming[i]
+        pr = inc.get("risk")
+        if pr is not None and str(pr).strip() != "":
+            risk = _coerce_risk_level(pr)
+        else:
+            risk = "high" if sec_i and _infer_pipeline_section_high_risk(sec_i) else "low"
+        approved = _coerce_approved_bool(inc.get("approved"))
+        out.append(
+            {
+                "approved": approved,
+                "notes": str(inc.get("notes") or "")[:8000],
+                "risk": risk,
+                "reviewer_set": True,
+            }
+        )
+    return out
 
 
 def _disk_review_risk_is_explicit_high(rev: Dict[str, Any]) -> bool:
@@ -214,11 +264,17 @@ def effective_approved_for_dark_genes_section(
     **never** eligible for the customer PDF, even if ``approved`` is true.
 
     **High** effective risk still requires portal ``approved`` plus an explicit stored **high**
-    tier when the pipeline infers high priority (see ``_disk_review_risk_is_explicit_high``).
+    tier when the pipeline infers high priority (see ``_disk_review_risk_is_explicit_high``),
+    unless the row is **reviewer locked** (saved tier + approve are authoritative).
+
+    Reviewer **unapprove** at low tier on core loci is never overridden by auto-approve.
     """
     if _cftr_section_molecular_risk_level(sec) == "low":
         return False
-    if effective_risk_for_section(rev, sec) == "low":
+    eff_risk = effective_risk_for_section(rev, sec)
+    if eff_risk == "low":
+        if _section_review_is_reviewer_locked(rev):
+            return _coerce_approved_bool(rev.get("approved"))
         if (
             sec is not None
             and dark_genes_section_always_on_customer_pdf(sec)
@@ -228,6 +284,8 @@ def effective_approved_for_dark_genes_section(
         return _coerce_approved_bool(rev.get("approved"))
     if not _coerce_approved_bool(rev.get("approved")):
         return False
+    if _section_review_is_reviewer_locked(rev):
+        return _coerce_risk_level(rev.get("risk")) == "high"
     if sec is not None and _infer_pipeline_section_high_risk(sec):
         return _disk_review_risk_is_explicit_high(rev)
     return True
@@ -1131,12 +1189,11 @@ def align_section_reviews(
     ``risk`` defaults from the pipeline when missing: **low** unless the section has a
     ``WARNING:`` line, warning-kind title, or (CAH / CYP21A2) uncertain-deletion / paralog
     call language. A previously saved **low** is upgraded to **high** when inference says so
-    (reprocess / corrected body text); ``approved`` is cleared whenever inference is **high**
-    but the stored row never set **high** risk, so high-priority blocks are not implicitly
-    approved for report. **Low** final risk is auto-``approved`` **only** for the five core loci
-    (``dark_genes_section_always_on_customer_pdf``); other sections keep saved ``approved`` or
-    default to unapproved for new rows. **CFTR** IVS8/9 / EH adjunct blocks skip low-risk
-    auto-approve even if misclassified (always need explicit approval for benign/negative calls).
+    (reprocess / corrected body text) **only if the row is not reviewer locked**; ``approved``
+    is cleared when inference is **high** but the stored row never set **high** risk.
+    **Low** final risk auto-``approved`` **only** for the five core loci when the reviewer has
+    not explicitly unapproved. **CFTR** IVS8/9 / EH adjunct blocks skip low-risk auto-approve.
+    Rows with ``reviewer_set`` are never re-inferred or auto-approved over.
     """
     out: List[Dict[str, Any]] = []
     for i in range(n):
@@ -1144,8 +1201,24 @@ def align_section_reviews(
         inferred_high = bool(sec_i and _infer_pipeline_section_high_risk(sec_i))
         if prev and i < len(prev) and isinstance(prev[i], dict):
             p = prev[i]
+            if _section_review_is_reviewer_locked(p):
+                pr = p.get("risk")
+                if pr is not None and str(pr).strip() != "":
+                    risk = _coerce_risk_level(pr)
+                else:
+                    risk = "high" if inferred_high else "low"
+                out.append(
+                    {
+                        "approved": _coerce_approved_bool(p.get("approved")),
+                        "notes": str(p.get("notes") or "")[:8000],
+                        "risk": risk,
+                        "reviewer_set": True,
+                    }
+                )
+                continue
             pr = p.get("risk")
-            if pr is not None and str(pr).strip() != "":
+            has_tier = _section_review_has_explicit_tier(p)
+            if has_tier:
                 risk = _coerce_risk_level(pr)
             else:
                 risk = "high" if inferred_high else "low"
@@ -1153,12 +1226,9 @@ def align_section_reviews(
             if inferred_high and risk == "low":
                 risk = "high"
                 approved = False
-            stored_explicit_high = (
-                pr is not None
-                and str(pr).strip() != ""
-                and _coerce_risk_level(pr) == "high"
-            )
-            if inferred_high and not stored_explicit_high:
+            elif inferred_high and has_tier and _coerce_risk_level(pr) != "high":
+                approved = False
+            elif inferred_high and not has_tier:
                 approved = False
             if (
                 risk == "low"
@@ -2338,6 +2408,22 @@ def collect_dark_genes_from_analysis_dir(
     }
 
 
+def _section_review_item_from_storage(x: Any) -> Dict[str, Any]:
+    """Normalize one portal ``section_reviews`` row for PDF (preserve ``reviewer_set``)."""
+    if not isinstance(x, dict):
+        return {"approved": False, "notes": ""}
+    item: Dict[str, Any] = {
+        "approved": _coerce_approved_bool(x.get("approved")),
+        "notes": str(x.get("notes") or "")[:8000],
+    }
+    xr = x.get("risk")
+    if xr is not None and str(xr).strip() != "":
+        item["risk"] = _coerce_risk_level(xr)
+    if x.get("reviewer_set"):
+        item["reviewer_set"] = True
+    return item
+
+
 def dark_genes_for_pdf(report_block: Dict[str, Any]) -> Dict[str, Any]:
     """
     Subset for customer PDF (written into ``report.json`` — not the full ``dark_genes`` blob).
@@ -2371,17 +2457,7 @@ def dark_genes_for_pdf(report_block: Dict[str, Any]) -> Dict[str, Any]:
         raw = report_block.get("section_reviews")
         section_reviews = []
         for x in (raw if isinstance(raw, list) else []):
-            if isinstance(x, dict):
-                item: Dict[str, Any] = {
-                    "approved": _coerce_approved_bool(x.get("approved")),
-                    "notes": str(x.get("notes") or "")[:8000],
-                }
-                xr = x.get("risk")
-                if xr is not None and str(xr).strip() != "":
-                    item["risk"] = _coerce_risk_level(xr)
-                section_reviews.append(item)
-            else:
-                section_reviews.append({"approved": False, "notes": ""})
+            section_reviews.append(_section_review_item_from_storage(x))
 
     stored = report_block.get("detailed_sections")
     # Always prefer on-disk ``detailed_sections`` (same indices as portal ``section_reviews``).

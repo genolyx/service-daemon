@@ -1130,7 +1130,7 @@
           </div>
         </div>
         <div id="trackListArea">
-          <p class="muted orders-table-hint">Click a row for detail. Open <strong>⋯</strong> for Submit, Force Run, Force Run (Fresh), Stop / <strong>Review</strong>. <strong>Report ready</strong> orders show <strong>PDF</strong> (red) and <strong>HTML</strong> (blue); each opens the file in a <strong>new browser tab</strong>.</p>
+          <p class="muted orders-table-hint">Click a row for detail. Open <strong>⋯</strong> for Submit, Force Run, Force Run (Fresh), Stop / <strong>Review</strong>. <strong>Report ready</strong> orders show <strong>PDF EN</strong> / <strong>PDF CN</strong> (per order language) and <strong>HTML</strong> — each opens that language file in a new tab. Regenerate in <strong>Review → Report</strong> with the language checkboxes checked.</p>
           <div class="table-wrap" id="ordersTableWrap">
             <table id="tblOrders">
               <thead>
@@ -1335,7 +1335,8 @@
                   <div class="col-6"><label class="required">Sample Collection Date</label><input id="cr_collect_date" type="date" /></div>
                   <div class="col-6"><label>Receipt Date</label><input id="cr_receipt_date" type="date" /></div>
                   <div class="col-6"><label class="required">Report Language</label>
-                    <select id="cr_report_lang"><option value="">Select…</option><option value="EN">English</option><option value="KO">Korean</option><option value="CN">Chinese</option><option value="ID">Indonesian</option><option value="Other">Other</option></select>
+                    <select id="cr_report_lang"><option value="">Select…</option><option value="EN">English (EN)</option><option value="CN">Chinese (CN)</option><option value="KO">Korean (KO)</option><option value="EN,CN">English + Chinese</option></select>
+                    <p class="muted" style="font-size:11px;margin:6px 0 0;line-height:1.4">Chinese uses <code>carrier_CN</code>, <code>exome_CN</code>, <code>proactive_CN</code>, or <code>pgx_CN</code> templates. You can also choose languages on the Review → Report tab.</p>
                   </div>
                   <div class="col-6"><label class="required">Report Type</label>
                     <select id="cr_report_type"><option value="">Select…</option><option value="Printout">Printout</option><option value="Email">Email</option><option value="Portal">Portal</option></select>
@@ -2132,23 +2133,21 @@
               <h3 style="font-size:14px">Report Options</h3>
               <div class="row">
                 <div class="col-12">
-                  <label>Report language (from order)</label>
-                  <div id="reportOrderLangDisplay" class="muted" style="margin-top:4px">—</div>
-                  <div id="reportPdfDisabledMsg" style="display:none;margin-top:8px;color:var(--err);font-size:13px"></div>
-                  <div id="reportLangCheckboxesWrap" class="hidden" aria-hidden="true">
-                    <label>Languages</label>
-                    <div style="display:flex;gap:12px;margin-top:4px">
-                      <label class="checkbox-label"><input type="checkbox" id="langEN" checked disabled /> EN</label>
-                      <label class="checkbox-label"><input type="checkbox" id="langCN" disabled /> CN</label>
-                      <label class="checkbox-label"><input type="checkbox" id="langKO" disabled /> KO</label>
-                    </div>
+                  <label>Report languages</label>
+                  <div id="reportLangCheckboxesWrap" style="display:flex;gap:16px;margin-top:6px;flex-wrap:wrap">
+                    <label class="checkbox-label"><input type="checkbox" id="langEN" value="EN" checked /> English (EN)</label>
+                    <label class="checkbox-label"><input type="checkbox" id="langCN" value="CN" /> Chinese (CN)</label>
+                    <label class="checkbox-label"><input type="checkbox" id="langKO" value="KO" /> Korean (KO)</label>
                   </div>
+                  <div id="reportOrderLangDisplay" class="muted" style="margin-top:6px;font-size:12px">—</div>
+                  <div id="reportPdfDisabledMsg" style="display:none;margin-top:8px;color:var(--err);font-size:13px"></div>
                 </div>
                 <div class="col-12" style="display:flex;align-items:flex-end;gap:10px;margin-top:12px;flex-wrap:wrap">
                   <button type="button" class="btn secondary" id="btnPreviewReport" onclick="previewReport()">Preview HTML</button>
                   <button type="button" class="btn primary" id="btnGenReport" onclick="generateReport()">Generate Report</button>
                   <span id="reportMsg" class="muted"></span>
                 </div>
+                <p class="muted" style="font-size:11px;margin:8px 0 0;line-height:1.45"><strong>Chinese only:</strong> check <strong>Chinese (CN)</strong> and <em>uncheck English (EN)</em>, then Generate. Output: <code>Report_{order}_{patient}_CN.pdf</code>. If both EN and CN are checked, preview opens English first — use the language dropdown. Download from orders list or order detail <strong>Report files</strong>.</p>
               </div>
             </div>
           </div>
@@ -2159,8 +2158,15 @@
         <p id="geneDbHint" class="muted" style="margin:0 0 10px;font-size:12px"></p>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
           <input id="geneDbSearch" type="search" placeholder="Filter gene or text..." style="max-width:320px" oninput="renderGeneDatabase()" />
+          <label class="muted" style="font-size:12px;display:flex;align-items:center;gap:6px">Narrative language
+            <select id="geneDbNarrativeLang" onchange="onGeneDbNarrativeLangChange()" style="font-size:12px">
+              <option value="EN">English (EN)</option>
+              <option value="CN">Chinese (CN)</option>
+              <option value="KO">Korean (KO)</option>
+            </select>
+          </label>
           <span class="muted" id="geneDbCount"></span>
-          <button type="button" class="btn primary" id="btnGeneDbFetchGemini" onclick="fetchGeneKnowledgeForReview(true)">Fetch missing from Gemini</button>
+          <button type="button" class="btn primary" id="btnGeneDbFetchGemini" onclick="fetchGeneKnowledgeForReview(true)">Fetch / translate from Gemini</button>
         </div>
         <div id="geneDbTableWrap" class="table-wrap" style="max-height:55vh">
           <table id="tblGeneDb">
@@ -2241,7 +2247,7 @@
       <label for="geneDbEditFunction">Gene function (summary)</label>
       <textarea id="geneDbEditFunction" rows="4" autocomplete="off"></textarea>
       <label for="geneDbEditDiseaseAssoc">Disease association</label>
-      <textarea id="geneDbEditDiseaseAssoc" rows="4" autocomplete="off"></textarea>
+      <textarea id="geneDbEditDiseaseAssoc" rows="4" autocomplete="off" placeholder="Pathogenic variants in the GENE gene …"></textarea>
       <div class="gene-db-edit-actions">
         <button type="button" class="btn" onclick="geneDbEditClose()">Cancel</button>
         <button type="button" class="btn primary" id="geneDbEditSaveBtn" onclick="geneDbEditSave()">Save</button>
@@ -3207,6 +3213,8 @@
 
     // State
     let allOrders = [];
+    /** order_id → PDF language codes actually on disk (from /files). */
+    const orderReportPdfLangsCache = new Map();
     let ordersPollTimer = null;
 
     function stopOrdersListPolling() {
@@ -3247,6 +3255,33 @@
     /** Review Case sub-tab: per-variant editable gene_description + variant_summary for PDF */
     let variantReportTexts = {};
     /** gene_symbol (upper) → row from daemon ``gene_knowledge`` SQLite (Gemini cache: function_summary, disease_association, …) */
+    let geneKnowledgeNarrativeLang = 'EN';
+
+    function getGeneKnowledgeNarrativeLang() {
+      const sel = qs('geneDbNarrativeLang');
+      const v = sel && sel.value ? String(sel.value).trim().toUpperCase() : '';
+      if (v === 'CN' || v === 'KO' || v === 'EN') return v;
+      const langs = typeof getSelectedReportLanguages === 'function' ? getSelectedReportLanguages() : [];
+      if (langs.includes('CN') && !langs.includes('EN')) return 'CN';
+      if (langs.includes('KO') && !langs.includes('EN') && !langs.includes('CN')) return 'KO';
+      return geneKnowledgeNarrativeLang || 'EN';
+    }
+
+    function onGeneDbNarrativeLangChange() {
+      geneKnowledgeNarrativeLang = getGeneKnowledgeNarrativeLang();
+      const orderId = getActiveReviewOrderId();
+      if (orderId && reviewData) fetchGeneKnowledgeForReview(false);
+    }
+
+    function syncGeneDbNarrativeLangFromReport() {
+      const langs = typeof getSelectedReportLanguages === 'function' ? getSelectedReportLanguages() : [];
+      const sel = qs('geneDbNarrativeLang');
+      if (!sel) return;
+      if (langs.includes('CN') && langs.length === 1) sel.value = 'CN';
+      else if (langs.includes('KO') && langs.length === 1) sel.value = 'KO';
+      else if (!langs.includes('CN') && !langs.includes('KO')) sel.value = 'EN';
+      geneKnowledgeNarrativeLang = sel.value;
+    }
     let geneKnowledgeByGene = {};
     /** variant_key (gene|HGVS) → row from ``variant_knowledge`` (per-variant notes; same key across orders) */
     let variantKnowledgeByKey = {};
@@ -3766,28 +3801,112 @@
       }
     }
 
-    /** Report Ready 주문: kind = pdf | html — 새 탭에서 열기 (팝업 차단 시 다운로드 폴백) */
-    async function downloadOrderReportAsset(orderId, kind) {
+    /** Report Ready 주문: kind = pdf | html — 새 탭에서 열기 (팝업 차단 시 다운로드 폴백). lang = EN | CN | KO suffix on Report_*_{LANG}.pdf */
+    function orderParamsFlat(o) {
+      if (!o || !o.params) return {};
+      const c = o.params.carrier;
+      if (c && typeof c === 'object' && Object.keys(c).length) return Object.assign({}, o.params, c);
+      return o.params;
+    }
+
+    function orderReportLanguagesFromRow(o) {
+      const flat = orderParamsFlat(o);
+      const nipt = (o && o.params && o.params.nipt) || {};
+      const raw = flat.report_language != null && String(flat.report_language).trim() !== ''
+        ? flat.report_language
+        : (nipt.report_language != null ? nipt.report_language : 'EN');
+      if (Array.isArray(raw)) {
+        return raw.map(x => String(x).trim().toUpperCase()).filter((c, i, a) => ['EN', 'CN', 'KO'].includes(c) && a.indexOf(c) === i);
+      }
+      return String(raw).split(/[,;]/).map(s => s.trim().toUpperCase()).filter((c, i, a) => ['EN', 'CN', 'KO'].includes(c) && a.indexOf(c) === i);
+    }
+
+    function reportLangFromFilename(name) {
+      const m = String(name || '').match(/_([A-Z]{2})\.(pdf|html)$/i);
+      return m ? m[1].toUpperCase() : null;
+    }
+
+    function sortReportFilesNewest(a, b) {
+      const ta = typeof a.mtime_ms === 'number' ? a.mtime_ms : 0;
+      const tb = typeof b.mtime_ms === 'number' ? b.mtime_ms : 0;
+      if (tb !== ta) return tb - ta;
+      return (a.name || '').localeCompare(b.name || '');
+    }
+
+    function pickReportFileByLang(files, kind, lang) {
+      const langU = (lang || '').trim().toUpperCase();
+      const rx = kind === 'html' ? /^Report_.*\.html$/i : /^Report_.*\.pdf$/i;
+      const matching = files.filter(f => rx.test(f.name));
+      if (langU) {
+        const byLang = matching.filter(f => reportLangFromFilename(f.name) === langU);
+        return byLang.length ? byLang.sort(sortReportFilesNewest)[0] : null;
+      }
+      return matching.sort(sortReportFilesNewest)[0] || (kind === 'pdf' ? files.find(f => f.name === 'report.pdf') : files.find(f => f.name === 'report.html')) || null;
+    }
+
+    function reportPdfLangsFromFileList(files) {
+      const langs = [];
+      for (const f of files || []) {
+        if (!/^Report_.*\.pdf$/i.test(f.name || '')) continue;
+        const code = reportLangFromFilename(f.name);
+        if (code && !langs.includes(code)) langs.push(code);
+      }
+      return langs;
+    }
+
+    async function refreshOrderReportPdfLangsCache(orderIds) {
+      const ids = [...new Set((orderIds || []).map(x => String(x || '').trim()).filter(Boolean))];
+      await Promise.all(ids.map(async oid => {
+        try {
+          const res = await apiGet(`/order/${encodeURIComponent(oid)}/files`);
+          orderReportPdfLangsCache.set(oid, reportPdfLangsFromFileList(res.files || []));
+        } catch (e) {
+          console.warn('report pdf langs', oid, e);
+        }
+      }));
+    }
+
+    function orderPdfDownloadLanguages(o) {
+      const oid = String(o?.order_id || '').trim();
+      const cached = oid ? orderReportPdfLangsCache.get(oid) : null;
+      if (cached && cached.length) return cached;
+      return orderReportLanguagesFromRow(o);
+    }
+
+    function preferredPreviewLanguage(selectedLangs, orderParams) {
+      const langs = (selectedLangs || []).map(l => String(l).trim().toUpperCase()).filter(Boolean);
+      if (!langs.length) return 'EN';
+      const orderLangs = parseOrderReportLanguages(orderParams);
+      for (const code of ['CN', 'KO']) {
+        if (langs.includes(code) && orderLangs.includes(code)) return code;
+      }
+      for (const code of ['CN', 'KO']) {
+        if (langs.includes(code)) return code;
+      }
+      return langs[0];
+    }
+
+    async function downloadOrderReportAsset(orderId, kind, preferredLang) {
       const k = kind === 'html' ? 'html' : 'pdf';
+      const lang = (preferredLang || '').trim().toUpperCase();
       try {
         const res = await apiGet(`/order/${encodeURIComponent(orderId)}/files`);
         const files = res.files || [];
-        const byNewest = (a, b) => {
-          const ta = typeof a.mtime_ms === 'number' ? a.mtime_ms : 0;
-          const tb = typeof b.mtime_ms === 'number' ? b.mtime_ms : 0;
-          if (tb !== ta) return tb - ta;
-          return (a.name || '').localeCompare(b.name || '');
-        };
-        const pdfs = files.filter(f => /^Report_.*\.pdf$/i.test(f.name)).sort(byNewest);
-        const htmls = files.filter(f => /^Report_.*\.html$/i.test(f.name)).sort(byNewest);
-        let target = null;
-        if (k === 'pdf') {
-          target = pdfs[0] || files.find(f => f.name === 'report.pdf');
-        } else {
-          target = htmls[0] || files.find(f => f.name === 'report.html');
-        }
+        let target = pickReportFileByLang(files, k, lang);
         if (!target) {
-          toast(k === 'pdf' ? 'No PDF report in output folder' : 'No HTML report in output folder', false);
+          const reportFiles = files.filter(f => (k === 'html' ? /^Report_.*\.html$/i : /^Report_.*\.pdf$/i).test(f.name));
+          const onDisk = reportFiles.map(f => {
+            const code = reportLangFromFilename(f.name);
+            return code ? `${code} (${f.name})` : f.name;
+          }).join(', ');
+          if (lang) {
+            toast(
+              `No ${k.toUpperCase()} for ${lang}. ${onDisk ? `On disk: ${onDisk}. ` : ''}Open Review → Report, uncheck English if you only want Chinese, check ${lang}, then Generate Report.`,
+              false
+            );
+          } else {
+            toast(k === 'pdf' ? 'No PDF report in output folder — generate in Review → Report.' : 'No HTML report in output folder', false);
+          }
           return;
         }
         const url = `${API_BASE}${apiPath(`/order/${encodeURIComponent(orderId)}/file/${encodeURIComponent(target.name)}`)}?v=${Date.now()}`;
@@ -3813,9 +3932,9 @@
           a.remove();
           toast('Popup blocked — file downloaded instead', false);
         } else {
-          toast(`${k.toUpperCase()} opened in new tab: ${target.name}`);
+          toast(`${k.toUpperCase()}${lang ? ' ' + lang : ''} opened in new tab: ${target.name}`);
         }
-        markPortalReportDownloaded(orderId, k);
+        markPortalReportDownloaded(orderId, lang ? `${k}-${lang}` : k);
         renderOrders();
         setTimeout(() => { try { URL.revokeObjectURL(u); } catch (e) { /* ignore */ } }, 180000);
       } catch (e) {
@@ -4971,6 +5090,11 @@
       if (!val('cr_affected')) return 'Affected is required';
       if (!val('cr_collect_date')) return 'Sample Collection Date is required';
       if (!val('cr_report_lang')) return 'Report Language is required';
+      const rl = val('cr_report_lang').toUpperCase();
+      const rlParts = rl.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+      if (!rlParts.length || !rlParts.every(code => ['EN', 'CN', 'KO'].includes(code))) {
+        return 'Report Language must be English (EN), Chinese (CN), and/or Korean (KO)';
+      }
       if (!val('cr_report_type')) return 'Report Type is required';
       const need2 = cat === 'other' && CARRIER_TYPES_NEED_P2.includes(ot);
       const need3 = cat === 'other' && CARRIER_TYPES_NEED_P3.includes(ot);
@@ -6316,6 +6440,8 @@
         if (statusFilter) path += (path.includes('?') ? '&' : '?') + `status=${statusFilter}`;
         const data = await apiGet(path);
         allOrders = data.orders || [];
+        const readyIds = allOrders.filter(o => o.status === 'REPORT_READY').map(o => o.order_id);
+        if (readyIds.length) await refreshOrderReportPdfLangsCache(readyIds);
         renderOrders();
       } catch (e) {
         toast('Failed to load orders: ' + e.message, false);
@@ -6709,11 +6835,41 @@
       }
 
       qs('orderDetailBody').innerHTML = html;
+      if (orderStatusUpper(o) === 'REPORT_READY') appendOrderDetailReportFiles(o.order_id);
       const btnFu = qs('btnOrderDetailFollowUp');
       if (btnFu) btnFu.onclick = () => { void startFollowUpOrderFrom(o); };
       const btnEd = qs('btnOrderDetailEdit');
       if (btnEd) btnEd.onclick = () => { void openEditOrder(o); };
       setupOrderPipelineLogPanel(o);
+    }
+
+    async function appendOrderDetailReportFiles(orderId) {
+      const body = qs('orderDetailBody');
+      if (!body || !orderId) return;
+      try {
+        const res = await apiGet(`/order/${encodeURIComponent(orderId)}/files`);
+        const files = (res.files || []).filter(f => /^Report_.*\.(pdf|html)$/i.test(f.name));
+        if (!files.length) {
+          const sec = document.createElement('div');
+          sec.className = 'detail-section';
+          sec.innerHTML = '<h4>Report files</h4><p class="muted" style="font-size:12px">No <code>Report_*</code> files yet. Open <strong>Review → Report</strong>, check <strong>Chinese (CN)</strong> (and/or EN), then <strong>Generate Report</strong>.</p>';
+          body.insertBefore(sec, body.firstChild);
+          return;
+        }
+        files.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        const btns = files.map(f => {
+          const lang = reportLangFromFilename(f.name) || '?';
+          const kind = /\.pdf$/i.test(f.name) ? 'pdf' : 'html';
+          const label = `${kind.toUpperCase()} ${lang}`;
+          return `<button type="button" class="btn" style="margin:4px 8px 4px 0;font-size:11px" data-order-id="${escapeHtml(orderId)}" data-report-kind="${kind}" data-report-lang="${lang}" onclick="downloadOrderReportAsset(${JSON.stringify(orderId)}, '${kind}', '${lang}')">${escapeHtml(label)} — ${escapeHtml(f.name)}</button>`;
+        }).join('');
+        const sec = document.createElement('div');
+        sec.className = 'detail-section';
+        sec.innerHTML = `<h4>Report files</h4><p class="muted" style="font-size:12px;margin:0 0 8px">One PDF/HTML per language: <code>Report_{order}_{patient}_{LANG}.pdf</code>. Generate in <strong>Review → Report</strong> with language checkboxes.</p><div>${btns}</div>`;
+        body.insertBefore(sec, body.firstChild);
+      } catch (e) {
+        console.warn('report files list', e);
+      }
     }
 
     /** 주문 상세 하단: nextflow.log (gx-exome/sgNIPT) 또는 pipeline.log 터미널 (기본 접힘). */
@@ -6917,13 +7073,21 @@
         if (!items.length) items.push('<button type="button" disabled style="opacity:.5;cursor:default">—</button>');
         /* SVG 대신 문자: 일부 브라우저에서 table>tr innerHTML 파싱 이슈 방지 */
         const oidDl = String(o.order_id || '').trim();
-        const pdfSeen = oidDl && portalReportDownloadVisited(oidDl, 'pdf');
-        const htmlSeen = oidDl && portalReportDownloadVisited(oidDl, 'html');
+        const reportLangs = orderPdfDownloadLanguages(o);
+        const pdfLangs = reportLangs.length ? reportLangs : ['EN'];
+        const pdfBtnParts = pdfLangs.map(lang => {
+          const seen = oidDl && portalReportDownloadVisited(oidDl, `pdf-${lang}`);
+          const label = pdfLangs.length === 1 ? 'PDF' : `PDF ${lang}`;
+          return `<button type="button" class="btn-dl-report btn-dl-report-pdf${seen ? ' btn-dl-report--downloaded' : ''}" data-order-id="${escapeHtml(o.order_id)}" data-report-kind="pdf" data-report-lang="${lang}" title="Open ${lang} PDF in new tab" aria-label="Open ${lang} PDF report">${label}</button>`;
+        }).join('');
+        const htmlLangs = reportLangs.length ? reportLangs : ['EN'];
+        const htmlBtnParts = htmlLangs.map(lang => {
+          const seen = oidDl && portalReportDownloadVisited(oidDl, `html-${lang}`);
+          const label = htmlLangs.length === 1 ? 'HTML' : `HTML ${lang}`;
+          return `<button type="button" class="btn-dl-report btn-dl-report-html${seen ? ' btn-dl-report--downloaded' : ''}" data-order-id="${escapeHtml(o.order_id)}" data-report-kind="html" data-report-lang="${lang}" title="Open ${lang} HTML in new tab" aria-label="Open ${lang} HTML report">${label}</button>`;
+        }).join('');
         const dlBtn = st === 'REPORT_READY'
-          ? `<div class="order-dl-icons" role="group" aria-label="Download report files">
-            <button type="button" class="btn-dl-report btn-dl-report-pdf${pdfSeen ? ' btn-dl-report--downloaded' : ''}" data-order-id="${escapeHtml(o.order_id)}" data-report-kind="pdf" title="Open PDF in new tab" aria-label="Open PDF report in new tab">PDF</button>
-            <button type="button" class="btn-dl-report btn-dl-report-html${htmlSeen ? ' btn-dl-report--downloaded' : ''}" data-order-id="${escapeHtml(o.order_id)}" data-report-kind="html" title="Open HTML in new tab" aria-label="Open HTML report in new tab">HTML</button>
-          </div>`
+          ? `<div class="order-dl-icons" role="group" aria-label="Download report files">${pdfBtnParts}${htmlBtnParts}</div>`
           : '';
         tr.innerHTML = `
           <td style="font-weight:600">${escapeHtml(o.order_id)}</td>
@@ -7009,7 +7173,8 @@
         e.stopPropagation();
         const oid = b.getAttribute('data-order-id');
         const kind = b.getAttribute('data-report-kind') || 'pdf';
-        if (oid) downloadOrderReportAsset(oid, kind);
+        const lang = b.getAttribute('data-report-lang') || '';
+        if (oid) downloadOrderReportAsset(oid, kind, lang);
       });
     }
 
@@ -7261,7 +7426,7 @@
         if (labelEl) {
           labelEl.textContent = '';
         }
-        const res = await apiGet(`/order/${encodeURIComponent(orderId)}/gene-knowledge?gene=${encodeURIComponent(g)}&force=1&enrich=1`);
+        const res = await apiGet(`/order/${encodeURIComponent(orderId)}/gene-knowledge?gene=${encodeURIComponent(g)}&force=1&enrich=1&lang=${encodeURIComponent(getGeneKnowledgeNarrativeLang())}`);
         if (res.error) {
           toast(res.error, false);
           return;
@@ -7355,6 +7520,7 @@
         }
         const params = new URLSearchParams();
         if (enrich) params.set('enrich', '1');
+        params.set('lang', getGeneKnowledgeNarrativeLang());
         // With genes= and no symbols the API returned {} and wiped the UI after reload. Omit param = all order genes from SQLite (merge below).
         if (sel.length > 0) params.set('genes', sel.join(','));
         const res = await apiGet(`/order/${encodeURIComponent(orderId)}/gene-knowledge?${params.toString()}`);
@@ -7372,7 +7538,7 @@
           return;
         }
         for (const vid of selectedVariants) delete variantReportTexts[vid];
-        if (enrich) toast('Gene knowledge updated.');
+        if (enrich) toast(`Gene knowledge updated (${getGeneKnowledgeNarrativeLang()}).`);
         renderGeneDatabase();
         const rr = qs('reviewReport');
         if (rr && !rr.classList.contains('hidden')) updateSelectedVariantsList();
@@ -7382,7 +7548,7 @@
         if (btn) {
           btn.disabled = false;
           btn.classList.remove('loading');
-          btn.textContent = 'Fetch missing from Gemini';
+          btn.textContent = 'Fetch / translate from Gemini';
         }
       }
     }
@@ -7611,6 +7777,8 @@
         showReviewTab(sub);
         updateReviewResultMeta();
         if (!quietToast) toast(`Loaded ${(reviewData.variants || []).length} variants`);
+        syncGeneDbNarrativeLangFromReport();
+        syncReportLangCheckboxesFromOrder(reviewData.order_params);
         updateReportGenerateUi();
       } catch (e) {
         toast('Failed to load result: ' + e.message, false);
@@ -7627,7 +7795,58 @@
       return op;
     }
 
-    function carrierReportEligible(orderParams) {
+    const PDF_REPORT_LANGS = ['EN', 'CN', 'KO'];
+
+    function parseOrderReportLanguages(orderParams) {
+      const flat = carrierOrderMetaFlat(orderParams);
+      if (!flat) return ['EN'];
+      const raw = flat.report_language != null ? flat.report_language : flat.languages;
+      if (raw == null || String(raw).trim() === '') return ['EN'];
+      if (Array.isArray(raw)) {
+        return raw
+          .map(x => String(x).trim().toUpperCase())
+          .filter((code, i, arr) => PDF_REPORT_LANGS.includes(code) && arr.indexOf(code) === i);
+      }
+      return String(raw)
+        .split(/[,;]/)
+        .map(s => s.trim().toUpperCase())
+        .filter((code, i, arr) => PDF_REPORT_LANGS.includes(code) && arr.indexOf(code) === i);
+    }
+
+    function syncReportLangCheckboxesFromOrder(orderParams) {
+      const langs = parseOrderReportLanguages(orderParams);
+      const hasCn = langs.includes('CN');
+      const hasKo = langs.includes('KO');
+      const hasEn = langs.includes('EN');
+      if (qs('langEN')) qs('langEN').checked = hasEn || (!hasCn && !hasKo);
+      if (qs('langCN')) qs('langCN').checked = hasCn;
+      if (qs('langKO')) qs('langKO').checked = hasKo;
+    }
+
+    function getSelectedReportLanguages() {
+      const out = [];
+      if (qs('langEN') && qs('langEN').checked) out.push('EN');
+      if (qs('langCN') && qs('langCN').checked) out.push('CN');
+      if (qs('langKO') && qs('langKO').checked) out.push('KO');
+      return out;
+    }
+
+    function wireReportLangCheckboxListeners() {
+      ['langEN', 'langCN', 'langKO'].forEach(id => {
+        const el = qs(id);
+        if (!el || el.dataset.wired) return;
+        el.dataset.wired = '1';
+        el.addEventListener('change', () => {
+          if (!getSelectedReportLanguages().length) {
+            el.checked = true;
+            toast('At least one report language is required', false);
+          }
+          updateReportGenerateUi();
+        });
+      });
+    }
+
+    function carrierReportEligible(orderParams, selectedLangs) {
       const flat = carrierOrderMetaFlat(orderParams);
       if (!flat || typeof flat !== 'object') {
         return { ok: false, reason: 'Order metadata missing.' };
@@ -7635,7 +7854,9 @@
       const tc = String(flat.test_category || '').trim();
       const ot = String(flat.other_test_type || '').trim();
       const pc = String(flat.package_code || '').trim();
-      const rl = String(flat.report_language || '').trim().toUpperCase();
+      const langs = (selectedLangs && selectedLangs.length)
+        ? selectedLangs.map(l => String(l).trim().toUpperCase())
+        : parseOrderReportLanguages(orderParams);
 
       // WES panel category takes precedence (same logic as reviewOrderKind)
       const wid = String(
@@ -7658,7 +7879,7 @@
       else if (pc === 'CarrierScreening' && tc !== 'other') kind = 'standard';
       else if (tc === 'other') kind = null;
       else if (pc === 'CarrierScreening') kind = 'standard';
-      const langOk = ['EN', 'CN', 'KO'].includes(rl);
+      const langOk = langs.length > 0 && langs.every(code => PDF_REPORT_LANGS.includes(code));
       if (!kind) {
         return {
           ok: false,
@@ -7669,10 +7890,10 @@
       if (!langOk) {
         return {
           ok: false,
-          reason: 'Report language must be EN, CN, or KO.',
+          reason: 'Select at least one report language: EN, CN, or KO.',
         };
       }
-      return { ok: true, kind, reportLang: rl };
+      return { ok: true, kind, reportLangs: langs, reportLang: langs[0] };
     }
 
     function updateReportGenerateUi() {
@@ -7703,7 +7924,7 @@
 
       const op = reviewData && reviewData.order_params;
       const flat = carrierOrderMetaFlat(op);
-      const el = carrierReportEligible(op);
+      const el = carrierReportEligible(op, getSelectedReportLanguages());
       if (msg) {
         msg.style.display = el.ok ? 'none' : 'block';
         msg.textContent = el.ok ? '' : el.reason;
@@ -7713,14 +7934,17 @@
       if (el.ok) {
         const stemMap = { standard: 'carrier', couples: 'carrier_couples', exome: 'exome', proactive: 'proactive', pgx: 'pgx' };
         const stem = stemMap[el.kind] || el.kind;
-        langDisp.textContent = `${el.reportLang} · ${stem}_${el.reportLang.toLowerCase()}.html`;
+        const tpls = (el.reportLangs || [el.reportLang]).map(
+          code => `${stem}_${String(code).toLowerCase()}.html`
+        );
+        langDisp.textContent = `Templates: ${tpls.join(', ')}`;
       } else {
         const rlRaw = flat && flat.report_language != null && String(flat.report_language).trim() !== ''
           ? String(flat.report_language).trim()
           : '';
         langDisp.textContent = rlRaw
-          ? `Report language on order: ${rlRaw}`
-          : '—';
+          ? `Order report language: ${rlRaw}. Select EN / CN / KO above.`
+          : 'Select report languages above.';
       }
     }
 
@@ -7793,7 +8017,7 @@
       if (kind === 'sgnipt') {
         ['darkgenes', 'pgx'].forEach(t => hide.add(t));
       } else if (kind === 'pgx') {
-        ['variants', 'coverage', 'darkgenes', 'genedb'].forEach(t => hide.add(t));
+        ['variants', 'coverage', 'darkgenes'].forEach(t => hide.add(t));
       } else if (kind === 'proactive') {
         hide.add('darkgenes');
       } else if (kind === 'carrier') {
@@ -8436,6 +8660,7 @@
       try {
         const body = {
           gene: g,
+          lang: getGeneKnowledgeNarrativeLang(),
           disorder: qs('geneDbEditDisorder').value,
           omim_number: qs('geneDbEditOmim').value,
           inheritance: qs('geneDbEditInheritance').value,
@@ -8514,6 +8739,7 @@
         gq.set('genes', getSelectedGeneSymbols().join(','));
         const res = await apiPut(`/order/${encodeURIComponent(orderId)}/variant-knowledge?${gq.toString()}`, {
           variant_key: vk,
+          lang: getGeneKnowledgeNarrativeLang(),
           variant_notes: qs('variantDbEditNotes').value,
         });
         const row = res.row || {};
@@ -8549,7 +8775,7 @@
         } else if (meta.geminiAvailable === false) {
           hintEl.textContent = 'No Gemini API key — only existing SQLite rows load. Configure the key to use Fetch missing from Gemini.';
         } else {
-          hintEl.textContent = '';
+          hintEl.textContent = 'Shared gene_knowledge SQLite for all services (carrier, exome, proactive, PGx, sgNIPT). Disease association should start with: Pathogenic variants in the GENE gene.';
         }
       }
       if (!reviewData) {
@@ -12596,19 +12822,33 @@
       return `<div class="muted" style="${box};background:rgba(130,160,255,.07);border:1px solid rgba(130,160,255,.2)"><strong>Template</strong> — not live search. Use <strong>Gene database → Fetch missing from Gemini</strong> for longer gene text.</div>`;
     }
 
-    function defaultGeneDescriptionFromKnowledge(v, gk) {
+    function defaultGeneDescriptionFromKnowledge(v, gk, lang) {
       if (!gk || typeof gk !== 'object') return null;
+      const langU = (lang || getGeneKnowledgeNarrativeLang() || 'EN').toUpperCase();
+      const gene = v.gene || gk.gene_symbol || 'gene';
       const fs = (gk.function_summary || '').trim();
-      const da = (gk.disease_association || '').trim();
+      const da = normalizeDiseaseAssociation(gene, (gk.disease_association || '').trim(), langU);
       const dis = (gk.disorder || '').trim();
       const parts = [];
       if (fs) parts.push(fs);
       if (da) parts.push(da);
       if (!parts.length && dis) {
-        const gene = v.gene || 'gene';
-        parts.push(`The ${gene} gene is associated with ${dis}.`);
+        if (langU === 'CN') parts.push(`${gene} 基因與 ${dis} 相關。`);
+        else parts.push(normalizeDiseaseAssociation(gene, `are associated with ${dis}.`, langU));
       }
       return parts.length ? parts.join('\n\n') : null;
+    }
+
+    function normalizeDiseaseAssociation(gene, text, lang) {
+      const g = String(gene || 'gene').trim();
+      const t = String(text || '').trim();
+      if (!t) return '';
+      const langU = String(lang || 'EN').toUpperCase();
+      if (langU !== 'EN') return t;
+      const prefix = `Pathogenic variants in the ${g} gene`;
+      if (t.toLowerCase().startsWith(prefix.toLowerCase())) return t;
+      const joiner = /^[a-z]/.test(t) ? ' ' : '. ';
+      return `${prefix}${joiner}${t}`;
     }
 
     function ensureVariantReportTexts(v) {
@@ -12618,10 +12858,13 @@
       const dis = disease !== '-' ? disease : 'Unknown disorder';
       const gene = v.gene || 'gene';
       const gk = geneKnowledgeByGene[(gene || '').toUpperCase()];
-      const fromGk = defaultGeneDescriptionFromKnowledge(v, gk);
+      const fromGk = defaultGeneDescriptionFromKnowledge(v, gk, getGeneKnowledgeNarrativeLang());
+      const langU = getGeneKnowledgeNarrativeLang();
       const geneDesc = (v.report_gene_description && String(v.report_gene_description).trim())
         || fromGk
-        || (dis !== 'Unknown disorder' ? `The ${gene} gene is associated with ${dis}.` : '');
+        || (dis !== 'Unknown disorder'
+          ? (langU === 'CN' ? `${gene} 基因與 ${dis} 相關。` : normalizeDiseaseAssociation(gene, `are associated with ${dis}.`, langU))
+          : '');
       const comment = (variantComments[id]?.comment || '').trim();
       const parts = [];
       if (v.hgvsp) parts.push(`Protein: ${v.hgvsp}`);
@@ -12849,8 +13092,10 @@
       if (!orderId) return toast('Load an order first (Review → Load), or open Review from the order list.', false);
 
       const isSgNIPT = reviewData?._service_code === 'sgnipt';
+      let reportLangs = [];
       if (!isSgNIPT) {
-        const elig = carrierReportEligible(reviewData?.order_params);
+        reportLangs = getSelectedReportLanguages();
+        const elig = carrierReportEligible(reviewData?.order_params, reportLangs);
         if (!elig.ok) {
           return toast(elig.reason || 'Report PDF is not available for this order type or report language.', false);
         }
@@ -12895,13 +13140,24 @@
           name: qs('rPartnerName').value.trim(),
         } : undefined,
       };
+      if (reportLangs.length) body.languages = reportLangs;
 
       const btn = qs('btnGenReport');
       try {
         btn.classList.add('loading'); btn.textContent = 'Generating...';
         const res = await apiPost(`/order/${orderId}/report`, body);
-        toast(`Report generated: ${res.message}`);
-        qs('reportMsg').innerHTML = `Generated files: ${(res.report_files || []).join(', ')}`;
+        const names = (res.report_files || []).map(p => String(p).split('/').pop());
+        const generatedLangs = names.map(n => reportLangFromFilename(n)).filter(Boolean);
+        const wanted = reportLangs.map(l => String(l).trim().toUpperCase());
+        const missing = wanted.filter(w => !generatedLangs.includes(w));
+        toast(missing.length
+          ? `Report generated but missing: ${missing.join(', ')}. Check generated files below.`
+          : `Report generated: ${res.message}`);
+        qs('reportMsg').innerHTML = `Generated: ${names.join(', ') || '(none)'}`;
+        if (missing.length) {
+          qs('reportMsg').innerHTML += ` <span style="color:var(--err)">Missing ${missing.join(', ')} — uncheck other languages and regenerate, or check daemon logs.</span>`;
+        }
+        orderReportPdfLangsCache.set(orderId, generatedLangs.filter(l => names.some(n => n.endsWith(`_${l}.pdf`))));
         loadOrders();
       } catch (e) {
         toast('Report generation failed: ' + e.message, false);
@@ -13168,6 +13424,7 @@
       }
       wireOrderIdNoSpace('sgOrderId');
       wireOrderIdNoSpace('sg_prev_order');
+      wireReportLangCheckboxListeners();
       wireFastqBrowseUi();
       wireBamCsvBrowseUi();
       wireDashBucketTable();
@@ -13298,9 +13555,11 @@
       const isSgNIPT = reviewData?._service_code === 'sgnipt';
 
       // For carrier-like orders, check template eligibility; sgNIPT bypasses this.
-      let elig = { ok: true, kind: 'sgnipt', reportLang: 'EN' };
+      let elig = { ok: true, kind: 'sgnipt', reportLang: 'EN', reportLangs: ['EN'] };
+      let reportLangs = [];
       if (!isSgNIPT) {
-        elig = carrierReportEligible(reviewData?.order_params);
+        reportLangs = getSelectedReportLanguages();
+        elig = carrierReportEligible(reviewData?.order_params, reportLangs);
         if (!elig.ok) return toast(elig.reason || 'Report is not available for this order type.', false);
       }
 
@@ -13341,6 +13600,7 @@
         },
         partner_info: qs('rPartnerName').value.trim() ? { name: qs('rPartnerName').value.trim() } : undefined,
       };
+      if (reportLangs.length) body.languages = reportLangs;
 
       const btn = qs('btnPreviewReport');
       try {
@@ -13365,7 +13625,10 @@
         qs('btnToggleEdit').textContent = 'Edit';
         qs('btnViewSource').textContent = 'View Source';
 
-        switchPreviewLang(langs[0]);
+        const previewFirst = preferredPreviewLanguage(reportLangs.length ? reportLangs : langs, reviewData?.order_params);
+        const previewLang = langs.includes(previewFirst) ? previewFirst : langs[0];
+        switchPreviewLang(previewLang);
+        if (qs('rptPreviewLang')) qs('rptPreviewLang').value = previewLang;
         qs('rptPreviewOverlay').classList.add('open');
 
       } catch (e) {

@@ -36,6 +36,34 @@ from .review import atomic_write_json_file
 
 logger = logging.getLogger(__name__)
 
+# Lazy-cached MANEAnnotator per GFF path (loaded once per process)
+_mane_cache: Dict[str, Any] = {}
+
+
+def _get_mane_annotator(mane_gff: Optional[str]) -> Optional[Any]:
+    if not mane_gff:
+        return None
+    if mane_gff not in _mane_cache:
+        try:
+            from .annotator import MANEAnnotator
+            _mane_cache[mane_gff] = MANEAnnotator(mane_gff)
+        except Exception as exc:
+            logger.warning("Could not load MANEAnnotator from %s: %s", mane_gff, exc)
+            _mane_cache[mane_gff] = None
+    return _mane_cache.get(mane_gff)
+
+
+def _build_gene_transcript_list(genes: List[str], mane_gff: Optional[str]) -> List[Dict[str, str]]:
+    """Return [{"gene": str, "transcript": str}] for the PDF gene+transcript table."""
+    if not genes:
+        return []
+    mane = _get_mane_annotator(mane_gff)
+    result = []
+    for g in genes:
+        nm = mane.lookup(g).get("nm", "") if mane else ""
+        result.append({"gene": g, "transcript": nm})
+    return result
+
 
 def _dedupe_result_json_paths(paths: Sequence[Optional[str]]) -> List[str]:
     """Absolute, deduplicated candidate paths for result.json (order preserved)."""
@@ -974,6 +1002,12 @@ def generate_report_json(
         order_params if isinstance(order_params, dict) else None
     )
 
+    # Build gene+transcript pairs for the PDF «Genes Evaluated» table
+    from ...config import settings as _settings
+    interp_genes_with_transcripts = _build_gene_transcript_list(
+        interp_genes, _settings.mane_gff or None
+    )
+
     genes_n = order_flat.get("genes_evaluated_count")
     try:
         genes_evaluated_count = int(genes_n) if genes_n is not None and str(genes_n).strip() != "" else 302
@@ -1040,6 +1074,7 @@ def generate_report_json(
 
         # Panel gene list for PDF «Genes Evaluated» (empty if not resolvable from order / catalog)
         "interpretation_genes": interp_genes,
+        "interpretation_genes_with_transcripts": interp_genes_with_transcripts,
 
         # 캐리어 상태 요약
         "carrier_status": carrier_status,

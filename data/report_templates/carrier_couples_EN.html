@@ -237,6 +237,31 @@
                 text-align: justify;   /* Aligns edges nicely on the page */
                 word-break: break-all; /* Ensures long gene names don't break the layout */
             }
+            .gene-transcript-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 7.5pt;
+                margin-top: 8px;
+                table-layout: fixed;
+            }
+            .gene-transcript-table th {
+                background: #f1f5f9;
+                color: #475569;
+                font-weight: 700;
+                font-size: 7pt;
+                text-transform: uppercase;
+                letter-spacing: .04em;
+                padding: 4px 6px;
+                border: 1px solid #e2e8f0;
+            }
+            .gene-transcript-table td {
+                padding: 3px 6px;
+                border: 1px solid #e2e8f0;
+                color: #334155;
+                vertical-align: top;
+            }
+            .gene-transcript-table td.gene-col { font-weight: 600; }
+            .gene-transcript-table td.tx-col { font-family: monospace; color: #64748b; }
 
             .director-section {
                 margin-top: 50px;
@@ -437,13 +462,29 @@
         <p class="detail-text" style="margin-bottom:10px;font-size:8.5pt;">
             This report reflects evaluation of <strong>{{ data.genes_evaluated_count }}</strong> gene(s) in the ordered interpretation panel.
         </p>
-        {% if data.interpretation_genes and data.interpretation_genes | length > 0 %}
-        <div class="gene-list-grid">
-            {{ data.interpretation_genes | join(', ') }}
-        </div>
+                {% if data.interpretation_genes_with_transcripts and data.interpretation_genes_with_transcripts | length > 0 %}
+        {% set rows = data.interpretation_genes_with_transcripts | batch(3) %}
+        <table class="gene-transcript-table">
+          <thead><tr>
+            <th class="gene-col">Gene</th><th class="tx-col">Transcript</th>
+            <th class="gene-col">Gene</th><th class="tx-col">Transcript</th>
+            <th class="gene-col">Gene</th><th class="tx-col">Transcript</th>
+          </tr></thead>
+          <tbody>
+          {% for row in rows %}
+          <tr>
+            {% for item in row %}<td class="gene-col">{{ item.gene }}</td><td class="tx-col">{{ item.transcript or '—' }}</td>{% endfor %}
+            {% for _ in range(3 - row | length) %}<td></td><td></td>{% endfor %}
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% elif data.interpretation_genes and data.interpretation_genes | length > 0 %}
+        <div class="gene-list-grid">{{ data.interpretation_genes | join(', ') }}</div>
         {% else %}
         <p class="detail-text" style="font-size:8pt;color:#64748b;">Gene symbols are defined by the laboratory order; the count above matches the configured interpretation panel.</p>
         {% endif %}
+
     </div>
 
     <div class="new-page">

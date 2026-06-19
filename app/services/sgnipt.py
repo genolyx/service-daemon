@@ -574,6 +574,231 @@ class SgNIPTPlugin(ServicePlugin):
             "SUMMARY": 92,
         }
 
+    async def generate_report(
+        self,
+        job: Job,
+        confirmed_variants: list,
+        reviewer_info: dict,
+        patient_info: Optional[Dict[str, Any]] = None,
+        partner_info: Optional[Dict[str, Any]] = None,
+        languages: Optional[List[str]] = None,
+        **kwargs: Any,
+    ) -> bool:
+        """Generate sgNIPT PDF report and write report.json to output_dir."""
+        import asyncio
+        from ...datetime_kst import now_kst_date_iso, now_kst_iso
+        try:
+            result = await asyncio.to_thread(
+                _generate_sgnipt_report_sync,
+                job=job,
+                confirmed_variants=confirmed_variants,
+                reviewer_info=reviewer_info,
+                patient_info=patient_info or {},
+                partner_info=partner_info,
+                languages=languages or ["EN"],
+            )
+            return result
+        except Exception as exc:
+            logger.exception("[sgnipt] generate_report failed for %s: %s", job.order_id, exc)
+            return False
+
 
 def create_plugin() -> ServicePlugin:
     return SgNIPTPlugin()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# sgNIPT Report Generation Helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _sgnipt_report_template_dir() -> str:
+    """Return path to report_templates directory bundled with service-daemon."""
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.normpath(os.path.join(this_dir, "..", "..", "..", "data", "report_templates"))
+
+
+def _sgnipt_render_html(report_data: Dict[str, Any], lang: str = "EN") -> str:
+    """Render sgnipt_{lang}.html Jinja2 template with report_data."""
+    try:
+        import jinja2
+    except ImportError:
+        raise RuntimeError("jinja2 is required for sgNIPT report generation")
+
+    template_dir = _sgnipt_report_template_dir()
+    stem = f"sgnipt_{lang.upper()}.html"
+    tpl_path = os.path.join(template_dir, stem)
+    if not os.path.isfile(tpl_path):
+        # Fallback to EN
+        tpl_path = os.path.join(template_dir, "sgnipt_EN.html")
+    if not os.path.isfile(tpl_path):
+        raise FileNotFoundError(f"sgNIPT template not found: {stem}")
+
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(template_dir),
+        autoescape=jinja2.select_autoescape(["html"]),
+    )
+    env.filters["batch"] = lambda iterable, n: [
+        list(iterable)[i : i + n] for i in range(0, len(list(iterable)), n)
+    ]
+    tpl = env.get_template(os.path.basename(tpl_path))
+    return tpl.render(data=report_data)
+
+
+def _generate_sgnipt_report_sync(
+    job: Job,
+    confirmed_variants: list,
+    reviewer_info: dict,
+    patient_info: Dict[str, Any],
+    partner_info: Optional[Dict[str, Any]],
+    languages: List[str],
+) -> bool:
+    """Synchronous core of sgNIPT report generation (runs in thread)."""
+    from ...datetime_kst import now_kst_date_iso, now_kst_iso
+    from ..carrier_screening.report import _build_gene_transcript_list
+    from ..wes_panels import interpretation_genes_for_pdf
+
+    out_dir = job.output_dir or ""
+    if not out_dir:
+        logger.error("[sgnipt] generate_report: no output_dir for %s", job.order_id)
+        return False
+
+    os.makedirs(out_dir, exist_ok=True)
+
+    params = job.params or {}
+    order_id = job.order_id or ""
+
+    # Patient info
+    pi = dict(patient_info)
+    if not (pi.get("name") or "").strip():
+        pi["name"] = (params.get("patient_name") or "").strip() or (job.sample_name or "")
+
+    # Load existing result.json for fetal fraction etc.
+    result_data: Dict[str, Any] = {}
+    result_json_path = os.path.join(out_dir, "result.json")
+    if os.path.isfile(result_json_path):
+        try:
+            with open(result_json_path, encoding="utf-8") as f:
+                result_data = json.load(f)
+        except Exception as exc:
+            logger.warning("[sgnipt] Cannot read result.json: %s", exc)
+
+    # Interpretation genes + transcripts
+    interp_genes = interpretation_genes_for_pdf(params)
+    # For sgNIPT, genes come from panel.target_genes if available
+    panel = result_data.get("panel") or params.get("panel") or {}
+    if isinstance(panel, dict):
+        target_genes = panel.get("target_genes") or panel.get("genes") or []
+        if target_genes and not interp_genes:
+            interp_genes = sorted(str(g).strip() for g in target_genes if g)
+    if not interp_genes:
+        # Derive from confirmed variants
+        interp_genes = sorted({v.get("gene", "") for v in confirmed_variants if v.get("gene")})
+
+    interp_genes_with_transcripts = _build_gene_transcript_list(
+        interp_genes, settings.mane_gff or None
+    )
+
+    # Normalize confirmed_variants: extract HGVSc/HGVSp from VEP sub-object, strip transcript prefix
+    import re as _re
+    _strip_tx = _re.compile(r'^[A-Z0-9]+[\d._]*:')
+
+    def _norm_hgvs(s: str) -> str:
+        return _strip_tx.sub("", s or "")
+
+    norm_variants = []
+    for v in confirmed_variants:
+        v = dict(v)  # shallow copy
+        vep = v.get("vep") or {}
+        # HGVSc: prefer vep.hgvsc, then v.hgvsc; skip if it looks like a genomic coord
+        raw_hgvsc = vep.get("hgvsc") or v.get("hgvsc") or v.get("pathogenic_variant") or ""
+        stripped = _norm_hgvs(raw_hgvsc)
+        # Only use if it starts with c./n./r. (not chr…)
+        if stripped.startswith(("c.", "n.", "r.", "g.")):
+            v["hgvsc"] = stripped
+        elif not v.get("hgvsc"):
+            v["hgvsc"] = stripped  # show best available
+        # HGVSp
+        raw_hgvsp = vep.get("hgvsp") or v.get("hgvsp") or ""
+        v["hgvsp"] = _norm_hgvs(raw_hgvsp)
+        # Gene symbol from VEP
+        if vep.get("symbol") and not v.get("gene"):
+            v["gene"] = vep["symbol"]
+        # Disease/condition: try ClinVar clndn
+        cv = vep.get("clinvar") or {}
+        if not v.get("disease") and cv.get("clndn"):
+            v["disease"] = cv["clndn"].split("|")[0].replace("_", " ")
+        norm_variants.append(v)
+
+    # If genes still empty after normalization, derive from norm_variants
+    if not interp_genes:
+        interp_genes = sorted({v.get("gene", "") for v in norm_variants if v.get("gene")})
+        interp_genes_with_transcripts = _build_gene_transcript_list(
+            interp_genes, settings.mane_gff or None
+        )
+
+    # Build report data dict
+    now = now_kst_date_iso()
+    report_data: Dict[str, Any] = {
+        "report_metadata": {
+            "order_id": order_id,
+            "report_date": now,
+            "hospital": params.get("hospital_name") or params.get("hospital") or "",
+            "doctor": params.get("doctor") or "",
+            "report_version": "1.0",
+            "service": "sgnipt",
+        },
+        "primary_patient": {
+            "name": pi.get("name", ""),
+            "dob": pi.get("dob", ""),
+            "gender": pi.get("gender", ""),
+            "sample_id": job.sample_name or "",
+            "collection_date": params.get("collection_date") or "",
+        },
+        "confirmed_variants": norm_variants,
+        "genes_evaluated_count": len(interp_genes),
+        "interpretation_genes": interp_genes,
+        "interpretation_genes_with_transcripts": interp_genes_with_transcripts,
+        "fetal_fraction_detail": result_data.get("fetal_fraction_detail"),
+        "reviewer": {
+            "name": (reviewer_info or {}).get("name", ""),
+            "id": (reviewer_info or {}).get("id", ""),
+            "institution": (reviewer_info or {}).get("institution", ""),
+        },
+        "generated_at": now_kst_iso(),
+    }
+
+    # Write report.json
+    report_json_path = os.path.join(out_dir, "report.json")
+    with open(report_json_path, "w", encoding="utf-8") as f:
+        json.dump(report_data, f, ensure_ascii=False, indent=2)
+
+    # Use carrier-compatible naming: Report_{order_id}_{sample_name}_{LANG}.pdf
+    sample_slug = (job.sample_name or order_id or "sample").replace(" ", "_")
+    order_slug = (order_id or "order").replace(" ", "_")
+
+    # Render HTML + PDF for each language
+    for lang in languages:
+        try:
+            html_content = _sgnipt_render_html(report_data, lang)
+            html_fname = f"Report_{order_slug}_{sample_slug}_{lang.upper()}.html"
+            html_path = os.path.join(out_dir, html_fname)
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(html_content)
+
+            # PDF via WeasyPrint
+            try:
+                from weasyprint import HTML as WP_HTML
+                pdf_fname = f"Report_{order_slug}_{sample_slug}_{lang.upper()}.pdf"
+                pdf_path = os.path.join(out_dir, pdf_fname)
+                WP_HTML(string=html_content, base_url=out_dir).write_pdf(pdf_path)
+                logger.info("[sgnipt] PDF written: %s", pdf_path)
+            except ImportError:
+                logger.warning("[sgnipt] weasyprint not available; HTML only")
+            except Exception as pdf_exc:
+                logger.warning("[sgnipt] PDF generation failed for %s: %s", lang, pdf_exc)
+        except Exception as exc:
+            logger.error("[sgnipt] HTML render failed for lang=%s: %s", lang, exc)
+            return False
+
+    logger.info("[sgnipt] Report generation complete for %s", order_id)
+    return True

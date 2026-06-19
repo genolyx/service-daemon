@@ -205,6 +205,31 @@
             text-align: justify;   /* Aligns edges nicely on the page */
             word-break: break-all; /* Ensures long gene names don't break the layout */
         }
+            .gene-transcript-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 7.5pt;
+                margin-top: 8px;
+                table-layout: fixed;
+            }
+            .gene-transcript-table th {
+                background: #f1f5f9;
+                color: #475569;
+                font-weight: 700;
+                font-size: 7pt;
+                text-transform: uppercase;
+                letter-spacing: .04em;
+                padding: 4px 6px;
+                border: 1px solid #e2e8f0;
+            }
+            .gene-transcript-table td {
+                padding: 3px 6px;
+                border: 1px solid #e2e8f0;
+                color: #334155;
+                vertical-align: top;
+            }
+            .gene-transcript-table td.gene-col { font-weight: 600; }
+            .gene-transcript-table td.tx-col { font-family: monospace; color: #64748b; }
 
         .director-section {
             margin-top: 50px;
@@ -356,13 +381,29 @@
         <p class="detail-text" style="margin-bottom:10px;font-size:8.5pt;">
             本報告之解讀範圍為 <strong>{{ data.genes_evaluated_count }}</strong> 個基因（依訂單所選解讀面板）。
         </p>
-        {% if data.interpretation_genes and data.interpretation_genes | length > 0 %}
-        <div class="gene-list-grid">
-            {{ data.interpretation_genes | join(', ') }}
-        </div>
+                {% if data.interpretation_genes_with_transcripts and data.interpretation_genes_with_transcripts | length > 0 %}
+        {% set rows = data.interpretation_genes_with_transcripts | batch(3) %}
+        <table class="gene-transcript-table">
+          <thead><tr>
+            <th class="gene-col">基因</th><th class="tx-col">轉錄本</th>
+            <th class="gene-col">基因</th><th class="tx-col">轉錄本</th>
+            <th class="gene-col">基因</th><th class="tx-col">轉錄本</th>
+          </tr></thead>
+          <tbody>
+          {% for row in rows %}
+          <tr>
+            {% for item in row %}<td class="gene-col">{{ item.gene }}</td><td class="tx-col">{{ item.transcript or '—' }}</td>{% endfor %}
+            {% for _ in range(3 - row | length) %}<td></td><td></td>{% endfor %}
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% elif data.interpretation_genes and data.interpretation_genes | length > 0 %}
+        <div class="gene-list-grid">{{ data.interpretation_genes | join(', ') }}</div>
         {% else %}
-        <p class="detail-text" style="font-size:8pt;color:#64748b;">基因名單以實驗室訂單設定為準；上述數字為解讀面板所涵蓋之基因數。</p>
+        <p class="detail-text" style="font-size:8pt;color:#94a3b8;">基因符號依實驗室訂單定義；以上計數與已設定之解讀面板一致。</p>
         {% endif %}
+
     </div>
 
     <div class="new-page">

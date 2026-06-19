@@ -1706,6 +1706,106 @@ async def preview_report_html(order_id: str, request: ReportGenerateRequest):
     if not plugin or not hasattr(plugin, "generate_report"):
         raise HTTPException(status_code=400, detail="Service does not support report generation")
 
+    # sgNIPT has its own preview path
+    if job.service_code == "sgnipt":
+        from .services.sgnipt import _sgnipt_render_html, _generate_sgnipt_report_sync
+        from .services.carrier_screening.report import _build_gene_transcript_list
+        from .services.wes_panels import interpretation_genes_for_pdf
+
+        p_sgnipt = job.params or {}
+        pi = dict(request.patient_info) if request.patient_info else {}
+        if not (pi.get("name") or "").strip():
+            pi["name"] = (p_sgnipt.get("patient_name") or "").strip() or job.sample_name
+
+        # Load result.json for context
+        result_data: dict = {}
+        result_json_path = os.path.join(job.output_dir or "", "result.json")
+        if os.path.isfile(result_json_path):
+            try:
+                with open(result_json_path, encoding="utf-8") as _f:
+                    result_data = json.load(_f)
+            except Exception:
+                pass
+
+        interp_genes = interpretation_genes_for_pdf(p_sgnipt)
+        panel = result_data.get("panel") or p_sgnipt.get("panel") or {}
+        if isinstance(panel, dict):
+            tg = panel.get("target_genes") or panel.get("genes") or []
+            if tg and not interp_genes:
+                interp_genes = sorted(str(g).strip() for g in tg if g)
+        confirmed = request.confirmed_variants or []
+        if not interp_genes:
+            interp_genes = sorted({v.get("gene", "") for v in confirmed if v.get("gene")})
+
+        # Normalize HGVSc from VEP sub-object, strip transcript prefix
+        import re as _re_sgnipt
+        _strip_tx_p = _re_sgnipt.compile(r'^[A-Z0-9]+[\d._]*:')
+
+        def _nhgvs(s: str) -> str:
+            return _strip_tx_p.sub("", s or "")
+
+        norm_confirmed = []
+        for _v in confirmed:
+            _v = dict(_v)
+            _vep = _v.get("vep") or {}
+            raw_hgvsc = _vep.get("hgvsc") or _v.get("hgvsc") or _v.get("pathogenic_variant") or ""
+            stripped = _nhgvs(raw_hgvsc)
+            if stripped.startswith(("c.", "n.", "r.", "g.")):
+                _v["hgvsc"] = stripped
+            elif not _v.get("hgvsc"):
+                _v["hgvsc"] = stripped
+            _v["hgvsp"] = _nhgvs(_vep.get("hgvsp") or _v.get("hgvsp") or "")
+            if _vep.get("symbol") and not _v.get("gene"):
+                _v["gene"] = _vep["symbol"]
+            _cv = _vep.get("clinvar") or {}
+            if not _v.get("disease") and _cv.get("clndn"):
+                _v["disease"] = _cv["clndn"].split("|")[0].replace("_", " ")
+            norm_confirmed.append(_v)
+        confirmed = norm_confirmed
+        if not interp_genes:
+            interp_genes = sorted({v.get("gene", "") for v in confirmed if v.get("gene")})
+
+        from datetime import datetime, timezone
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        report_data = {
+            "report_metadata": {
+                "order_id": job.order_id,
+                "report_date": now_str,
+                "hospital": p_sgnipt.get("hospital_name") or p_sgnipt.get("hospital") or "",
+                "doctor": p_sgnipt.get("doctor") or "",
+                "service": "sgnipt",
+            },
+            "primary_patient": {
+                "name": pi.get("name", ""),
+                "dob": pi.get("dob", ""),
+                "gender": pi.get("gender", ""),
+                "sample_id": job.sample_name or "",
+                "collection_date": p_sgnipt.get("collection_date") or "",
+            },
+            "confirmed_variants": confirmed,
+            "genes_evaluated_count": len(interp_genes),
+            "interpretation_genes": interp_genes,
+            "interpretation_genes_with_transcripts": _build_gene_transcript_list(
+                interp_genes, settings.mane_gff or None
+            ),
+            "fetal_fraction_detail": result_data.get("fetal_fraction_detail"),
+            "reviewer": request.reviewer_info or {},
+        }
+
+        langs = request.languages or ["EN"]
+        result_langs = {}
+        for lang in langs:
+            try:
+                html_content = await asyncio.to_thread(_sgnipt_render_html, report_data, lang)
+                result_langs[lang] = {
+                    "html": html_content,
+                    "template": f"sgnipt_{lang.upper()}.html",
+                }
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"sgNIPT template render failed: {exc}") from exc
+
+        return {"languages": result_langs}
+
     if job.service_code not in _CARRIER_LIKE:
         raise HTTPException(status_code=400, detail="Preview is only supported for carrier-like services")
 

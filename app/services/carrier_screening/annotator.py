@@ -566,11 +566,20 @@ class MANEAnnotator:
 
                 if not gene:
                     continue
+                tag = attrs.get("tag", "")
+                is_mane_select = "MANE_Select" in tag
                 entry = self._data.setdefault(gene, {})
-                if enst and "enst" not in entry:
-                    entry["enst"] = enst
-                if nm and "nm" not in entry:
-                    entry["nm"] = nm
+                # Always overwrite with MANE_Select; only fill if not yet set otherwise
+                if is_mane_select:
+                    if enst:
+                        entry["enst"] = enst
+                    if nm:
+                        entry["nm"] = nm
+                else:
+                    if enst and "enst" not in entry:
+                        entry["enst"] = enst
+                    if nm and "nm" not in entry:
+                        entry["nm"] = nm
 
         logger.info(f"MANE loaded: {len(self._data)} genes")
 

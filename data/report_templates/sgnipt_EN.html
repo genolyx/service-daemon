@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>sgNIPT Report — {{ data.report_metadata.order_id }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 18mm 15mm 20mm 15mm;
+            @top-center { content: element(header-content); font-size: 7pt; color: #94a3b8; }
+            @bottom-center { content: element(footer-content); font-size: 7pt; color: #94a3b8; }
+        }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 9pt; color: #1e293b; margin: 0; }
+        #header-content { position: running(header-content); }
+        #footer-content { position: running(footer-content); }
+        .new-page { page-break-before: always; }
+        .brand-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #3b82f6; padding-bottom: 8px; margin-bottom: 14px; }
+        .brand-name { font-size: 16pt; font-weight: 700; color: #1e40af; letter-spacing: -.3px; }
+        .service-badge { font-size: 8pt; font-weight: 600; background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 999px; }
+        .info-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 8.5pt; }
+        .info-table td { padding: 3px 6px; vertical-align: top; }
+        .label { font-weight: 600; color: #64748b; white-space: nowrap; }
+        .value { color: #1e293b; }
+        .section-title { font-size: 11pt; font-weight: 700; color: #1e40af; border-bottom: 1px solid #bfdbfe; padding-bottom: 4px; margin: 16px 0 10px; letter-spacing: -.2px; }
+        .detail-text { font-size: 8.5pt; color: #334155; margin: 4px 0; line-height: 1.5; }
+
+        /* Result banner */
+        .result-banner { border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+        .result-banner.positive { background: #fef2f2; border: 1.5px solid #fca5a5; }
+        .result-banner.negative { background: #f0fdf4; border: 1.5px solid #86efac; }
+        .result-banner.uncertain { background: #fffbeb; border: 1.5px solid #fcd34d; }
+        .result-label { font-size: 12pt; font-weight: 700; }
+        .result-label.positive { color: #dc2626; }
+        .result-label.negative { color: #16a34a; }
+        .result-label.uncertain { color: #d97706; }
+        .result-desc { font-size: 8.5pt; color: #334155; }
+
+        /* Variant table */
+        .var-table { width: 100%; border-collapse: collapse; font-size: 8pt; margin-top: 8px; }
+        .var-table th { background: #1e40af; color: #fff; font-weight: 700; font-size: 7.5pt; text-transform: uppercase; letter-spacing: .04em; padding: 5px 7px; text-align: left; }
+        .var-table td { padding: 5px 7px; border-bottom: 1px solid #e2e8f0; vertical-align: top; color: #1e293b; }
+        .var-table tr:nth-child(even) td { background: #f8fafc; }
+        .var-table .hgvs-cell { font-family: monospace; font-size: 8pt; }
+        .var-table .cls-pathogenic { color: #dc2626; font-weight: 700; }
+        .var-table .cls-lp { color: #ea580c; font-weight: 700; }
+        .var-table .cls-vus { color: #d97706; font-weight: 600; }
+        .var-table .cls-benign { color: #16a34a; }
+        .var-table .condition-cell { font-size: 7.5pt; }
+        .var-table .sub-text { font-size: 7pt; color: #64748b; margin-top: 2px; }
+
+        /* Gene+Transcript table */
+        .gene-transcript-table { width: 100%; border-collapse: collapse; font-size: 7.5pt; margin-top: 8px; table-layout: fixed; }
+        .gene-transcript-table th { background: #f1f5f9; color: #475569; font-weight: 700; font-size: 7pt; text-transform: uppercase; letter-spacing: .04em; padding: 4px 6px; border: 1px solid #e2e8f0; }
+        .gene-transcript-table td { padding: 3px 6px; border: 1px solid #e2e8f0; color: #334155; vertical-align: top; }
+        .gene-transcript-table td.gene-col { font-weight: 600; }
+        .gene-transcript-table td.tx-col { font-family: monospace; color: #64748b; }
+
+        /* Director section */
+        .director-section { margin-top: 40px; padding-top: 10px; border-top: 1px solid #e2e8f0; font-size: 8.5pt; }
+        .sig-line { border-bottom: 1px solid #334155; width: 200px; margin-bottom: 4px; height: 18px; }
+    </style>
+</head>
+<body>
+
+<div id="header-content">{{ data.primary_patient.name }} | Order ID: {{ data.report_metadata.order_id }}</div>
+<div id="footer-content"><strong>Genolyx Diagnostics</strong> | clientservices@genolyx.com | © 2025 Genolyx Corporation | Page <span class="page-number"></span></div>
+
+<div class="brand-header">
+    <div>
+        <div class="brand-name">Single-Gene NIPT</div>
+        <span class="service-badge">Prenatal cfDNA Analysis</span>
+    </div>
+    <div style="text-align:right;font-size:8pt;color:#64748b;">
+        Report Date: {{ data.report_metadata.report_date }}<br>
+        Order ID: {{ data.report_metadata.order_id }}
+    </div>
+</div>
+
+<table class="info-table">
+    <tr>
+        <td><span class="label">Patient Name:</span> <span class="value">{{ data.primary_patient.name }}</span></td>
+        <td><span class="label">Hospital:</span> <span class="value">{{ data.report_metadata.hospital }}</span></td>
+    </tr>
+    <tr>
+        <td><span class="label">Date of Birth:</span> <span class="value">{{ data.primary_patient.dob or 'N/A' }}</span></td>
+        <td><span class="label">Physician:</span> <span class="value">{{ data.report_metadata.doctor }}</span></td>
+    </tr>
+    <tr>
+        <td><span class="label">Gender:</span> <span class="value">{{ data.primary_patient.gender or 'N/A' }}</span></td>
+        <td><span class="label">Collected:</span> <span class="value">{{ data.primary_patient.collection_date or 'N/A' }}</span></td>
+    </tr>
+    <tr>
+        <td><span class="label">Sample ID:</span> <span class="value">{{ data.primary_patient.sample_id }}</span></td>
+        <td><span class="label">Status:</span> <span class="value" style="color:#64748b">FINAL</span></td>
+    </tr>
+</table>
+
+<!-- Result Summary Banner -->
+{% set has_findings = data.confirmed_variants and data.confirmed_variants | length > 0 %}
+{% if has_findings %}
+<div class="result-banner positive">
+    <div>
+        <div class="result-label positive">▲ POSITIVE — Pathogenic/Likely Pathogenic Variant(s) Detected</div>
+        <div class="result-desc" style="margin-top:4px">
+            Clinically significant fetal variant(s) identified. Results should be confirmed by invasive prenatal diagnosis. Genetic counseling is strongly recommended.
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="result-banner negative">
+    <div>
+        <div class="result-label negative">● NEGATIVE — No Pathogenic Variants Detected</div>
+        <div class="result-desc" style="margin-top:4px">
+            No clinically significant fetal variants were identified in the genes evaluated. A negative result does not exclude all genetic conditions.
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Variant Table -->
+{% if has_findings %}
+<div class="section-title">Detected Variants</div>
+<table class="var-table">
+    <thead>
+        <tr>
+            <th style="width:22%">Condition</th>
+            <th style="width:7%">Gene</th>
+            <th style="width:18%">HGVSc</th>
+            <th style="width:12%">HGVSp</th>
+            <th style="width:7%">VAF</th>
+            <th style="width:10%">Genotype</th>
+            <th style="width:12%">Origin</th>
+            <th style="width:12%">Classification</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for v in data.confirmed_variants %}
+    {% set cls_label = v.reviewer_classification or v.acmg_classification or v.clnsig_norm or '' %}
+    {% set cls_class = 'cls-pathogenic' if 'Pathogenic' in cls_label and 'Likely' not in cls_label else
+                       'cls-lp' if 'Likely pathogenic' in cls_label or 'LP' == cls_label else
+                       'cls-vus' if 'VUS' in cls_label or 'Uncertain' in cls_label else
+                       'cls-benign' if 'Benign' in cls_label else '' %}
+    {% set hgvsc = v.hgvsc or v.pathogenic_variant or '' %}
+    {% set hgvsp = v.hgvsp or '' %}
+    {% set vaf_pct = '%.1f%%' % (v.vaf * 100) if v.vaf is not none else '—' %}
+    {% set gt = v.fetal_genotype or (v.genotype if v.genotype else '—') %}
+    {% set origin_map = {'fetal_specific': 'Fetal (de novo)', 'fetal': 'Fetal', 'maternal': 'Maternal', 'paternal': 'Paternal'} %}
+    {% set origin_disp = origin_map.get(v.origin, v.origin or '—') %}
+    {% set condition = v.disease or (v._cv.clndn.split('|')[0].replace('_',' ') if v._cv is defined and v._cv and v._cv.clndn else '—') %}
+    <tr>
+        <td class="condition-cell">
+            {{ condition }}
+            {% if v.inheritance %}<div class="sub-text">{{ v.inheritance }}</div>{% endif %}
+        </td>
+        <td style="font-weight:700">{{ v.gene or '—' }}</td>
+        <td class="hgvs-cell">{{ hgvsc }}</td>
+        <td class="hgvs-cell">{{ hgvsp or '—' }}</td>
+        <td style="text-align:right">{{ vaf_pct }}</td>
+        <td>{{ gt }}</td>
+        <td>{{ origin_disp }}</td>
+        <td class="{{ cls_class }}">{{ cls_label or '—' }}</td>
+    </tr>
+    {% if v.reviewer_comment %}
+    <tr><td colspan="8" style="font-size:7.5pt;color:#475569;padding:3px 7px 6px;background:#f8fafc;font-style:italic">
+        Reviewer note: {{ v.reviewer_comment }}
+    </td></tr>
+    {% endif %}
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<!-- Genes Evaluated -->
+<div class="new-page">
+    <div class="section-title">Genes Evaluated</div>
+    <p class="detail-text" style="margin-bottom:8px">
+        This report reflects evaluation of <strong>{{ data.genes_evaluated_count }}</strong> gene(s) in the ordered interpretation panel.
+    </p>
+    {% if data.interpretation_genes_with_transcripts and data.interpretation_genes_with_transcripts | length > 0 %}
+    {% set rows = data.interpretation_genes_with_transcripts | batch(3) %}
+    <table class="gene-transcript-table">
+        <thead><tr>
+            <th class="gene-col">Gene</th><th class="tx-col">Transcript</th>
+            <th class="gene-col">Gene</th><th class="tx-col">Transcript</th>
+            <th class="gene-col">Gene</th><th class="tx-col">Transcript</th>
+        </tr></thead>
+        <tbody>
+        {% for row in rows %}
+        <tr>
+            {% for item in row %}<td class="gene-col">{{ item.gene }}</td><td class="tx-col">{{ item.transcript or '—' }}</td>{% endfor %}
+            {% for _ in range(3 - row | length) %}<td></td><td></td>{% endfor %}
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% elif data.interpretation_genes and data.interpretation_genes | length > 0 %}
+    <p class="detail-text">{{ data.interpretation_genes | join(', ') }}</p>
+    {% else %}
+    <p class="detail-text" style="color:#64748b">Gene symbols are defined by the laboratory order.</p>
+    {% endif %}
+</div>
+
+<!-- Methods -->
+<div class="new-page">
+    <div class="section-title">Methods and Limitations</div>
+    <p class="detail-text">
+        Cell-free DNA (cfDNA) extracted from maternal plasma is captured using a hybridization-based target enrichment protocol and sequenced on an Illumina platform. Reads are aligned to GRCh38. Variant calling is performed using validated bioinformatics pipelines. Fetal-specific variants are identified using fetal fraction estimation and allele-fraction analysis. The minimum fetal fraction required for reliable analysis is 4%. Variant classification follows ACMG/AMP 2015 guidelines. This test interrogates coding regions and splice sites (±20 bp) of the targeted gene(s). This assay does not detect copy-number variants, trinucleotide repeat expansions, or variants outside the targeted regions. A negative result does not exclude all genetic conditions.
+    </p>
+    <p class="detail-text" style="margin-top:6px">
+        <strong>Fetal Fraction:</strong>
+        {% if data.fetal_fraction_detail and data.fetal_fraction_detail.ff_percent is not none %}
+            {{ '%.1f' % data.fetal_fraction_detail.ff_percent }}% (Method: {{ data.fetal_fraction_detail.method or 'N/A' }})
+        {% else %}
+            N/A
+        {% endif %}
+    </p>
+
+    <!-- Director Signature -->
+    <div class="director-section">
+        <p style="margin:0 0 4px"><strong>Reviewed and Authorized by:</strong></p>
+        {% if data.reviewer %}
+        <div class="sig-line"></div>
+        <p style="margin:0;font-size:8.5pt">{{ data.reviewer.name or '' }}{% if data.reviewer.id %} ({{ data.reviewer.id }}){% endif %}</p>
+        {% if data.reviewer.institution %}<p style="margin:0;font-size:8pt;color:#64748b">{{ data.reviewer.institution }}</p>{% endif %}
+        {% else %}
+        <div class="sig-line"></div>
+        <p style="margin:0;font-size:8.5pt;color:#64748b">Laboratory Director</p>
+        {% endif %}
+        <p style="margin:8px 0 0;font-size:8pt;color:#64748b">Report Date: {{ data.report_metadata.report_date }}</p>
+    </div>
+</div>
+
+</body>
+</html>

@@ -131,6 +131,11 @@
         .drug-rec-table tr:nth-child(even) { background: #f8f9fa; }
         .drug-name { font-weight: 600; text-transform: capitalize; }
         .rec-text { font-size: 7pt; line-height: 1.3; }
+        .gene-transcript-table { width:100%;border-collapse:collapse;font-size:7.5pt;margin-top:8px;table-layout:fixed }
+        .gene-transcript-table th { background:#f1f5f9;color:#475569;font-weight:700;font-size:7pt;text-transform:uppercase;letter-spacing:.04em;padding:4px 6px;border:1px solid #e2e8f0 }
+        .gene-transcript-table td { padding:3px 6px;border:1px solid #e2e8f0;color:#334155;vertical-align:top }
+        .gene-transcript-table td.gene-col { font-weight:600 }
+        .gene-transcript-table td.tx-col { font-family:monospace;color:#64748b }
     </style>
 </head>
 <body>
@@ -197,7 +202,22 @@
 <p class="text-muted" style="font-size:8.5pt;margin:0 0 12px;padding:0 4px;">
     해석 대상 유전자 수: <strong>{{ data.genes_evaluated_count }}</strong> (주문 패널 기준)
 </p>
-{% if data.interpretation_genes and data.interpretation_genes | length > 0 %}
+{% if data.interpretation_genes_with_transcripts and data.interpretation_genes_with_transcripts | length > 0 %}
+{% set rows = data.interpretation_genes_with_transcripts | batch(3) %}
+<table class="gene-transcript-table" style="margin-bottom:12px">
+  <thead><tr>
+    <th class="gene-col">유전자</th><th class="tx-col">전사체</th>
+    <th class="gene-col">유전자</th><th class="tx-col">전사체</th>
+    <th class="gene-col">유전자</th><th class="tx-col">전사체</th>
+  </tr></thead>
+  <tbody>
+  {% for row in rows %}<tr>
+    {% for item in row %}<td class="gene-col">{{ item.gene }}</td><td class="tx-col">{{ item.transcript or '—' }}</td>{% endfor %}
+    {% for _ in range(3 - row | length) %}<td></td><td></td>{% endfor %}
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% elif data.interpretation_genes and data.interpretation_genes | length > 0 %}
 <p style="font-size:8pt;color:#94a3b8;line-height:1.75;text-align:justify;margin:0 0 12px;padding:0 4px;">
     {{ data.interpretation_genes | join(', ') }}
 </p>
